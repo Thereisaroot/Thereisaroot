@@ -7,6 +7,7 @@ body {
     min-height: 100vh;
     background: linear-gradient(135deg, #667eea, #764ba2);
     color: white;
+    overflow: hidden; /* Prevents scrollbars from main page */
 }
 
 .portal-container {
@@ -15,6 +16,7 @@ body {
     flex-wrap: wrap;
     justify-content: center;
     padding: 20px;
+    transition: opacity 0.5s ease;
 }
 
 .portal-card {
@@ -30,6 +32,7 @@ body {
     -webkit-backdrop-filter: blur(10px);
     border: 1px solid rgba(255, 255, 255, 0.2);
     transition: transform 0.3s ease, box-shadow 0.3s ease;
+    cursor: pointer;
 }
 
 .portal-card:hover {
@@ -47,4 +50,65 @@ body {
     font-size: 1.1em;
     font-weight: 400;
     opacity: 0.9;
+}
+
+/* Styles for Iframe and Nav Bar */
+.hidden {
+    display: none !important;
+}
+
+#iframe-container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: transparent; /* Removed background color */
+    display: flex;
+    flex-direction: column;
+    transition: opacity 0.5s ease;
+}
+
+#iframe-nav {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 15px;
+    background: rgba(0, 0, 0, 0.2);
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
+    gap: 20px;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.nav-button, #back-button {
+    padding: 10px 20px;
+    background-color: rgba(255, 255, 255, 0.1);
+    color: white;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 10px;
+    font-size: 1em;
+    font-family: 'Noto Sans KR', sans-serif;
+    cursor: pointer;
+    transition: background-color 0.3s ease, transform 0.2s ease;
+}
+
+.nav-button:hover, #back-button:hover {
+    background-color: rgba(255, 255, 255, 0.3);
+    transform: translateY(-2px);
+}
+
+.nav-button.active {
+    background-color: rgba(255, 255, 255, 0.4);
+    box-shadow: 0 0 15px rgba(255, 255, 255, 0.3);
+}
+
+#back-button {
+    background-color: rgba(0, 0, 0, 0.4);
+}
+
+#content-frame {
+    flex-grow: 1; /* Take remaining space */
+    border: none;
 }
