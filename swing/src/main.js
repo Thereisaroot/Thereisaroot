@@ -146,6 +146,7 @@ class Rope {
     this.phi = params.phi; // phase
     this.createdAt = params.createdAt || 0;
     this.id = params.id || Math.random().toString(36).slice(2);
+    this.breakAt = null; // time when rope will snap (if scheduled)
   }
   // θ(t) = A cos(ω t + φ)
   theta(t) {
@@ -176,6 +177,7 @@ class Player {
     this.angle = 0;
     this.mode = 'attached'; // 'attached' | 'free'
     this.rope = null; // current attached rope
+    this.sizeScale = 1;
   }
   airFlap() {
     // In-air flap: mainly vertical impulse, minimal horizontal change
@@ -211,23 +213,75 @@ class Player {
     g.translate(this.x, this.y);
     g.rotate(this.angle);
 
-    // Body
-    g.fillStyle = '#ffffff';
-    g.strokeStyle = '#e53d3d';
-    g.lineWidth = 2;
-    g.beginPath();
-    g.arc(0, 0, this.r, 0, Math.PI * 2);
-    g.fill();
-    g.stroke();
-
-    // Direction pointer (small triangle)
-    g.fillStyle = '#e53d3d';
-    g.beginPath();
-    g.moveTo(this.r * 0.6, 0);
-    g.lineTo(this.r * 0.1, -5);
-    g.lineTo(this.r * 0.1, 5);
-    g.closePath();
-    g.fill();
+    // Determine morph stage by savings total
+    const stage = (savings >= 100) ? 3 : (savings >= 50) ? 2 : (savings >= 10) ? 1 : 0;
+    const size = this.r * 2 * this.sizeScale;
+    if (stage === 0) {
+      // Body circle
+      g.fillStyle = '#ffffff';
+      g.strokeStyle = '#e53d3d';
+      g.lineWidth = 2;
+      g.beginPath();
+      g.arc(0, 0, this.r, 0, Math.PI * 2);
+      g.fill();
+      g.stroke();
+      // Direction pointer (small triangle)
+      g.fillStyle = '#e53d3d';
+      g.beginPath();
+      g.moveTo(this.r * 0.6, 0);
+      g.lineTo(this.r * 0.1, -5);
+      g.lineTo(this.r * 0.1, 5);
+      g.closePath();
+      g.fill();
+    } else {
+      // Rounded rect with segmented fill
+      const half = size / 2;
+      const rr = stage === 1 ? this.r * 0.7 : stage === 2 ? this.r * 0.35 : this.r * 0.12;
+      // Path helper
+      function roundedRectPath(ctx, x, y, w, h, r) {
+        const x0 = x - w/2, y0 = y - h/2;
+        const x1 = x + w/2, y1 = y + h/2;
+        const cr = Math.max(0, Math.min(r, Math.min(w, h) / 2));
+        ctx.beginPath();
+        ctx.moveTo(x0 + cr, y0);
+        ctx.lineTo(x1 - cr, y0);
+        ctx.quadraticCurveTo(x1, y0, x1, y0 + cr);
+        ctx.lineTo(x1, y1 - cr);
+        ctx.quadraticCurveTo(x1, y1, x1 - cr, y1);
+        ctx.lineTo(x0 + cr, y1);
+        ctx.quadraticCurveTo(x0, y1, x0, y1 - cr);
+        ctx.lineTo(x0, y0 + cr);
+        ctx.quadraticCurveTo(x0, y0, x0 + cr, y0);
+        ctx.closePath();
+      }
+      // Clip to body shape
+      roundedRectPath(g, 0, 0, size, size, rr);
+      g.save();
+      g.clip();
+      // Fill base
+      g.fillStyle = '#ffffff';
+      g.fillRect(-half, -half, size, size);
+      // Fill color segments depending on stage
+      const third = size / 3;
+      if (stage >= 1) {
+        g.fillStyle = '#e53d3d'; // red left third
+        g.fillRect(-half, -half, third, size);
+      }
+      if (stage >= 2) {
+        g.fillStyle = '#6aa8ff'; // blue middle
+        g.fillRect(-half + third, -half, third, size);
+      }
+      if (stage >= 3) {
+        g.fillStyle = '#ffa24d'; // orange right
+        g.fillRect(-half + third*2, -half, third, size);
+      }
+      g.restore();
+      // Outline
+      roundedRectPath(g, 0, 0, size, size, rr);
+      g.strokeStyle = '#e53d3d';
+      g.lineWidth = 2;
+      g.stroke();
+    }
 
     g.restore();
   }
@@ -244,6 +298,12 @@ let best = 0;
 let simTime = 0;
 const camera = { x: 0 };
 const SCREEN_TARGET_X = CONFIG.width * 0.22;
+const SAVINGS_KEY = 'webswing_savings_v1';
+let savings = 0; // persistent $ saved across runs
+let lastEarned = 0; // dollars earned in the most recent run
+const DEMO_DONE_KEY = 'webswing_demo_done_v1';
+let demoActive = false;
+let lastDemoLoss = false;
 
 // Ropes and spawning
 const ropes = [];
@@ -256,6 +316,11 @@ let usedAirJumps = 0; // how many flaps used since last detach
 let inputLockUntil = 0; // debounce to avoid immediate state-skip
 let gameOverLockUntil = 0; // ignore inputs briefly after game over
 let gameOverTimer = 0; // time spent in gameover
+// Item/box system
+const boxes = [];
+let pendingExtraJump = false;
+let pendingCatchR = 0;
+let pendingSizeScale = 0;
 
 // Simple particle system for catch effects
 const particles = [];
@@ -293,6 +358,25 @@ function spawnEffect(kind, x, y) {
         type: 'sparkle',
         twinkleFreq: 6 + Math.random() * 6,
         twinklePhase: Math.random() * Math.PI * 2,
+      });
+    }
+    return;
+  }
+  if (kind === 'snap') {
+    // Rope snap: quick small shards around tip
+    const shardColors = ['#ffffff'];
+    for (let i = 0; i < 16; i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const spd = 1.2 * (0.6 + Math.random() * 1.0) * 100;
+      particles.push({
+        x, y,
+        vx: Math.cos(ang) * spd,
+        vy: Math.sin(ang) * spd,
+        life: 0,
+        ttl: 0.5 + Math.random() * 0.4,
+        size: 1.6 * (0.8 + Math.random()*0.6),
+        color: shardColors[0],
+        type: 'shard',
       });
     }
     return;
@@ -497,8 +581,20 @@ function ensureRopesBuffered() {
   const edgeMax = camera.x + CONFIG.maxAnchorX;
   let count = ropes.filter(r => r.anchorX >= edgeMin && r.anchorX <= edgeMax).length;
   if (count < 1) {
+    const prev = ropes.length ? ropes[ropes.length - 1] : null;
     const r = planNextRope();
     ropes.push(r);
+    // Maybe spawn a box between prev and new rope if eligible
+    if (prev && savings >= 50 && Math.random() < 0.20) {
+      const midX = prev.anchorX + (r.anchorX - prev.anchorX) * 0.5;
+      // Place much higher, with vertical randomness
+      const minY = CONFIG.ceilingY + 60;
+      const maxY = Math.min(CONFIG.height * 0.38, (CONFIG.height - CONFIG.groundH) - 140);
+      const by = randRange(minY, maxY);
+      const kinds = ['extraJump', 'wideCatch', 'bigSize'];
+      const kind = kinds[Math.floor(Math.random() * kinds.length)];
+      boxes.push({ x: midX, y: by, kind, active: true, phase: Math.random() * Math.PI * 2 });
+    }
   }
   cleanupRopes();
 }
@@ -510,6 +606,12 @@ function cleanupRopes() {
     if (r0 === player.rope) break;
     if (r0.anchorX < camera.x - 200) ropes.shift(); else break;
   }
+  // Cleanup boxes behind camera
+  for (let i = boxes.length - 1; i >= 0; i--) {
+    if (boxes[i].x < camera.x - 60 || boxes[i].active === false) {
+      boxes.splice(i, 1);
+    }
+  }
 }
 
 function resetRun() {
@@ -519,11 +621,17 @@ function resetRun() {
   simTime = 0;
   camera.x = 0;
   ropes.length = 0;
+  boxes.length = 0;
   spawnInitialRope();
   ensureRopesBuffered();
   airJumpsLeft = 0;
   usedAirJumps = 0;
   particles.length = 0; // clear lingering effects on restart
+  lastEarned = 0;
+  pendingExtraJump = false;
+  pendingCatchR = 0;
+  pendingSizeScale = 0;
+  lastDemoLoss = false;
 }
 
 function drawBackground(g) {
@@ -649,8 +757,17 @@ function drawRope(g, rope) {
   const tx = tip.x - camera.x;
   const ty = tip.y;
   // Line
-  g.strokeStyle = '#b4c0d9';
-  g.lineWidth = 2;
+  let stroke = '#b4c0d9';
+  let lw = 2;
+  // Flashing warning if this rope is about to snap while attached
+  if (player.rope === rope && rope.breakAt) {
+    const rem = Math.max(0, rope.breakAt - simTime);
+    const pulse = (Math.sin(simTime * 12) * 0.5 + 0.5);
+    stroke = rem < 0.5 ? '#ff5a5a' : '#ffa64d';
+    lw = 2 + 1.5 * pulse;
+  }
+  g.strokeStyle = stroke;
+  g.lineWidth = lw;
   g.beginPath();
   g.moveTo(sx, sy);
   g.lineTo(tx, ty);
@@ -680,6 +797,17 @@ function drawRope(g, rope) {
     g.fillText(`d:${dist.toFixed(1)} r:${catchR.toFixed(1)}`, tx + 6, ty + 6);
     g.restore();
   }
+  // Snap warning icon near tip if scheduled
+  if (player.rope === rope && rope.breakAt) {
+    const rem = Math.max(0, rope.breakAt - simTime);
+    g.save();
+    g.fillStyle = rem < 0.5 ? '#ff5a5a' : '#ffa64d';
+    g.font = `10px "Press Start 2P", monospace`;
+    g.textAlign = 'center';
+    g.textBaseline = 'bottom';
+    g.fillText('!', tx, ty - 6);
+    g.restore();
+  }
 }
 
 function updateRun(dt) {
@@ -699,8 +827,16 @@ function updateRun(dt) {
       lastDetachedRope = player.rope;
       player.rope = null;
       catchLockUntil = simTime + 0.2; // 200ms lock
-      airJumpsLeft = 2; // allow up to 2 in-air flaps
+      airJumpsLeft = 2 + (pendingExtraJump ? 1 : 0); // allow up to 2(+1) flaps
       usedAirJumps = 0;
+      // consume pending size scale on detach
+      if (pendingSizeScale && pendingSizeScale > 0) {
+        player.sizeScale = pendingSizeScale;
+        pendingSizeScale = 0;
+      } else {
+        player.sizeScale = 1;
+      }
+      pendingExtraJump = false; // consume
     } else {
       // allow air flaps? keep as single impulse only when pressed; optional
       if (airJumpsLeft > 0) {
@@ -715,8 +851,39 @@ function updateRun(dt) {
   ensureRopesBuffered();
   cleanupRopes();
 
+  // Box pickup
+  for (const b of boxes) {
+    if (!b.active) continue;
+    const wobble = Math.sin(simTime * 3 + (b.phase || 0)) * 6;
+    const dx = b.x - player.x;
+    const dy = (b.y + wobble) - player.y;
+    if (Math.hypot(dx, dy) <= 22) {
+      // collect
+      b.active = false;
+      spawnEffect('burst', b.x, b.y);
+      if (b.kind === 'extraJump') pendingExtraJump = true;
+      else if (b.kind === 'wideCatch') pendingCatchR = 50;
+      else if (b.kind === 'bigSize') pendingSizeScale = 1.5;
+    }
+  }
+
   // Update player
   player.update(dt, simTime);
+
+  // If rope is scheduled to snap and player is still attached, enforce snap after timer
+  if (player.mode === 'attached' && player.rope && player.rope.breakAt && simTime >= player.rope.breakAt) {
+    const tipNow = player.rope.tip(simTime);
+    // Force detach without upward impulse (penalty)
+    player.mode = 'free';
+    // carry minimal forward from tip, no extra upward boost
+    player.vx = Math.max(CONFIG.minVx, Math.min(CONFIG.maxVx, (tipNow.vx || 0) + CONFIG.baseVx * 0.2));
+    player.vy = tipNow.vy;
+    spawnEffect('snap', tipNow.x, tipNow.y);
+    lastDetachedRope = player.rope;
+    player.rope.breakAt = null;
+    player.rope = null;
+    catchLockUntil = simTime + 0.1;
+  }
 
   // Update effects
   updateParticles(dt);
@@ -740,7 +907,7 @@ function updateRun(dt) {
       const bx = tip.x, by = tip.y;
       const dx = bx - player.x;
       const dy = by - player.y;
-      const catchR = CONFIG.catchBase;
+      const catchR = pendingCatchR > 0 ? pendingCatchR : CONFIG.catchBase;
       if (Math.hypot(dx, dy) <= catchR) {
         // Attach
         player.mode = 'attached';
@@ -750,10 +917,24 @@ function updateRun(dt) {
         const kind = (gained === 3) ? 'big' : (gained === 2) ? 'medium' : 'small';
         const tipNow = rope.tip(simTime);
         spawnEffect(kind, tipNow.x, tipNow.y);
+        // Schedule snap if savings milestone reached (>= $10): 10% chance
+        if (savings >= 10) {
+          if (Math.random() < 0.10) {
+            rope.breakAt = simTime + 1.0; // snap after 1s unless player jumps
+          } else {
+            rope.breakAt = null;
+          }
+        } else {
+          rope.breakAt = null;
+        }
         ensureRopesBuffered();
         lastDetachedRope = null;
         airJumpsLeft = 0; // reset jump count on attach
         usedAirJumps = 0;
+        // reset size to normal on attach
+        player.sizeScale = 1;
+        // consume pending catch radius if used
+        if (pendingCatchR > 0) pendingCatchR = 0;
         break;
       }
     }
@@ -765,6 +946,23 @@ function updateRun(dt) {
     player.y = groundY - player.r;
     // Ground break effect at impact
     spawnEffect('break', player.x, groundY);
+    // Savings: earn $1 per point beyond 5 this run
+    const earned = Math.max(0, Math.floor(score - 5));
+    lastEarned = earned;
+    if (earned > 0) {
+      savings += earned;
+      try { localStorage.setItem(SAVINGS_KEY, String(savings)); } catch(_){}
+    }
+    // Demo rule: if demo active and savings exceeded $110, on game over you lose everything
+    if (demoActive && savings > 110) {
+      lastDemoLoss = true;
+      demoActive = false;
+      savings = 0;
+      try {
+        localStorage.setItem(SAVINGS_KEY, '0');
+        localStorage.setItem(DEMO_DONE_KEY, '1');
+      } catch(_){}
+    }
     best = Math.max(best, score);
     State.current = 'gameover';
     // Clear current input edges and lock inputs briefly to avoid instant restart
@@ -772,6 +970,11 @@ function updateRun(dt) {
     Input.down = false; Input.justPressed = false;
     gameOverLockUntil = simTime + 0.2;
     gameOverTimer = 0;
+    // Clear pending item effects on game over
+    pendingExtraJump = false;
+    pendingCatchR = 0;
+    pendingSizeScale = 0;
+    player.sizeScale = 1;
   }
 }
 
@@ -779,6 +982,29 @@ function renderRun(g) {
   drawBackground(g);
   // Ropes behind player
   for (let i = 0; i < ropes.length; i++) drawRope(g, ropes[i]);
+  // Draw boxes
+  for (const b of boxes) {
+    const sx = b.x - camera.x;
+    const wobble = Math.sin(simTime * 3 + (b.phase || 0)) * 6;
+    const sy = b.y + wobble;
+    g.save();
+    const size = 26;
+    g.fillStyle = '#334d6e';
+    g.strokeStyle = '#c8d6f0';
+    g.lineWidth = 2;
+    g.beginPath();
+    g.rect(sx - size/2, sy - size/2, size, size);
+    g.fill();
+    g.stroke();
+    // icon
+    g.fillStyle = '#fff';
+    g.font = `11px "Press Start 2P", monospace`;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    const label = b.kind === 'extraJump' ? 'J' : (b.kind === 'wideCatch' ? 'R' : 'S');
+    g.fillText(label, sx, sy + 1);
+    g.restore();
+  }
   // Draw player with camera offset
   ctx.save();
   ctx.translate(-camera.x, 0);
@@ -789,7 +1015,8 @@ function renderRun(g) {
     g.strokeStyle = 'rgba(255,105,180,0.5)';
     g.lineWidth = 1;
     g.beginPath();
-    g.arc(player.x, player.y, CONFIG.catchBase, 0, Math.PI*2);
+    const effR = pendingCatchR > 0 ? pendingCatchR : CONFIG.catchBase;
+    g.arc(player.x, player.y, effR, 0, Math.PI*2);
     g.fill();
     g.stroke();
     g.restore();
@@ -805,6 +1032,13 @@ function renderRun(g) {
   g.font = `12px "Press Start 2P", monospace`;
   g.fillText(`SCORE ${score}`, 12, 10);
   g.fillText(`BEST ${best}`, 12, 28);
+  g.textAlign = 'right';
+  g.fillText(`SAV $${savings}`, CONFIG.width - 12, 10);
+  // Pending item indicators
+  g.textAlign = 'right';
+  g.font = `10px "Press Start 2P", monospace`;
+  const itemText = `${pendingExtraJump ? '+J ' : ''}${pendingCatchR ? 'R50 ' : ''}${pendingSizeScale ? 'S+ ' : ''}`.trim();
+  if (itemText) g.fillText(itemText, CONFIG.width - 12, 28);
 }
 
 function updateGameOver(dt) {
@@ -823,9 +1057,36 @@ function updateGameOver(dt) {
 function renderGameOver(g) {
   drawBackground(g);
   drawParticles(g);
-  drawCenteredText(g, 'GAME OVER', CONFIG.height * 0.36, 18, '#ff6666');
-  drawCenteredText(g, `SCORE ${score}`, CONFIG.height * 0.46, 12);
-  drawCenteredText(g, 'PRESS TO RETRY', CONFIG.height * 0.56, 12, '#b4c0d9');
+  if (lastDemoLoss) {
+    drawCenteredText(g, 'GAME OVER', CONFIG.height * 0.30, 18, '#ff6666');
+    g.fillStyle = '#ffffff';
+    g.textAlign = 'center';
+    g.textBaseline = 'top';
+    g.font = `12px "Press Start 2P", monospace`;
+    g.fillText('YOU LOSE EVERYTHING.', CONFIG.width / 2, CONFIG.height * 0.40);
+    g.fillText('YOU WILL BECOME A SMALL EGG.', CONFIG.width / 2, CONFIG.height * 0.46);
+  } else {
+    drawCenteredText(g, 'GAME OVER', CONFIG.height * 0.30, 18, '#ff6666');
+    drawCenteredText(g, `SCORE ${score}`, CONFIG.height * 0.40, 12);
+
+    // Savings summary and next target
+    g.fillStyle = '#ffffff';
+    g.textAlign = 'center';
+    g.textBaseline = 'top';
+    const y0 = CONFIG.height * 0.46;
+    const nextTarget = (savings < 10) ? 10 : (savings < 50) ? 50 : (savings < 100) ? 100 : 100;
+    const nextText = (savings >= 100) ? 'All targets reached!' : `Next Target: $${nextTarget}`;
+    const earnedText = (lastEarned > 0) ? `Earned this run: $${lastEarned}` : 'Earn dollars by scoring over 5';
+    // Next Target line with Score font size (12px)
+    g.font = `12px "Press Start 2P", monospace`;
+    g.fillText(nextText, CONFIG.width / 2, y0);
+    // Other lines with default small font (10px)
+    g.font = `10px "Press Start 2P", monospace`;
+    g.fillText(`Savings: $${savings}`, CONFIG.width / 2, y0 + 32);
+    g.fillText(earnedText, CONFIG.width / 2, y0 + 64);
+  }
+
+  drawCenteredText(g, 'CLICK / SPACE TO RETRY', CONFIG.height * 0.74, 10, '#b4c0d9');
 }
 
 // Main loop with fixed timestep physics
@@ -835,6 +1096,22 @@ const dt = 1 / 120; // physics step
 
 async function start() {
   await Fonts.load();
+  // Load savings from localStorage
+  try {
+    const raw = localStorage.getItem(SAVINGS_KEY);
+    if (raw) {
+      const val = parseInt(raw, 10);
+      if (!Number.isNaN(val)) savings = Math.max(0, val);
+    }
+    const demoDone = localStorage.getItem(DEMO_DONE_KEY) === '1';
+    if (!demoDone) {
+      demoActive = true;
+      if (savings < 100) {
+        savings = 100;
+        localStorage.setItem(SAVINGS_KEY, String(savings));
+      }
+    }
+  } catch (_) {}
   requestAnimationFrame(tick);
 }
 
