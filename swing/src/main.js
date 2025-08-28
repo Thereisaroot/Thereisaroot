@@ -253,6 +253,9 @@ let lastDetachedRope = null; // rope reference to avoid instant re-catch
 let DEBUG = false;
 let airJumpsLeft = 0; // limit to 2 while free
 let usedAirJumps = 0; // how many flaps used since last detach
+let inputLockUntil = 0; // debounce to avoid immediate state-skip
+let gameOverLockUntil = 0; // ignore inputs briefly after game over
+let gameOverTimer = 0; // time spent in gameover
 
 // Simple particle system for catch effects
 const particles = [];
@@ -519,6 +522,8 @@ function resetRun() {
   spawnInitialRope();
   ensureRopesBuffered();
   airJumpsLeft = 0;
+  usedAirJumps = 0;
+  particles.length = 0; // clear lingering effects on restart
 }
 
 function drawBackground(g) {
@@ -556,6 +561,8 @@ function guideButtonRect() {
 function pointInRect(px, py, r) { return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h; }
 
 function updateIntro(dt) {
+  // Debounce to ensure we show intro at least a moment after transitions
+  if (simTime < inputLockUntil) { UI.reset && UI.reset(); return; }
   const btn = guideButtonRect();
   if (showGuide) {
     if (UI.clicked || UI.keyPressed === 'Escape' || UI.keyPressed === 'Space') {
@@ -760,6 +767,11 @@ function updateRun(dt) {
     spawnEffect('break', player.x, groundY);
     best = Math.max(best, score);
     State.current = 'gameover';
+    // Clear current input edges and lock inputs briefly to avoid instant restart
+    if (typeof UI !== 'undefined') UI.reset();
+    Input.down = false; Input.justPressed = false;
+    gameOverLockUntil = simTime + 0.2;
+    gameOverTimer = 0;
   }
 }
 
@@ -798,8 +810,13 @@ function renderRun(g) {
 function updateGameOver(dt) {
   // allow particles to continue animating on game over
   updateParticles(dt);
-  if (Input.anyPressed()) {
-    State.current = 'intro';
+  // advance gameover local timer
+  gameOverTimer += dt;
+  // Direct restart on input; avoid any intro flicker
+  if (gameOverTimer >= 0.2 && (Input.anyPressed() || (typeof UI !== 'undefined' && (UI.clicked || UI.keyPressed === 'Space' || UI.keyPressed === 'Escape')))) {
+    if (typeof UI !== 'undefined') UI.reset();
+    Input.down = false; Input.justPressed = false;
+    resetRun();
   }
 }
 
