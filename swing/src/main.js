@@ -386,7 +386,8 @@ class Player {
       g.save();
       g.globalAlpha = Math.max(0.1, Math.min(0.5, base));
       g.fillStyle = '#ffffff';
-      const gr = (this.r * this.sizeScale) * ((level > 1) ? 1.3 : 1.0) * 1.6;
+      const bigScale = 1 + 0.05 * (shopInv.bigLevel || 0);
+      const gr = (this.r * this.sizeScale * bigScale) * ((level > 1) ? 1.3 : 1.0) * 1.6;
       g.beginPath();
       g.arc(0, 0, gr, 0, Math.PI * 2);
       g.fill();
@@ -394,7 +395,8 @@ class Player {
     }
     if (level === 1) {
       // Pure white circle (egg)
-      const r = this.r * this.sizeScale * levelScale;
+      const bigScale = 1 + 0.05 * (shopInv.bigLevel || 0);
+      const r = this.r * this.sizeScale * bigScale * levelScale;
       g.fillStyle = '#ffffff';
       g.beginPath();
       g.arc(0, 0, r, 0, Math.PI * 2);
@@ -417,7 +419,8 @@ class Player {
       // Shape mapping: L2-4 triangle (3), L5-7 square (4), L8-10 pentagon (5), ...
       const groupIdx = Math.floor((level - 2) / 3); // 0 for L2-4, 1 for L5-7, ...
       const sides = 3 + groupIdx;
-      const r = this.r * this.sizeScale * levelScale;
+      const bigScale = 1 + 0.05 * (shopInv.bigLevel || 0);
+      const r = this.r * this.sizeScale * bigScale * levelScale;
       const rot = Math.PI / 10; // slight rotation
       // Clip to polygon
       g.save();
@@ -444,7 +447,8 @@ class Player {
     if (shopInv.budsLevel && shopInv.budsLevel > 0 && level > 1) {
       const groupIdx = Math.floor((level - 2) / 3);
       const sides = 3 + Math.max(0, groupIdx);
-      const baseR = this.r * this.sizeScale * ((level > 1) ? 1.3 : 1.0);
+      const bigScale = 1 + 0.05 * (shopInv.bigLevel || 0);
+      const baseR = this.r * this.sizeScale * bigScale * ((level > 1) ? 1.3 : 1.0);
       const childR = baseR * 0.40;
       const rot2 = Math.PI / 10; // body polygon rotation offset
       const maxBuds = Math.min(sides, shopInv.budsLevel);
@@ -495,7 +499,8 @@ class Player {
 function playerCollisionRadius() {
   const level = getLevelByExp(exp);
   const levelScale = (level > 1) ? 1.3 : 1.0;
-  return player.r * player.sizeScale * levelScale;
+  const bigScale = 1 + 0.05 * (shopInv.bigLevel || 0);
+  return player.r * player.sizeScale * bigScale * levelScale;
 }
 
 // Simple game state machine: intro -> run -> gameover -> shop
@@ -537,9 +542,13 @@ let levelUpPopupTimer = 0;
 let shopScroll = 0;
 let shopDrag = { active: false, y0: 0, scroll0: 0 };
 let shopConfirm = null; // { id, price }
+let shopMsg = null;      // string message inside confirm (e.g., insufficient funds)
+let shopMsgTimer = 0;    // seconds until message auto-dismiss
+let shopHelp = false;    // show help popup under SHOP
+let lastShopHelpRect = null; // cached '?' button rect computed during render
 
 // Shop inventory
-let shopInv = { glow: false, budsLevel: 0, plusJump: false, fly: false };
+let shopInv = { glow: false, budsLevel: 0, plusJump: false, fly: false, bigLevel: 0 };
 function loadShopInv() {
   try {
     const raw = localStorage.getItem(SHOP_INV_KEY);
@@ -714,7 +723,7 @@ function deg2rad(d) { return (d * Math.PI) / 180; }
 
 // Effective scaling for level 1 ease (rope position/length/spacing only)
 function lv1Scale() {
-  return getLevelByExp(exp) === 1 ? 0.7 : 1.0;
+  return getLevelByExp(exp) === 1 ? 0.8 : 1.0;
 }
 
 function spawnInitialRope() {
@@ -992,7 +1001,7 @@ function renderIntro(g, t) {
       'Game Guide',
       '',
       '- Go as far as possible',
-      '- Use up to 3 jumps each run',
+      '- Use multiple jumps each run',
       '- Catch the rope tip to attach',
     ];
     g.fillStyle = '#ffffff';
@@ -1377,7 +1386,7 @@ function updateGameOver(dt) {
     const lvl = getLevelByExp(exp);
     let intoShop = false;
     if (typeof UI !== 'undefined' && UI.clicked && lvl >= 2) {
-      const bw = 86, bh = 22;
+      const bw = 86, bh = 44;
       const bx = (CONFIG.width - bw) / 2;
       const by = CONFIG.height * 0.80;
       if (UI.mx >= bx && UI.mx <= bx + bw && UI.my >= by && UI.my <= by + bh) intoShop = true;
@@ -1401,22 +1410,22 @@ function renderGameOver(g) {
   drawBackground(g);
   drawParticles(g);
   if (lastDemoLoss) {
-    drawCenteredText(g, 'GAME OVER', CONFIG.height * 0.30, 18, '#ff6666');
+    drawCenteredText(g, 'GAME OVER', CONFIG.height * 0.30 - 20, 18, '#ff6666');
     g.fillStyle = '#ffffff';
     g.textAlign = 'center';
     g.textBaseline = 'top';
     g.font = `12px "Press Start 2P", monospace`;
-    g.fillText('YOU LOSE EVERYTHING.', CONFIG.width / 2, CONFIG.height * 0.40);
-    g.fillText('YOU WILL BECOME A SMALL EGG.', CONFIG.width / 2, CONFIG.height * 0.46);
+    g.fillText('YOU LOSE EVERYTHING.', CONFIG.width / 2, CONFIG.height * 0.40 - 20);
+    g.fillText('YOU WILL BECOME A SMALL EGG.', CONFIG.width / 2, CONFIG.height * 0.46 - 20);
   } else {
-    drawCenteredText(g, 'GAME OVER', CONFIG.height * 0.30, 18, '#ff6666');
-    drawCenteredText(g, `SCORE ${score}`, CONFIG.height * 0.40, 12);
+    drawCenteredText(g, 'GAME OVER', CONFIG.height * 0.30 - 20, 18, '#ff6666');
+    drawCenteredText(g, `SCORE ${score}`, CONFIG.height * 0.40 - 20, 12);
 
     // Savings summary and next target
     g.fillStyle = '#ffffff';
     g.textAlign = 'center';
     g.textBaseline = 'top';
-    const y0 = CONFIG.height * 0.46;
+    const y0 = CONFIG.height * 0.46 - 20;
     function nextLevelThreshold(val) {
       for (let i = 0; i < LEVEL_THRESHOLDS.length; i++) {
         if (val < LEVEL_THRESHOLDS[i]) return LEVEL_THRESHOLDS[i];
@@ -1445,7 +1454,7 @@ function renderGameOver(g) {
   // Level-up popup when level increased this game over
   if (gameOverLevelUp) {
     const cx = CONFIG.width / 2;
-    const cy = CONFIG.height * 0.22;
+    const cy = CONFIG.height * 0.22 - 20;
     g.fillStyle = '#ffffff';
     g.textAlign = 'center';
     g.textBaseline = 'middle';
@@ -1457,13 +1466,13 @@ function renderGameOver(g) {
   if (rem > 0) {
     // Countdown until retry is enabled
     const sec = Math.ceil(rem);
-    drawCenteredText(g, `RETRY IN ${sec}`, CONFIG.height * 0.74, 10, '#b4c0d9');
+    drawCenteredText(g, `RETRY IN ${sec}`, CONFIG.height * 0.74 - 20, 10, '#b4c0d9');
   } else {
-    drawCenteredText(g, 'CLICK / SPACE TO RETRY', CONFIG.height * 0.74, 10, '#b4c0d9');
+    drawCenteredText(g, 'CLICK / SPACE TO RETRY', CONFIG.height * 0.74 - 20, 10, '#b4c0d9');
     // Shop button (Level >= 2)
     const lvl = getLevelByExp(exp);
     if (lvl >= 2) {
-      const bw = 86, bh = 22;
+      const bw = 86, bh = 44;
       const bx = (CONFIG.width - bw) / 2;
       const by = CONFIG.height * 0.80;
       g.fillStyle = '#22334a';
@@ -1572,10 +1581,11 @@ start();
 // - Then implement multi-rope spawner with reachability guarantee.
 // Shop item definitions
 const SHOP_ITEMS = [
-  { id: 'glow', name: 'Glow', type: 'single', price: 10, minLevel: 2 },
-  { id: 'buds', name: 'Buds', type: 'level', maxLevel: 5, price: 1, minLevel: 2 },
-  { id: 'plusjump', name: '+Jump', type: 'single', price: 10, minLevel: 2 },
-  { id: 'fly', name: 'Fly', type: 'single', price: 10, minLevel: 2 },
+  { id: 'glow', name: 'Glow', type: 'single', price: 20, minLevel: 2 },
+  { id: 'buds', name: 'Buds', type: 'level', maxLevel: 5, price: 10, minLevel: 2 },
+  { id: 'plusjump', name: '+Jump', type: 'single', price: 100, minLevel: 2 },
+  { id: 'fly', name: 'Fly', type: 'single', price: 200, minLevel: 2 },
+  { id: 'big', name: 'Big', type: 'level', price: 20, minLevel: 5 },
 ];
 
 function getItemLevel(it) {
@@ -1583,6 +1593,7 @@ function getItemLevel(it) {
   if (it.id === 'glow') return shopInv.glow ? 1 : 0;
   if (it.id === 'plusjump') return shopInv.plusJump ? 1 : 0;
   if (it.id === 'fly') return shopInv.fly ? 1 : 0;
+  if (it.id === 'big') return shopInv.bigLevel || 0;
   return 0;
 }
 function currentBodySides() {
@@ -1594,10 +1605,22 @@ function currentBodySides() {
 function isItemSoldOut(it) {
   if (it.type === 'single') return getItemLevel(it) >= 1;
   if (it.type === 'level') {
-    const maxLv = currentBodySides();
+    // dynamic caps by item
+    let maxLv;
+    if (it.id === 'buds') maxLv = currentBodySides();
+    else if (it.id === 'big') maxLv = getLevelByExp(exp);
+    else maxLv = it.maxLevel || 1;
     return getItemLevel(it) >= maxLv;
   }
   return false;
+}
+
+function nextPriceForItem(it) {
+  if (it.type !== 'level') return it.price;
+  const lvl = getItemLevel(it);
+  // Big: 20$, 30$, 40$... per purchase; Buds: flat per level
+  if (it.id === 'big') return 20 + 10 * lvl;
+  return it.price;
 }
 
 function shopGrid() {
@@ -1609,11 +1632,24 @@ function shopGrid() {
   return { cols, cellW, cellH, marginX, top };
 }
 
+function shopHelpRect() { return lastShopHelpRect; }
+
+function itemDescription(id) {
+  if (id === 'Fly') return 'You can fly.';
+  if (id === 'fly') return 'You can fly.';
+  if (id === 'plusjump' || id === '+Jump') return 'You can jump more.';
+  if (id === 'glow' || id === 'Glow') return 'Emits a soft glow.';
+  if (id === 'buds' || id === 'Buds') return 'Adds small trailing shapes.';
+  if (id === 'big' || id === 'Big') return 'Grows by 5% per level.';
+  return 'No description.';
+}
+
 function renderShop(g) {
   // backdrop
   g.fillStyle = 'rgba(0,0,0,0.6)';
   g.fillRect(0, 0, CONFIG.width, CONFIG.height);
-  drawCenteredText(g, 'SHOP', CONFIG.height * 0.12, 14);
+  const titleY = CONFIG.height * 0.12;
+  drawCenteredText(g, 'SHOP', titleY, 14);
   // Show SAV at top-right, two lines below the SHOP title
   {
     const headerY = CONFIG.height * 0.12;
@@ -1622,6 +1658,28 @@ function renderShop(g) {
     g.textBaseline = 'top';
     g.font = `10px "Press Start 2P", monospace`;
     g.fillText(`SAV: $${savings}`, CONFIG.width - 12, headerY + 24);
+  }
+  // Help button '?' positioned 20px to the right of the SHOP title
+  {
+    // measure SHOP text width to place the '?' with 20px gap
+    g.font = `14px "Press Start 2P", monospace`;
+    const tw = g.measureText('SHOP').width;
+    const cx = CONFIG.width / 2;
+    const left = cx - tw / 2;
+    const w = 20, h = 20;
+    const x = Math.floor(left + tw + 20);
+    const y = Math.floor(titleY - h / 2);
+    lastShopHelpRect = { x, y, w, h };
+    g.fillStyle = '#22334a';
+    g.strokeStyle = '#b4c0d9';
+    g.lineWidth = 2;
+    g.fillRect(x, y, w, h);
+    g.strokeRect(x, y, w, h);
+    g.fillStyle = '#ffffff';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.font = `10px "Press Start 2P", monospace`;
+    g.fillText('?', x + w/2, y + h/2 + 1);
   }
   const { cols, cellW, cellH, marginX, top } = shopGrid();
   const gap = 8;
@@ -1656,9 +1714,10 @@ function renderShop(g) {
     g.textBaseline = 'top';
     g.font = `10px "Press Start 2P", monospace`;
     g.fillText(items[i].name, x + 14, y + 6);
-    // 2) Price (right aligned)
+    // 2) Price (right aligned), dynamic for level-type
     g.textAlign = 'right';
-    g.fillText(`$${items[i].price}`, x + cellW - 14, y + 20);
+    const ptext = `$${nextPriceForItem(items[i])}`;
+    g.fillText(ptext, x + cellW - 14, y + 20);
     // 3) Icon (center)
     g.textAlign = 'center';
     g.textBaseline = 'middle';
@@ -1693,9 +1752,9 @@ function renderShop(g) {
   }
   g.restore();
   // Start button
-  const bw = 110, bh = 24;
+  const bw = 110, bh = 48;
   const bx = (CONFIG.width - bw) / 2;
-  const by = CONFIG.height - 42;
+  const by = CONFIG.height - 72; // lift by ~30px
   g.fillStyle = '#22334a';
   g.strokeStyle = '#b4c0d9';
   g.lineWidth = 2;
@@ -1724,28 +1783,120 @@ function renderShop(g) {
     g.font = `12px "Press Start 2P", monospace`;
     const itName = (SHOP_ITEMS.find(x=>x.id===shopConfirm.id)?.name || shopConfirm.id).toString();
     g.fillText(`Buy ${itName} for $${shopConfirm.price}?`, px + pw/2, py + 10);
-    // Current SAV at top-right inside popup
-    g.textAlign = 'right';
-    g.font = `10px "Press Start 2P", monospace`;
-    g.fillText(`SAV: $${savings}`, px + pw - 10, py + 10);
+    // Current SAV centered two lines below, font 2px smaller
+    g.textAlign = 'center';
+    g.font = `8px "Press Start 2P", monospace`;
+    g.fillText(`SAV: $${savings}`, px + pw/2, py + 38);
+    // Message (e.g., insufficient funds)
+    if (shopMsg && shopMsgTimer > 0) {
+      g.textAlign = 'center';
+      g.fillStyle = '#ff6666';
+      g.font = `10px "Press Start 2P", monospace`;
+      g.fillText(shopMsg, px + pw/2, py + 50);
+      g.fillStyle = '#ffffff';
+    }
     // buttons
     const bw2 = 78, bh2 = 26;
     const gapB = 12;
     const by2 = py + ph - 36;
     const bx2 = px + pw/2 - bw2 - gapB;
     const bx3 = px + pw/2 + gapB;
-    g.fillStyle = '#22334a'; g.fillRect(bx2, by2, bw2, bh2); g.strokeRect(bx2, by2, bw2, bh2);
-    g.fillStyle = '#22334a'; g.fillRect(bx3, by2, bw2, bh2); g.strokeRect(bx3, by2, bw2, bh2);
+    // Buttons (YES/NO). If showing message (e.g., insufficient), disable YES and keep NO active
+    const showingMsg = !!(shopMsg && shopMsgTimer > 0);
+    // YES button
+    g.fillStyle = showingMsg ? '#1a2739' : '#22334a';
+    g.fillRect(bx2, by2, bw2, bh2); g.strokeRect(bx2, by2, bw2, bh2);
+    // NO button
+    g.fillStyle = '#22334a';
+    g.fillRect(bx3, by2, bw2, bh2); g.strokeRect(bx3, by2, bw2, bh2);
     // button labels centered
-    g.fillStyle = '#ffffff';
+    g.fillStyle = showingMsg ? '#8a98ad' : '#ffffff';
     g.textBaseline = 'middle';
     g.font = `10px "Press Start 2P", monospace`;
     g.fillText('YES', bx2 + bw2/2, by2 + bh2/2);
+    g.fillStyle = '#ffffff';
     g.fillText('NO', bx3 + bw2/2, by2 + bh2/2);
+  }
+
+  // Help popup (shows only visible items' descriptions)
+  if (shopHelp) {
+    g.fillStyle = 'rgba(0,0,0,0.55)';
+    g.fillRect(0, 0, CONFIG.width, CONFIG.height);
+    const pw = CONFIG.width * 0.86, ph = Math.min(220, CONFIG.height * 0.55);
+    const px = (CONFIG.width - pw)/2, py = CONFIG.height * 0.22;
+    g.fillStyle = '#0f1a2a';
+    g.strokeStyle = '#b4c0d9';
+    g.lineWidth = 2;
+    g.fillRect(px, py, pw, ph);
+    g.strokeRect(px, py, pw, ph);
+    g.fillStyle = '#ffffff';
+    g.textAlign = 'left';
+    g.textBaseline = 'top';
+    g.font = `10px "Press Start 2P", monospace`;
+    const lvl = getLevelByExp(exp);
+    const items = SHOP_ITEMS.filter(it => (it.minLevel || 1) <= lvl);
+    // dynamic name column width based on visible names
+    const leftPad = 10, rightPad = 10, gap = 10;
+    let nameColW = 0;
+    for (const it of items) {
+      const w = g.measureText(it.name || it.id).width;
+      nameColW = Math.max(nameColW, w);
+    }
+    nameColW = Math.max(40, Math.min(90, Math.floor(nameColW + 6)));
+    const nameRightX = px + leftPad + nameColW;
+    const descX = nameRightX + gap;
+    const descMaxW = px + pw - rightPad - descX;
+    function wrapText(ctx, text, maxW) {
+      const words = String(text).split(' ');
+      const lines = [];
+      let line = '';
+      for (const w of words) {
+        const test = line ? (line + ' ' + w) : w;
+        if (ctx.measureText(test).width <= maxW) line = test; else {
+          if (line) lines.push(line);
+          line = w;
+        }
+      }
+      if (line) lines.push(line);
+      return lines;
+    }
+    let yy = py + 12;
+    for (const it of items) {
+      const name = it.name || it.id;
+      const descLinesBase = (it.id === 'buds' || name === 'Buds')
+        ? ['Adds small trailing shapes.', 'Attached to vertices.']
+        : [itemDescription(it.id || name)];
+      const wrapped = [];
+      for (const line of descLinesBase) {
+        const ws = wrapText(g, line, descMaxW);
+        for (const l of ws) wrapped.push(l);
+      }
+      // draw name (right aligned)
+      g.textAlign = 'right';
+      g.fillText(name, nameRightX, yy);
+      // draw description (wrapped)
+      g.textAlign = 'left';
+      for (let j = 0; j < wrapped.length; j++) {
+        g.fillText(wrapped[j], descX, yy + j * 14);
+      }
+      yy += Math.max(14, wrapped.length * 14) + 6;
+      if (yy > py + ph - 26) break;
+    }
+    g.textAlign = 'center';
+    g.fillStyle = '#b4c0d9';
+    g.fillText('Click anywhere to close', px + pw/2, py + ph - 18);
   }
 }
 
 function updateShop(dt) {
+  // auto-dismiss message after timer
+  if (shopMsgTimer > 0) {
+    shopMsgTimer = Math.max(0, shopMsgTimer - dt);
+    if (shopMsgTimer === 0) {
+      shopMsg = null;
+      shopConfirm = null;
+    }
+  }
   // handle drag scroll
   if (Input.down && !shopDrag.active && UI.clicked) {
     shopDrag.active = true; shopDrag.y0 = UI.my; shopDrag.scroll0 = shopScroll;
@@ -1754,6 +1905,14 @@ function updateShop(dt) {
   // We don't have continuous move tracking; simulate with clicks only for now
   // Click handling
   if (Input.anyPressed() && typeof UI !== 'undefined' && UI.clicked) {
+    // Help popup toggle/close
+    const hr = shopHelpRect();
+    if (shopHelp) {
+      shopHelp = false; UI.reset(); return;
+    }
+    if (hr && UI.mx>=hr.x && UI.mx<=hr.x+hr.w && UI.my>=hr.y && UI.my<=hr.y+hr.h) {
+      shopHelp = true; UI.reset(); return;
+    }
     // If confirm open, handle YES/NO
     if (shopConfirm) {
       const pw = CONFIG.width * 0.88, ph = 112;
@@ -1761,15 +1920,20 @@ function updateShop(dt) {
       const bw2 = 78, bh2 = 26; const by2 = py + ph - 36;
       const gapB = 12; const bx2 = px + pw/2 - bw2 - gapB; const bx3 = px + pw/2 + gapB;
       const x = UI.mx, y = UI.my;
-      if (x>=bx2 && x<=bx2+bw2 && y>=by2 && y<=by2+bh2) {
-        // YES
+      const showingMsg = !!(shopMsg && shopMsgTimer > 0);
+      if (!showingMsg && x>=bx2 && x<=bx2+bw2 && y>=by2 && y<=by2+bh2) {
+        // YES (only when not showing message)
         tryPurchase(shopConfirm.id);
+        // If purchase succeeded, tryPurchase closes confirm; else message set
+      } else if (x>=bx3 && x<=bx3+bw2 && y>=by2 && y<=by2+bh2) {
+        // NO closes immediately
+        shopConfirm = null; shopMsg = null; shopMsgTimer = 0; UI.reset(); return;
       }
-      // NO or outside
-      shopConfirm = null; UI.reset(); return;
+      UI.reset();
+      return;
     }
     // Start button
-    const bw = 110, bh = 24; const bx = (CONFIG.width - bw)/2; const by = CONFIG.height - 42;
+    const bw = 110, bh = 48; const bx = (CONFIG.width - bw)/2; const by = CONFIG.height - 72;
     if (UI.mx>=bx && UI.mx<=bx+bw && UI.my>=by && UI.my<=by+bh) {
       UI.reset();
       resetRun();
@@ -1788,9 +1952,9 @@ function updateShop(dt) {
       const w = cellW - 12; const h = cellH;
       if (UI.mx>=x && UI.mx<=x+w && UI.my>=y && UI.my<=y+h) {
         // open confirm if purchasable
-        const it = items[i];
+    const it = items[i];
         if (isItemSoldOut(it)) { UI.reset(); return; }
-        const price = it.type === 'level' ? it.price : it.price;
+        const price = nextPriceForItem(it);
         shopConfirm = { id: it.id, price };
         UI.reset();
         return;
@@ -1804,7 +1968,11 @@ function tryPurchase(id) {
   if (!it) return;
   let price = it.price;
   // enforce affordability
-  if (savings < price) { shopConfirm = null; return; }
+  if (savings < price) {
+    shopMsg = 'Insufficient funds';
+    shopMsgTimer = 2.0;
+    return;
+  }
   if (isItemSoldOut(it)) { shopConfirm = null; return; }
   if (id === 'glow') {
     savings -= price; shopInv.glow = true; saveShopInv();
@@ -1815,6 +1983,14 @@ function tryPurchase(id) {
     savings -= price; shopInv.plusJump = true; saveShopInv();
   } else if (id === 'fly') {
     savings -= price; shopInv.fly = true; saveShopInv();
+  } else if (id === 'big') {
+    const maxLv = getLevelByExp(exp);
+    const current = shopInv.bigLevel || 0;
+    const dynPrice = 20 + 10 * current;
+    if (savings < dynPrice) { shopMsg = 'Insufficient funds'; shopMsgTimer = 2.0; return; }
+    savings -= dynPrice;
+    shopInv.bigLevel = Math.min(maxLv, current + 1);
+    saveShopInv();
   }
   try { localStorage.setItem(SAVINGS_KEY, String(savings)); } catch(_){}
   shopConfirm = null;
