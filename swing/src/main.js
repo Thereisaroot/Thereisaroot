@@ -1271,8 +1271,8 @@ function updateRun(dt) {
         localStorage.setItem(EXP_KEY, String(exp));
       } catch(_){}
     }
-    // Demo rule: if demo active and savings exceeded $110, on game over you lose everything
-    if (demoActive && savings > 110) {
+    // Demo rule: if demo active and EXP exceeded 110P (>=111P), on game over you lose everything
+    if (demoActive && exp > 110) {
       lastDemoLoss = true;
       demoActive = false;
       savings = 0;
@@ -1434,7 +1434,7 @@ function renderGameOver(g) {
     }
     let nextText;
     if (demoActive) {
-      nextText = 'Try to exceed $111';
+      nextText = 'Try to exceed 111P';
     } else {
       const next = nextLevelThreshold(exp);
       nextText = next ? `Next Level: ${next}P` : 'Max level reached!';
