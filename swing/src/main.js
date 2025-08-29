@@ -1,5 +1,5 @@
 // WebSwing Prototype (Ropes + Multi-spawn + Catch)
-
+ 
 const CONFIG = {
   width: 360,
   height: 640,
