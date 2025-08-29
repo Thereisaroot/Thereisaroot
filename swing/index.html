@@ -10,6 +10,34 @@
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
+    <div id="debug-panel" hidden>
+      <div class="row">
+        <strong>Debug</strong>
+        <span class="hint">(Press V to toggle)</span>
+      </div>
+      <div class="grid">
+        <label>점프 속도 <input type="range" id="dbg-jumpSpeed" min="50" max="150" step="1"></label>
+        <label>점프 거리 <input type="range" id="dbg-jumpImpulse" min="300" max="1000" step="1"></label>
+        <label>Catch R <input type="range" id="dbg-catchR" min="8" max="80" step="1"></label>
+        <label>Buds Sway Min% <input type="range" id="dbg-budSwayMin" min="0" max="60" step="1"></label>
+        <label>Buds Sway Max% <input type="range" id="dbg-budSwayMax" min="0" max="80" step="1"></label>
+        <label>Lmin <input type="range" id="dbg-Lmin" min="40" max="300" step="1"></label>
+        <label>Lmax <input type="range" id="dbg-Lmax" min="100" max="520" step="1"></label>
+        <label>Length Jitter % <input type="range" id="dbg-Ljit" min="0" max="60" step="1"></label>
+        <label>Dmin <input type="range" id="dbg-Dmin" min="60" max="300" step="1"></label>
+        <label>Dmax <input type="range" id="dbg-Dmax" min="100" max="420" step="1"></label>
+        <label>Spacing Jitter Min <input type="range" id="dbg-SJmin" min="70" max="110" step="1"></label>
+        <label>Spacing Jitter Max <input type="range" id="dbg-SJmax" min="90" max="140" step="1"></label>
+        <label>Short Rope Prob <input type="range" id="dbg-shortProb" min="0" max="100" step="1"></label>
+        <label>Short Rope Factor <input type="range" id="dbg-shortFactor" min="50" max="95" step="1"></label>
+        <label>Long Rope Prob <input type="range" id="dbg-longProb" min="0" max="100" step="1"></label>
+        <label>Long Rope Factor <input type="range" id="dbg-longFactor" min="105" max="170" step="1"></label>
+        <label>Break Prob <input type="range" id="dbg-breakProb" min="0" max="100" step="1"></label>
+        <label>Item Spawn Prob <input type="range" id="dbg-itemProb" min="0" max="100" step="1"></label>
+        <label>DshortMin <input type="range" id="dbg-DshortMin" min="60" max="240" step="1"></label>
+        <label>DshortProb <input type="range" id="dbg-DshortProb" min="0" max="100" step="1"></label>
+      </div>
+    </div>
     <canvas id="game" aria-label="WebSwing Canvas" role="img"></canvas>
     <script src="./src/main.js" defer></script>
   </body>

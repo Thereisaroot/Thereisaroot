@@ -28,15 +28,37 @@ const CONFIG = {
   catchVelScale: 0.0, // fixed radius (no scaling)
   // Spawn new rope anchors near the right edge of the screen
   minAnchorX: 300,
-  maxAnchorX: 352,
+  maxAnchorX: 332,
   edgeSpawnJitter: 48, // px, randomness from the right edge inward
   lengthJitterPct: 0.30, // ±30% length jitter after planning
   shortLChance: 0.10, // 10% chance to shorten rope
   shortLFactor: 0.70, // shorten to 70% (30% shorter)
+  longLChance: 0.00, // 0% chance to extend rope
+  longLFactor: 1.20, // extend to 120%
+
+  // Extra randomization knobs
+  spacingJitterMin: 0.90, // D *= randRange(min,max)
+  spacingJitterMax: 1.15,
+
+  // Gameplay probabilities
+  ropeBreakProb: 0.10, // when attached (if enabled by gating below)
+  itemSpawnProb: 0.20,
 
   // Camera follow smoothing (1/s)
   camFollowAttach: 6.0,
   camFollowFree: 2.5,
+  // Jump speed scaling (1.0 = 기본)
+  jumpSpeedScale: 1.0,
+  // Game over wait seconds before retry is enabled
+  gameOverWait: 3.0,
+  // Fly control
+  flyHoldThreshold: 0.2, // seconds to differentiate long press
+  flyMaxHold: 1.3,       // seconds of fly per hold
+  flyUpVy: -180,         // upward velocity during fly (1.5x)
+  flyMinFwd: 180,        // minimal forward speed during fly (1.5x)
+  // Buds sway (as percentage of body radius)
+  budSwayMinPct: 0.08,
+  budSwayMaxPct: 0.32,
 };
 
 const canvas = document.getElementById('game');
@@ -74,6 +96,118 @@ const Fonts = {
   },
 };
 
+// Tuning state (can be loaded from server later)
+const TUNING_KEY = 'webswing_tuning_v1';
+const TUNING_DEFAULTS = {
+  jumpImpulse: 541,
+  jumpSpeed: 91,
+  catchR: 22,
+  budSwayMin: 8,
+  budSwayMax: 32,
+  Lmin: 84,
+  Lmax: 338,
+  LjitPct: 30,
+  Dmin: 180,
+  Dmax: 260,
+  SJmin: 78,
+  SJmax: 140,
+  shortProb: 24,
+  shortFactor: 73,
+  longProb: 0,
+  longFactor: 120,
+  breakProb: 10,
+  itemProb: 20,
+  DshortMin: 120,
+  DshortProb: 35,
+};
+let tuning = { ...TUNING_DEFAULTS };
+
+function loadTuningLocal() {
+  try {
+    const raw = localStorage.getItem(TUNING_KEY);
+    if (raw) {
+      const saved = JSON.parse(raw);
+      tuning = { ...tuning, ...saved };
+    }
+  } catch(_) {}
+}
+function saveTuningLocal() {
+  try { localStorage.setItem(TUNING_KEY, JSON.stringify(tuning)); } catch(_) {}
+}
+async function maybeLoadTuningFromServer() {
+  // Placeholder for future server fetch; merge into tuning and apply
+  // Example:
+  // const res = await fetch('/api/tuning');
+  // const remote = await res.json();
+  // tuning = { ...tuning, ...remote };
+}
+function applyTuningToConfig() {
+  CONFIG.jumpImpulse = Number(tuning.jumpImpulse) || CONFIG.jumpImpulse;
+  CONFIG.jumpSpeedScale = Math.max(0.2, (Number(tuning.jumpSpeed) || 100) / 100);
+  CONFIG.catchBase = Number(tuning.catchR) || CONFIG.catchBase;
+  // buds sway percent
+  CONFIG.budSwayMinPct = Math.max(0, (Number(tuning.budSwayMin) || Math.round(CONFIG.budSwayMinPct*100)) / 100);
+  CONFIG.budSwayMaxPct = Math.max(CONFIG.budSwayMinPct, (Number(tuning.budSwayMax) || Math.round(CONFIG.budSwayMaxPct*100)) / 100);
+  CONFIG.Lmin = Number(tuning.Lmin) || CONFIG.Lmin;
+  CONFIG.Lmax = Number(tuning.Lmax) || CONFIG.Lmax;
+  CONFIG.lengthJitterPct = Math.max(0, (Number(tuning.LjitPct) || 0) / 100);
+  CONFIG.Dmin = Number(tuning.Dmin) || CONFIG.Dmin;
+  CONFIG.Dmax = Number(tuning.Dmax) || CONFIG.Dmax;
+  CONFIG.spacingJitterMin = Math.max(0.5, (Number(tuning.SJmin) || Math.round(CONFIG.spacingJitterMin*100)) / 100);
+  CONFIG.spacingJitterMax = Math.max(CONFIG.spacingJitterMin, (Number(tuning.SJmax) || Math.round(CONFIG.spacingJitterMax*100)) / 100);
+  CONFIG.shortLChance = Math.max(0, Math.min(1, (Number(tuning.shortProb) || 0) / 100));
+  CONFIG.shortLFactor = Math.max(0.4, (Number(tuning.shortFactor) || Math.round(CONFIG.shortLFactor*100)) / 100);
+  CONFIG.longLChance = Math.max(0, Math.min(1, (Number(tuning.longProb) || 0) / 100));
+  CONFIG.longLFactor = Math.max(1.0, (Number(tuning.longFactor) || Math.round(CONFIG.longLFactor*100)) / 100);
+  CONFIG.ropeBreakProb = Math.max(0, Math.min(1, (Number(tuning.breakProb) || 0) / 100));
+  CONFIG.itemSpawnProb = Math.max(0, Math.min(1, (Number(tuning.itemProb) || 0) / 100));
+  CONFIG.DshortMin = Number(tuning.DshortMin) || CONFIG.DshortMin;
+  CONFIG.DshortProb = Math.max(0, Math.min(1, (Number(tuning.DshortProb) || 0) / 100));
+}
+function setupDebugUI() {
+  const root = document.getElementById('debug-panel');
+  if (!root) return;
+  // Block game input when interacting with debug UI
+  const blockTypes = ['mousedown','mouseup','mousemove','click','dblclick','touchstart','touchmove','touchend'];
+  for (const tp of blockTypes) {
+    root.addEventListener(tp, (e) => { e.stopPropagation(); }, true);
+  }
+  const get = (id) => document.getElementById(id);
+  const map = [
+    ['dbg-jumpSpeed', 'jumpSpeed'],
+    ['dbg-jumpImpulse', 'jumpImpulse'],
+    ['dbg-catchR', 'catchR'],
+    ['dbg-budSwayMin', 'budSwayMin'],
+    ['dbg-budSwayMax', 'budSwayMax'],
+    ['dbg-Lmin', 'Lmin'],
+    ['dbg-Lmax', 'Lmax'],
+    ['dbg-Ljit', 'LjitPct'],
+    ['dbg-Dmin', 'Dmin'],
+    ['dbg-Dmax', 'Dmax'],
+    ['dbg-SJmin', 'SJmin'],
+    ['dbg-SJmax', 'SJmax'],
+    ['dbg-shortProb', 'shortProb'],
+    ['dbg-shortFactor', 'shortFactor'],
+    ['dbg-longProb', 'longProb'],
+    ['dbg-longFactor', 'longFactor'],
+    ['dbg-breakProb', 'breakProb'],
+    ['dbg-itemProb', 'itemProb'],
+    ['dbg-DshortMin', 'DshortMin'],
+    ['dbg-DshortProb', 'DshortProb'],
+  ];
+  // Initialize slider positions
+  for (const [id, key] of map) {
+    const el = get(id);
+    if (!el) continue;
+    el.value = String(tuning[key]);
+    el.addEventListener('input', () => {
+      tuning[key] = Number(el.value);
+      applyTuningToConfig();
+      saveTuningLocal();
+    });
+  }
+}
+
 // UI helper for intro interactions
 const UI = {
   clicked: false,
@@ -82,6 +216,12 @@ const UI = {
   keyPressed: null, // 'Space' | 'Escape' | null
   reset() { this.clicked = false; this.keyPressed = null; },
 };
+
+function isFromDebug(e) {
+  const t = e && (e.target || e.srcElement);
+  if (!t || typeof t.closest !== 'function') return false;
+  return !!t.closest('#debug-panel');
+}
 
 // Simple input manager
 const Input = {
@@ -96,6 +236,7 @@ const Input = {
 };
 
 function onPress(e) {
+  if (isFromDebug(e)) return; // ignore debug panel interactions
   e && e.preventDefault && e.preventDefault();
   // record pointer position for UI (intro)
   if (e && (e.clientX !== undefined || (e.touches && e.touches.length))) {
@@ -116,14 +257,20 @@ function onRelease() {
 }
 
 window.addEventListener('keydown', (e) => {
-  if (e.code === 'Space' || e.key === ' ' || e.key === 'Spacebar' ) onPress(e);
+  if (e.code === 'Space' || e.key === ' ' || e.key === 'Spacebar') {
+    if (isFromDebug(e)) return; // do not trigger game press from debug inputs
+    onPress(e);
+  }
 });
 window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyV') {
     DEBUG = !DEBUG;
+    const el = document.getElementById('debug-panel');
+    if (el) el.hidden = !DEBUG;
   }
 });
 window.addEventListener('keydown', (e) => {
+  if (isFromDebug(e)) return; // ignore UI key capture while editing debug
   if (e.code === 'Space') UI.keyPressed = 'Space';
   else if (e.code === 'Escape') UI.keyPressed = 'Escape';
 });
@@ -181,7 +328,7 @@ class Player {
   }
   airFlap() {
     // In-air flap: mainly vertical impulse, minimal horizontal change
-    this.vy = Math.min(this.vy, 0) - CONFIG.jumpImpulse * 0.85;
+    this.vy = Math.min(this.vy, 0) - CONFIG.jumpImpulse * 0.85 * (CONFIG.jumpSpeedScale || 1);
   }
   update(dt, t) {
     if (this.mode === 'attached' && this.rope) {
@@ -197,10 +344,12 @@ class Player {
       this.vy = tip.vy;
     } else {
       // Free flight (flappy-like): vertical physics only; horizontal is via camera
+      const s = (CONFIG.jumpSpeedScale || 1);
       this.x += this.vx * dt;
-      // simple horizontal damping
-      this.vx += -this.vx * CONFIG.airDragX * dt;
-      this.vy += CONFIG.gravity * dt;
+      // horizontal damping scaled to preserve distance under time dilation
+      this.vx += -this.vx * (CONFIG.airDragX * s) * dt;
+      // gravity scaled by s^2 to preserve trajectory distance while slowing motion
+      this.vy += (CONFIG.gravity * s * s) * dt;
       this.y += this.vy * dt;
       const targetAngle = Math.atan2(this.vy, 260);
       const maxTilt = Math.PI * 0.45;
@@ -212,84 +361,146 @@ class Player {
     g.save();
     g.translate(this.x, this.y);
     g.rotate(this.angle);
-
-    // Determine morph stage by savings total
-    const stage = (savings >= 100) ? 3 : (savings >= 50) ? 2 : (savings >= 10) ? 1 : 0;
+    const level = getLevelByExp(exp);
+    // Level 1: pure white circle. Level 2+: every 3 levels shape changes; add one color segment per level (max 3)
+    const segCount = (level <= 1) ? 0 : (((level - 2) % 3) + 1);
+    const segColors = ['#e53d3d', '#6aa8ff', '#ffa24d'];
     const size = this.r * 2 * this.sizeScale;
-    if (stage === 0) {
-      // Body circle
+    const levelScale = (level > 1) ? 1.3 : 1.0;
+
+    function drawPolygonPath(ctx, sides, radius, rotationRad) {
+      const r = radius;
+      ctx.beginPath();
+      for (let i = 0; i < sides; i++) {
+        const a = rotationRad + i * (Math.PI * 2 / sides);
+        const x = Math.cos(a) * r;
+        const y = Math.sin(a) * r;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+    }
+
+    // Glow effect if purchased
+    if (shopInv.glow) {
+      const base = 0.3 + 0.2 * Math.sin(simTime * 3.1);
+      g.save();
+      g.globalAlpha = Math.max(0.1, Math.min(0.5, base));
       g.fillStyle = '#ffffff';
+      const gr = (this.r * this.sizeScale) * ((level > 1) ? 1.3 : 1.0) * 1.6;
+      g.beginPath();
+      g.arc(0, 0, gr, 0, Math.PI * 2);
+      g.fill();
+      g.restore();
+    }
+    if (level === 1) {
+      // Pure white circle (egg)
+      const r = this.r * this.sizeScale * levelScale;
+      g.fillStyle = '#ffffff';
+      g.beginPath();
+      g.arc(0, 0, r, 0, Math.PI * 2);
+      g.fill();
+      // Outline and pointer
       g.strokeStyle = '#e53d3d';
       g.lineWidth = 2;
       g.beginPath();
-      g.arc(0, 0, this.r, 0, Math.PI * 2);
-      g.fill();
+      g.arc(0, 0, r, 0, Math.PI * 2);
       g.stroke();
-      // Direction pointer (small triangle)
+      // Direction pointer
       g.fillStyle = '#e53d3d';
       g.beginPath();
-      g.moveTo(this.r * 0.6, 0);
-      g.lineTo(this.r * 0.1, -5);
-      g.lineTo(this.r * 0.1, 5);
+      g.moveTo(r * 0.6, 0);
+      g.lineTo(r * 0.1, -5);
+      g.lineTo(r * 0.1, 5);
       g.closePath();
       g.fill();
-    } else {
-      // Rounded rect with segmented fill
-      const half = size / 2;
-      const rr = stage === 1 ? this.r * 0.7 : stage === 2 ? this.r * 0.35 : this.r * 0.12;
-      // Path helper
-      function roundedRectPath(ctx, x, y, w, h, r) {
-        const x0 = x - w/2, y0 = y - h/2;
-        const x1 = x + w/2, y1 = y + h/2;
-        const cr = Math.max(0, Math.min(r, Math.min(w, h) / 2));
-        ctx.beginPath();
-        ctx.moveTo(x0 + cr, y0);
-        ctx.lineTo(x1 - cr, y0);
-        ctx.quadraticCurveTo(x1, y0, x1, y0 + cr);
-        ctx.lineTo(x1, y1 - cr);
-        ctx.quadraticCurveTo(x1, y1, x1 - cr, y1);
-        ctx.lineTo(x0 + cr, y1);
-        ctx.quadraticCurveTo(x0, y1, x0, y1 - cr);
-        ctx.lineTo(x0, y0 + cr);
-        ctx.quadraticCurveTo(x0, y0, x0 + cr, y0);
-        ctx.closePath();
-      }
-      // Clip to body shape
-      roundedRectPath(g, 0, 0, size, size, rr);
+  } else {
+      // Shape mapping: L2-4 triangle (3), L5-7 square (4), L8-10 pentagon (5), ...
+      const groupIdx = Math.floor((level - 2) / 3); // 0 for L2-4, 1 for L5-7, ...
+      const sides = 3 + groupIdx;
+      const r = this.r * this.sizeScale * levelScale;
+      const rot = Math.PI / 10; // slight rotation
+      // Clip to polygon
       g.save();
+      drawPolygonPath(g, sides, r, rot);
       g.clip();
-      // Fill base
+      // Base
       g.fillStyle = '#ffffff';
-      g.fillRect(-half, -half, size, size);
-      // Fill color segments depending on stage
-      const third = size / 3;
-      if (stage >= 1) {
-        g.fillStyle = '#e53d3d'; // red left third
-        g.fillRect(-half, -half, third, size);
-      }
-      if (stage >= 2) {
-        g.fillStyle = '#6aa8ff'; // blue middle
-        g.fillRect(-half + third, -half, third, size);
-      }
-      if (stage >= 3) {
-        g.fillStyle = '#ffa24d'; // orange right
-        g.fillRect(-half + third*2, -half, third, size);
+      g.fillRect(-r, -r, r*2, r*2);
+      // Segments
+      const third = (r * 2) / 3;
+      for (let i = 0; i < segCount; i++) {
+        g.fillStyle = segColors[i % segColors.length];
+        g.fillRect(-r + third * i, -r, third, r*2);
       }
       g.restore();
       // Outline
-      roundedRectPath(g, 0, 0, size, size, rr);
       g.strokeStyle = '#e53d3d';
       g.lineWidth = 2;
+      drawPolygonPath(g, sides, r, rot);
       g.stroke();
+    }
+
+    // Buds attached to polygon vertices; max count equals current vertex count
+    if (shopInv.budsLevel && shopInv.budsLevel > 0 && level > 1) {
+      const groupIdx = Math.floor((level - 2) / 3);
+      const sides = 3 + Math.max(0, groupIdx);
+      const baseR = this.r * this.sizeScale * ((level > 1) ? 1.3 : 1.0);
+      const childR = baseR * 0.40;
+      const rot2 = Math.PI / 10; // body polygon rotation offset
+      const maxBuds = Math.min(sides, shopInv.budsLevel);
+      const third = (baseR * 2) / 3; // for stripe color bands
+      const segColorsLocal = ['#e53d3d', '#6aa8ff', '#ffa24d'];
+      const segCountLocal = (level <= 1) ? 0 : (((level - 2) % 3) + 1);
+      // sway amplitude range (lerp across buds)
+      const minA = CONFIG.budSwayMinPct * baseR;
+      const maxA = CONFIG.budSwayMaxPct * baseR;
+      const velScale = 0.4 + Math.min(1.2, Math.abs(this.vy) / 260);
+      for (let i = 0; i < maxBuds; i++) {
+        const a = rot2 + i * (Math.PI * 2 / sides);
+        const nx = Math.cos(a), ny = Math.sin(a);
+        // base attach point just outside vertex
+        let px = nx * (baseR + childR * 0.86);
+        let py = ny * (baseR + childR * 0.86);
+        // add gentle sway along tangent and normal for life-like motion
+        const tnx = -ny, tny = nx; // tangent
+        const k = (maxBuds <= 1) ? 1 : (i / (maxBuds - 1));
+        const amp = (minA + (maxA - minA) * k) * velScale;
+        const w = 2.0 + 0.6 * i;
+        px += tnx * amp * Math.sin(simTime * w + i * 0.5) + nx * 0.3 * amp * Math.cos(simTime * (w*0.9) + i * 0.3);
+        py += tny * amp * Math.sin(simTime * (w*0.8) + i * 0.4) + ny * 0.3 * amp * Math.cos(simTime * (w*1.1) + i * 0.2);
+        // color pick based on local x band
+        let col = '#ffffff';
+        if (segCountLocal > 0) {
+          const idx = Math.max(0, Math.min(2, Math.floor((px + baseR) / third)));
+          if (idx < segCountLocal) col = segColorsLocal[idx];
+        }
+        g.save();
+        g.translate(px, py);
+        g.fillStyle = col;
+        g.strokeStyle = '#e53d3d';
+        g.lineWidth = 2;
+        g.beginPath();
+        g.arc(0, 0, childR, 0, Math.PI * 2);
+        g.fill();
+        g.stroke();
+        g.restore();
+      }
     }
 
     g.restore();
   }
 }
 
-// Simple game state machine: intro -> run -> gameover
+// Effective player collision radius (level-scaled)
+function playerCollisionRadius() {
+  const level = getLevelByExp(exp);
+  const levelScale = (level > 1) ? 1.3 : 1.0;
+  return player.r * player.sizeScale * levelScale;
+}
+
+// Simple game state machine: intro -> run -> gameover -> shop
 const State = {
-  current: 'intro', // 'intro' | 'run' | 'gameover'
+  current: 'intro', // 'intro' | 'run' | 'gameover' | 'shop'
 };
 
 const player = new Player();
@@ -299,11 +510,45 @@ let simTime = 0;
 const camera = { x: 0 };
 const SCREEN_TARGET_X = CONFIG.width * 0.22;
 const SAVINGS_KEY = 'webswing_savings_v1';
-let savings = 0; // persistent $ saved across runs
+const EXP_KEY = 'webswing_exp_v1';
+let savings = 0; // money for shop
+let exp = 0;     // progression EXP for levels
 let lastEarned = 0; // dollars earned in the most recent run
 const DEMO_DONE_KEY = 'webswing_demo_done_v1';
+const SHOP_INV_KEY = 'webswing_shop_inv_v1';
 let demoActive = false;
 let lastDemoLoss = false;
+
+// Level system based on EXP thresholds
+const LEVEL_THRESHOLDS = [10, 50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000];
+function getLevelByExp(val) {
+  let lvl = 1;
+  for (let i = 0; i < LEVEL_THRESHOLDS.length; i++) {
+    if (val >= LEVEL_THRESHOLDS[i]) lvl++; else break;
+  }
+  return lvl; // Level 1..13
+}
+
+// Level-up popup state for game over screen
+let gameOverLevelUp = null; // { from, to }
+let levelUpPopupTimer = 0;
+
+// Shop state
+let shopScroll = 0;
+let shopDrag = { active: false, y0: 0, scroll0: 0 };
+let shopConfirm = null; // { id, price }
+
+// Shop inventory
+let shopInv = { glow: false, budsLevel: 0, plusJump: false, fly: false };
+function loadShopInv() {
+  try {
+    const raw = localStorage.getItem(SHOP_INV_KEY);
+    if (raw) shopInv = { ...shopInv, ...JSON.parse(raw) };
+  } catch(_){}
+}
+function saveShopInv() {
+  try { localStorage.setItem(SHOP_INV_KEY, JSON.stringify(shopInv)); } catch(_){}
+}
 
 // Ropes and spawning
 const ropes = [];
@@ -316,6 +561,10 @@ let usedAirJumps = 0; // how many flaps used since last detach
 let inputLockUntil = 0; // debounce to avoid immediate state-skip
 let gameOverLockUntil = 0; // ignore inputs briefly after game over
 let gameOverTimer = 0; // time spent in gameover
+let flyActiveRemaining = 0; // seconds of fly left for current hold
+let pressStartAt = 0; // simTime when current press began
+let flyLongPressTriggered = false;
+let usedFlyThisRun = false; // fly can be used once per run
 // Item/box system
 const boxes = [];
 let pendingExtraJump = false;
@@ -463,6 +712,11 @@ function randRange(a, b) {
 }
 function deg2rad(d) { return (d * Math.PI) / 180; }
 
+// Effective scaling for level 1 ease (rope position/length/spacing only)
+function lv1Scale() {
+  return getLevelByExp(exp) === 1 ? 0.7 : 1.0;
+}
+
 function spawnInitialRope() {
   // Create a rope whose tip passes through player's screenX at t=0 (attached start)
   const A = deg2rad(randRange(CONFIG.AminDeg, CONFIG.AmaxDeg));
@@ -491,6 +745,7 @@ function planNextRope() {
   const currentTip = player.rope ? player.rope.tip(simTime) : { x: player.x, y: player.y };
   const x0 = currentTip.x;
   const y0 = currentTip.y;
+  const s = lv1Scale();
   // estimate velocities after detach
   const vxEst = (player.mode === 'free') ? Math.max(CONFIG.minVx, Math.min(CONFIG.maxVx, player.vx)) : (CONFIG.baseVx + 40);
   const vy0 = -CONFIG.jumpImpulse * 0.9; // rough estimate for planning
@@ -502,11 +757,11 @@ function planNextRope() {
     const shortPick = Math.random() < CONFIG.shortLChance;
     // Mix short and normal spacings (force short spacing when short rope is picked)
     const useShort = shortPick || (Math.random() < CONFIG.DshortProb);
-    let D = useShort ? randRange(CONFIG.DshortMin, CONFIG.Dmin) : randRange(CONFIG.Dmin, CONFIG.Dmax);
-    D *= randRange(0.9, 1.15);
+    let D = useShort ? randRange(CONFIG.DshortMin * s, CONFIG.Dmin * s) : randRange(CONFIG.Dmin * s, CONFIG.Dmax * s);
+    D *= randRange(CONFIG.spacingJitterMin, CONFIG.spacingJitterMax);
     const baseX = prev ? prev.anchorX : x0;
     // Prefer spawning near the right edge with inward jitter
-    const desiredEdgeX = camera.x + CONFIG.maxAnchorX - randRange(8, CONFIG.edgeSpawnJitter);
+    const desiredEdgeX = camera.x + (CONFIG.maxAnchorX * s) - randRange(8, CONFIG.edgeSpawnJitter * s);
     let anchorX;
     if (useShort && shortPick) {
       // For short ropes, keep spacing tight and avoid forcing to the edge
@@ -525,7 +780,7 @@ function planNextRope() {
     }
     // If clamped to edge, still attempt with smaller step
     const A = deg2rad(randRange(CONFIG.AminDeg, CONFIG.AmaxDeg));
-    let L = randRange(CONFIG.Lmin, CONFIG.Lmax);
+    let L = randRange(CONFIG.Lmin * s, CONFIG.Lmax * s);
     const kOmega = randRange(CONFIG.kOmegaMin, CONFIG.kOmegaMax);
     const omega = Math.sqrt(CONFIG.gravity / L) * kOmega;
 
@@ -544,7 +799,8 @@ function planNextRope() {
       // Add ±length jitter to avoid uniformity
       let L_jitter = L_target * (1 + randRange(-CONFIG.lengthJitterPct, CONFIG.lengthJitterPct));
       if (shortPick) L_jitter *= CONFIG.shortLFactor; // deterministically short when picked
-      L = Math.max(CONFIG.Lmin, Math.min(CONFIG.Lmax, L_jitter));
+      else if (Math.random() < CONFIG.longLChance) L_jitter *= CONFIG.longLFactor;
+      L = Math.max(CONFIG.Lmin * s, Math.min(CONFIG.Lmax * s, L_jitter));
     }
     const omega2 = Math.sqrt(CONFIG.gravity / L) * kOmega;
     const tipX2 = anchorX + L * Math.sin(theta_hit);
@@ -561,31 +817,34 @@ function planNextRope() {
   }
   // Fallback: place a moderate rope slightly to the right; catch will rely on generous radius
   const A = deg2rad(randRange(8, 16));
-  let L = Math.min(CONFIG.Lmax, Math.max(CONFIG.Lmin, 180 * randRange(0.9, 1.1)));
+  let L = Math.min(CONFIG.Lmax * s, Math.max(CONFIG.Lmin * s, 180 * randRange(0.9, 1.1) * s));
   if (Math.random() < CONFIG.shortLChance) {
-    L = Math.max(CONFIG.Lmin, L * CONFIG.shortLFactor);
+    L = Math.max(CONFIG.Lmin * s, L * CONFIG.shortLFactor);
+  } else if (Math.random() < CONFIG.longLChance) {
+    L = Math.min(CONFIG.Lmax * s, L * CONFIG.longLFactor);
   }
   const kOmega = 1.0;
   const omega = Math.sqrt(CONFIG.gravity / L) * kOmega;
   const theta_hit = 0;
   const t_hit = 0.8;
-  const desiredEdgeX2 = camera.x + CONFIG.maxAnchorX - randRange(8, CONFIG.edgeSpawnJitter);
-  let anchorX = Math.max((prev ? prev.anchorX + CONFIG.Dmin : x0 + CONFIG.Dmin), desiredEdgeX2);
+  const desiredEdgeX2 = camera.x + (CONFIG.maxAnchorX * s) - randRange(8, CONFIG.edgeSpawnJitter * s);
+  let anchorX = Math.max((prev ? prev.anchorX + CONFIG.Dmin * s : x0 + CONFIG.Dmin * s), desiredEdgeX2);
   const phi = Math.acos(Math.max(-1, Math.min(1, (theta_hit || 1e-6) / A))) - omega * (simTime + t_hit);
   return new Rope({ anchorX, anchorY: CONFIG.ceilingY, L, A, omega, phi, createdAt: simTime, id: `r${nextRopeId++}` });
 }
 
 function ensureRopesBuffered() {
   // Ensure one rope is queued near the right edge area, with jitter window
-  const edgeMin = camera.x + (CONFIG.maxAnchorX - CONFIG.edgeSpawnJitter);
-  const edgeMax = camera.x + CONFIG.maxAnchorX;
+  const s = lv1Scale();
+  const edgeMin = camera.x + ((CONFIG.maxAnchorX * s) - (CONFIG.edgeSpawnJitter * s));
+  const edgeMax = camera.x + (CONFIG.maxAnchorX * s);
   let count = ropes.filter(r => r.anchorX >= edgeMin && r.anchorX <= edgeMax).length;
   if (count < 1) {
     const prev = ropes.length ? ropes[ropes.length - 1] : null;
     const r = planNextRope();
     ropes.push(r);
     // Maybe spawn a box between prev and new rope if eligible
-    if (prev && savings >= 50 && Math.random() < 0.20) {
+    if (prev && exp >= 50 && Math.random() < CONFIG.itemSpawnProb) {
       const midX = prev.anchorX + (r.anchorX - prev.anchorX) * 0.5;
       // Place much higher, with vertical randomness
       const minY = CONFIG.ceilingY + 60;
@@ -632,6 +891,9 @@ function resetRun() {
   pendingCatchR = 0;
   pendingSizeScale = 0;
   lastDemoLoss = false;
+  gameOverLevelUp = null;
+  levelUpPopupTimer = 0;
+  usedFlyThisRun = false;
 }
 
 function drawBackground(g) {
@@ -815,19 +1077,27 @@ function updateRun(dt) {
 
   // Input
   if (Input.anyPressed()) {
+    // Record press start for long-press detection
+    pressStartAt = simTime;
+    flyLongPressTriggered = false;
     if (player.mode === 'attached') {
       // Detach with momentum-carry jump
       const tip = player.rope ? player.rope.tip(simTime) : { vx: 0, vy: 0, th: 0 };
       player.mode = 'free';
       // carry over momentum from swing and add forward + upward impulse
       const upFactor = 0.8 + 0.2 * Math.cos(tip.th || 0); // near bottom stronger
-      player.vx = Math.max(CONFIG.minVx, Math.min(CONFIG.maxVx, (tip.vx || 0) + CONFIG.baseVx));
-      player.vy = (tip.vy || 0) - CONFIG.jumpImpulse * upFactor;
+      const js = CONFIG.jumpSpeedScale || 1;
+      player.vx = Math.max(CONFIG.minVx, Math.min(CONFIG.maxVx, (tip.vx || 0) * js + CONFIG.baseVx * js));
+      player.vy = (tip.vy || 0) * js - CONFIG.jumpImpulse * upFactor * js;
       // prevent instant re-catch on the same rope
       lastDetachedRope = player.rope;
       player.rope = null;
       catchLockUntil = simTime + 0.2; // 200ms lock
-      airJumpsLeft = 2 + (pendingExtraJump ? 1 : 0); // allow up to 2(+1) flaps
+      // Base additional jumps: 1 for all levels; items can add more
+      const baseAir = 1 + (shopInv.plusJump ? 1 : 0);
+      airJumpsLeft = baseAir + (pendingExtraJump ? 1 : 0);
+      // Reset per-jump fly availability on jump count reset (new jump phase)
+      usedFlyThisRun = false;
       usedAirJumps = 0;
       // consume pending size scale on detach
       if (pendingSizeScale && pendingSizeScale > 0) {
@@ -846,6 +1116,8 @@ function updateRun(dt) {
       }
     }
   }
+  // Reset fly when not holding
+  if (!Input.down) flyActiveRemaining = 0;
 
   // Update ropes buffer
   ensureRopesBuffered();
@@ -869,6 +1141,25 @@ function updateRun(dt) {
 
   // Update player
   player.update(dt, simTime);
+  // Detect long press for fly activation (only once per run, only when no jumps left)
+  if (shopInv.fly && Input.down && !flyLongPressTriggered && !usedFlyThisRun) {
+    if (player.mode === 'free' && airJumpsLeft <= 0) {
+      if (simTime - pressStartAt >= (CONFIG.flyHoldThreshold || 0.2)) {
+        flyActiveRemaining = CONFIG.flyMaxHold || 1.0;
+        flyLongPressTriggered = true;
+        usedFlyThisRun = true; // consume fly ability for this run
+      }
+    }
+  }
+  // Apply fly effect while holding (free state only)
+  if (shopInv.fly && Input.down && flyActiveRemaining > 0 && player.mode === 'free') {
+    flyActiveRemaining = Math.max(0, flyActiveRemaining - dt);
+    // gentle diagonal up: keep slight forward, negate gravity feel
+    const upV = CONFIG.flyUpVy || -120; // px/s upwards
+    const fwd = Math.max(CONFIG.minVx * 0.6, CONFIG.flyMinFwd || 120);
+    player.vy = upV;
+    player.vx = Math.max(player.vx, fwd);
+  }
 
   // If rope is scheduled to snap and player is still attached, enforce snap after timer
   if (player.mode === 'attached' && player.rope && player.rope.breakAt && simTime >= player.rope.breakAt) {
@@ -876,8 +1167,9 @@ function updateRun(dt) {
     // Force detach without upward impulse (penalty)
     player.mode = 'free';
     // carry minimal forward from tip, no extra upward boost
-    player.vx = Math.max(CONFIG.minVx, Math.min(CONFIG.maxVx, (tipNow.vx || 0) + CONFIG.baseVx * 0.2));
-    player.vy = tipNow.vy;
+    const js = CONFIG.jumpSpeedScale || 1;
+    player.vx = Math.max(CONFIG.minVx, Math.min(CONFIG.maxVx, (tipNow.vx || 0) * js + CONFIG.baseVx * 0.2 * js));
+    player.vy = (tipNow.vy || 0) * js;
     spawnEffect('snap', tipNow.x, tipNow.y);
     lastDetachedRope = player.rope;
     player.rope.breakAt = null;
@@ -917,9 +1209,9 @@ function updateRun(dt) {
         const kind = (gained === 3) ? 'big' : (gained === 2) ? 'medium' : 'small';
         const tipNow = rope.tip(simTime);
         spawnEffect(kind, tipNow.x, tipNow.y);
-        // Schedule snap if savings milestone reached (>= $10): 10% chance
-        if (savings >= 10) {
-          if (Math.random() < 0.10) {
+        // Schedule snap if EXP milestone reached (>= 10)
+        if (exp >= 10) {
+          if (Math.random() < CONFIG.ropeBreakProb) {
             rope.breakAt = simTime + 1.0; // snap after 1s unless player jumps
           } else {
             rope.breakAt = null;
@@ -942,16 +1234,33 @@ function updateRun(dt) {
 
   // Game over if grounded while free
   const groundY = CONFIG.height - CONFIG.groundH;
-  if (player.y + player.r >= groundY) {
-    player.y = groundY - player.r;
+  const collR = playerCollisionRadius();
+  if (player.y + collR >= groundY) {
+    player.y = groundY - collR;
     // Ground break effect at impact
     spawnEffect('break', player.x, groundY);
-    // Savings: earn $1 per point beyond 5 this run
+    // Earnings and EXP: $1 and 1 EXP per point beyond 5 this run
     const earned = Math.max(0, Math.floor(score - 5));
     lastEarned = earned;
+    // Compute potential level-up BEFORE applying demo resets (based on EXP)
+    const prevLevel = getLevelByExp(exp);
+    const newLevel = getLevelByExp(exp + earned);
+    if (newLevel > prevLevel) {
+      gameOverLevelUp = { from: prevLevel, to: newLevel };
+      levelUpPopupTimer = 0;
+      // celebratory particles near screen center
+      const cx = camera.x + CONFIG.width / 2;
+      const cy = CONFIG.height * 0.36;
+      spawnEffect('big', cx, cy);
+    }
     if (earned > 0) {
+      // Add to money and EXP
       savings += earned;
-      try { localStorage.setItem(SAVINGS_KEY, String(savings)); } catch(_){}
+      exp += earned;
+      try {
+        localStorage.setItem(SAVINGS_KEY, String(savings));
+        localStorage.setItem(EXP_KEY, String(exp));
+      } catch(_){}
     }
     // Demo rule: if demo active and savings exceeded $110, on game over you lose everything
     if (demoActive && savings > 110) {
@@ -961,6 +1270,11 @@ function updateRun(dt) {
       try {
         localStorage.setItem(SAVINGS_KEY, '0');
         localStorage.setItem(DEMO_DONE_KEY, '1');
+        // Reset EXP and clear all items when demo ends
+        exp = 0;
+        localStorage.setItem(EXP_KEY, '0');
+        shopInv = { glow: false, budsLevel: 0, plusJump: false, fly: false };
+        saveShopInv();
       } catch(_){}
     }
     best = Math.max(best, score);
@@ -1039,6 +1353,10 @@ function renderRun(g) {
   g.font = `10px "Press Start 2P", monospace`;
   const itemText = `${pendingExtraJump ? '+J ' : ''}${pendingCatchR ? 'R50 ' : ''}${pendingSizeScale ? 'S+ ' : ''}`.trim();
   if (itemText) g.fillText(itemText, CONFIG.width - 12, 28);
+  // Level display
+  g.textAlign = 'left';
+  g.font = `10px "Press Start 2P", monospace`;
+  g.fillText(`LV ${getLevelByExp(exp)}`, 12, 46);
 }
 
 function updateGameOver(dt) {
@@ -1046,11 +1364,36 @@ function updateGameOver(dt) {
   updateParticles(dt);
   // advance gameover local timer
   gameOverTimer += dt;
-  // Direct restart on input; avoid any intro flicker
-  if (gameOverTimer >= 0.2 && (Input.anyPressed() || (typeof UI !== 'undefined' && (UI.clicked || UI.keyPressed === 'Space' || UI.keyPressed === 'Escape')))) {
+  levelUpPopupTimer += dt;
+  const wait = CONFIG.gameOverWait || 5.0;
+  // During lock period, consume/clear any inputs so they don't auto-trigger later
+  if (gameOverTimer < wait) {
     if (typeof UI !== 'undefined') UI.reset();
     Input.down = false; Input.justPressed = false;
-    resetRun();
+  }
+  // Direct restart on input; avoid any intro flicker
+  if (gameOverTimer >= wait && (Input.anyPressed() || (typeof UI !== 'undefined' && (UI.clicked || UI.keyPressed === 'Space' || UI.keyPressed === 'Escape')))) {
+    // If clicked inside SHOP button (and lvl>=2), go to shop; else restart
+    const lvl = getLevelByExp(exp);
+    let intoShop = false;
+    if (typeof UI !== 'undefined' && UI.clicked && lvl >= 2) {
+      const bw = 86, bh = 22;
+      const bx = (CONFIG.width - bw) / 2;
+      const by = CONFIG.height * 0.80;
+      if (UI.mx >= bx && UI.mx <= bx + bw && UI.my >= by && UI.my <= by + bh) intoShop = true;
+    }
+    if (intoShop) {
+      State.current = 'shop';
+      // init shop scroll
+      shopScroll = 0; shopDrag.active = false; shopConfirm = null;
+      if (typeof UI !== 'undefined') UI.reset();
+      Input.down = false; Input.justPressed = false;
+      return;
+    } else {
+      if (typeof UI !== 'undefined') UI.reset();
+      Input.down = false; Input.justPressed = false;
+      resetRun();
+    }
   }
 }
 
@@ -1074,19 +1417,67 @@ function renderGameOver(g) {
     g.textAlign = 'center';
     g.textBaseline = 'top';
     const y0 = CONFIG.height * 0.46;
-    const nextTarget = (savings < 10) ? 10 : (savings < 50) ? 50 : (savings < 100) ? 100 : 100;
-    const nextText = (savings >= 100) ? 'All targets reached!' : `Next Target: $${nextTarget}`;
-    const earnedText = (lastEarned > 0) ? `Earned this run: $${lastEarned}` : 'Earn dollars by scoring over 5';
+    function nextLevelThreshold(val) {
+      for (let i = 0; i < LEVEL_THRESHOLDS.length; i++) {
+        if (val < LEVEL_THRESHOLDS[i]) return LEVEL_THRESHOLDS[i];
+      }
+      return null;
+    }
+    let nextText;
+    if (demoActive) {
+      nextText = 'Try to exceed $111';
+    } else {
+      const next = nextLevelThreshold(exp);
+      nextText = next ? `Next Level: ${next}P` : 'Max level reached!';
+    }
+    const earnedText = (lastEarned > 0) ? `Gained: $${lastEarned} / +${lastEarned}P` : 'Earn $ and P by scoring over 5';
     // Next Target line with Score font size (12px)
     g.font = `12px "Press Start 2P", monospace`;
     g.fillText(nextText, CONFIG.width / 2, y0);
     // Other lines with default small font (10px)
     g.font = `10px "Press Start 2P", monospace`;
-    g.fillText(`Savings: $${savings}`, CONFIG.width / 2, y0 + 32);
-    g.fillText(earnedText, CONFIG.width / 2, y0 + 64);
+    // EXP and SAV in one line
+    g.fillText(`EXP: ${exp}P | SAV: $${savings}`, CONFIG.width / 2, y0 + 32);
+    // Earn explanation three lines below
+    g.fillText(earnedText, CONFIG.width / 2, y0 + 80);
   }
 
-  drawCenteredText(g, 'CLICK / SPACE TO RETRY', CONFIG.height * 0.74, 10, '#b4c0d9');
+  // Level-up popup when level increased this game over
+  if (gameOverLevelUp) {
+    const cx = CONFIG.width / 2;
+    const cy = CONFIG.height * 0.22;
+    g.fillStyle = '#ffffff';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.font = `12px "Press Start 2P", monospace`;
+    g.fillText(`LEVEL UP! LV ${gameOverLevelUp.to}`, cx, cy);
+  }
+  const wait = CONFIG.gameOverWait || 5.0;
+  const rem = Math.max(0, wait - gameOverTimer);
+  if (rem > 0) {
+    // Countdown until retry is enabled
+    const sec = Math.ceil(rem);
+    drawCenteredText(g, `RETRY IN ${sec}`, CONFIG.height * 0.74, 10, '#b4c0d9');
+  } else {
+    drawCenteredText(g, 'CLICK / SPACE TO RETRY', CONFIG.height * 0.74, 10, '#b4c0d9');
+    // Shop button (Level >= 2)
+    const lvl = getLevelByExp(exp);
+    if (lvl >= 2) {
+      const bw = 86, bh = 22;
+      const bx = (CONFIG.width - bw) / 2;
+      const by = CONFIG.height * 0.80;
+      g.fillStyle = '#22334a';
+      g.strokeStyle = '#b4c0d9';
+      g.lineWidth = 2;
+      g.fillRect(bx, by, bw, bh);
+      g.strokeRect(bx, by, bw, bh);
+      g.fillStyle = '#ffffff';
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.font = `10px "Press Start 2P", monospace`;
+      g.fillText('SHOP', bx + bw/2, by + bh/2 + 1);
+    }
+  }
 }
 
 // Main loop with fixed timestep physics
@@ -1096,12 +1487,28 @@ const dt = 1 / 120; // physics step
 
 async function start() {
   await Fonts.load();
-  // Load savings from localStorage
+  // Load tuning then apply
+  loadTuningLocal();
+  await maybeLoadTuningFromServer();
+  applyTuningToConfig();
+  setupDebugUI();
+  // Keep panel hidden until toggled by V
+  const dbg = document.getElementById('debug-panel'); if (dbg) dbg.hidden = !DEBUG;
+  // Load savings and EXP from localStorage
   try {
-    const raw = localStorage.getItem(SAVINGS_KEY);
-    if (raw) {
-      const val = parseInt(raw, 10);
+    const rawSav = localStorage.getItem(SAVINGS_KEY);
+    if (rawSav) {
+      const val = parseInt(rawSav, 10);
       if (!Number.isNaN(val)) savings = Math.max(0, val);
+    }
+    const rawExp = localStorage.getItem(EXP_KEY);
+    if (rawExp) {
+      const v = parseInt(rawExp, 10);
+      if (!Number.isNaN(v)) exp = Math.max(0, v);
+    } else if (savings > 0) {
+      // Migration: if EXP not set, seed EXP with previous savings
+      exp = savings;
+      localStorage.setItem(EXP_KEY, String(exp));
     }
     const demoDone = localStorage.getItem(DEMO_DONE_KEY) === '1';
     if (!demoDone) {
@@ -1112,6 +1519,22 @@ async function start() {
       }
     }
   } catch (_) {}
+  // Load shop inventory
+  loadShopInv();
+  // Demo mode: grant EXP and equip core items so the character looks different
+  if (demoActive) {
+    try {
+      if (exp < 100) {
+        exp = 100;
+        localStorage.setItem(EXP_KEY, String(exp));
+      }
+    } catch(_){}
+    // Equip Glow, +Jump, Fly during demo
+    shopInv.glow = true;
+    shopInv.plusJump = true;
+    shopInv.fly = true;
+    saveShopInv();
+  }
   requestAnimationFrame(tick);
 }
 
@@ -1128,6 +1551,7 @@ function tick(now) {
     if (State.current === 'intro') updateIntro(dt);
     else if (State.current === 'run') updateRun(dt);
     else if (State.current === 'gameover') updateGameOver(dt);
+    else if (State.current === 'shop') updateShop(dt);
     acc -= dt;
     Input.endFrame();
   }
@@ -1136,6 +1560,7 @@ function tick(now) {
   if (State.current === 'intro') renderIntro(ctx, now / 1000);
   else if (State.current === 'run') renderRun(ctx);
   else if (State.current === 'gameover') renderGameOver(ctx);
+  else if (State.current === 'shop') renderShop(ctx);
 
   requestAnimationFrame(tick);
 }
@@ -1145,3 +1570,252 @@ start();
 // Notes for next steps:
 // - Add Rope class (anchor, L, A, omega, phase) and single-rope attach/detach.
 // - Then implement multi-rope spawner with reachability guarantee.
+// Shop item definitions
+const SHOP_ITEMS = [
+  { id: 'glow', name: 'Glow', type: 'single', price: 10, minLevel: 2 },
+  { id: 'buds', name: 'Buds', type: 'level', maxLevel: 5, price: 1, minLevel: 2 },
+  { id: 'plusjump', name: '+Jump', type: 'single', price: 10, minLevel: 2 },
+  { id: 'fly', name: 'Fly', type: 'single', price: 10, minLevel: 2 },
+];
+
+function getItemLevel(it) {
+  if (it.id === 'buds') return shopInv.budsLevel || 0;
+  if (it.id === 'glow') return shopInv.glow ? 1 : 0;
+  if (it.id === 'plusjump') return shopInv.plusJump ? 1 : 0;
+  if (it.id === 'fly') return shopInv.fly ? 1 : 0;
+  return 0;
+}
+function currentBodySides() {
+  const lvl = getLevelByExp(exp);
+  if (lvl <= 1) return 0;
+  const groupIdx = Math.floor((lvl - 2) / 3);
+  return 3 + Math.max(0, groupIdx);
+}
+function isItemSoldOut(it) {
+  if (it.type === 'single') return getItemLevel(it) >= 1;
+  if (it.type === 'level') {
+    const maxLv = currentBodySides();
+    return getItemLevel(it) >= maxLv;
+  }
+  return false;
+}
+
+function shopGrid() {
+  const cols = 3;
+  const cellW = Math.floor((CONFIG.width * 0.86) / cols);
+  const cellH = 64;
+  const marginX = Math.floor((CONFIG.width - cols * cellW) / 2);
+  const top = Math.floor(CONFIG.height * 0.20);
+  return { cols, cellW, cellH, marginX, top };
+}
+
+function renderShop(g) {
+  // backdrop
+  g.fillStyle = 'rgba(0,0,0,0.6)';
+  g.fillRect(0, 0, CONFIG.width, CONFIG.height);
+  drawCenteredText(g, 'SHOP', CONFIG.height * 0.12, 14);
+  // Show SAV at top-right, two lines below the SHOP title
+  {
+    const headerY = CONFIG.height * 0.12;
+    g.fillStyle = '#ffffff';
+    g.textAlign = 'right';
+    g.textBaseline = 'top';
+    g.font = `10px "Press Start 2P", monospace`;
+    g.fillText(`SAV: $${savings}`, CONFIG.width - 12, headerY + 24);
+  }
+  const { cols, cellW, cellH, marginX, top } = shopGrid();
+  const gap = 8;
+  // Filter items by level visibility
+  const lvl = getLevelByExp(exp);
+  const items = SHOP_ITEMS.filter(it => (it.minLevel || 1) <= lvl);
+  // content height
+  const rows = Math.ceil(items.length / cols) || 1;
+  const contentH = rows * (cellH + gap) - gap;
+  // clamp scroll
+  shopScroll = Math.max(0, Math.min(Math.max(0, contentH - (CONFIG.height - top - 90)), shopScroll));
+  // draw items
+  g.save();
+  g.beginPath();
+  g.rect(0, top, CONFIG.width, CONFIG.height - top - 90);
+  g.clip();
+  for (let i = 0; i < items.length; i++) {
+    const r = Math.floor(i / cols);
+    const c = i % cols;
+    const x = marginX + c * cellW;
+    const y = top + r * (cellH + gap) - shopScroll;
+    // card
+    g.fillStyle = '#0f1a2a';
+    g.strokeStyle = '#b4c0d9';
+    g.lineWidth = 2;
+    g.fillRect(x + 6, y, cellW - 12, cellH);
+    g.strokeRect(x + 6, y, cellW - 12, cellH);
+    // content
+    // 1) Name
+    g.fillStyle = '#ffffff';
+    g.textAlign = 'left';
+    g.textBaseline = 'top';
+    g.font = `10px "Press Start 2P", monospace`;
+    g.fillText(items[i].name, x + 14, y + 6);
+    // 2) Price (right aligned)
+    g.textAlign = 'right';
+    g.fillText(`$${items[i].price}`, x + cellW - 14, y + 20);
+    // 3) Icon (center)
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.font = `12px "Press Start 2P", monospace`;
+    let label;
+    if (items[i].id === 'glow') label = '*';
+    else if (items[i].id === 'buds') label = '+';
+    else if (items[i].id === 'plusjump') label = 'J';
+    else if (items[i].id === 'fly') label = '^';
+    else label = '?';
+    g.fillText(label, x + cellW/2, y + Math.floor(cellH * 0.60));
+    // 4) Level line (no max display)
+    g.textAlign = 'center';
+    g.textBaseline = 'bottom';
+    g.font = `10px "Press Start 2P", monospace`;
+    const lvVal = getItemLevel(items[i]);
+    g.fillText(`Lv. ${lvVal}`, x + cellW/2, y + cellH - 6);
+    // sold out overlay
+    if (isItemSoldOut(items[i])) {
+      g.fillStyle = 'rgba(0,0,0,0.5)';
+      g.fillRect(x + 6, y, cellW - 12, cellH);
+      g.textAlign = 'center';
+      g.font = `10px "Press Start 2P", monospace`;
+      if (items[i].type === 'single') {
+        g.fillStyle = '#ff6666';
+        g.fillText('SOLD OUT', x + cellW/2, y + cellH/2 + 2);
+      } else {
+        g.fillStyle = '#a6ffc1';
+        g.fillText('MAX', x + cellW/2, y + cellH/2 + 2);
+      }
+    }
+  }
+  g.restore();
+  // Start button
+  const bw = 110, bh = 24;
+  const bx = (CONFIG.width - bw) / 2;
+  const by = CONFIG.height - 42;
+  g.fillStyle = '#22334a';
+  g.strokeStyle = '#b4c0d9';
+  g.lineWidth = 2;
+  g.fillRect(bx, by, bw, bh);
+  g.strokeRect(bx, by, bw, bh);
+  g.fillStyle = '#ffffff';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.font = `10px "Press Start 2P", monospace`;
+  g.fillText('START GAME', bx + bw/2, by + bh/2 + 1);
+
+  // Confirm popup
+  if (shopConfirm) {
+    g.fillStyle = 'rgba(0,0,0,0.55)';
+    g.fillRect(0, 0, CONFIG.width, CONFIG.height);
+    const pw = CONFIG.width * 0.88, ph = 112;
+    const px = (CONFIG.width - pw)/2, py = CONFIG.height * 0.40;
+    g.fillStyle = '#0f1a2a';
+    g.strokeStyle = '#b4c0d9';
+    g.lineWidth = 2;
+    g.fillRect(px, py, pw, ph);
+    g.strokeRect(px, py, pw, ph);
+    g.fillStyle = '#ffffff';
+    g.textAlign = 'center';
+    g.textBaseline = 'top';
+    g.font = `12px "Press Start 2P", monospace`;
+    const itName = (SHOP_ITEMS.find(x=>x.id===shopConfirm.id)?.name || shopConfirm.id).toString();
+    g.fillText(`Buy ${itName} for $${shopConfirm.price}?`, px + pw/2, py + 10);
+    // Current SAV at top-right inside popup
+    g.textAlign = 'right';
+    g.font = `10px "Press Start 2P", monospace`;
+    g.fillText(`SAV: $${savings}`, px + pw - 10, py + 10);
+    // buttons
+    const bw2 = 78, bh2 = 26;
+    const gapB = 12;
+    const by2 = py + ph - 36;
+    const bx2 = px + pw/2 - bw2 - gapB;
+    const bx3 = px + pw/2 + gapB;
+    g.fillStyle = '#22334a'; g.fillRect(bx2, by2, bw2, bh2); g.strokeRect(bx2, by2, bw2, bh2);
+    g.fillStyle = '#22334a'; g.fillRect(bx3, by2, bw2, bh2); g.strokeRect(bx3, by2, bw2, bh2);
+    // button labels centered
+    g.fillStyle = '#ffffff';
+    g.textBaseline = 'middle';
+    g.font = `10px "Press Start 2P", monospace`;
+    g.fillText('YES', bx2 + bw2/2, by2 + bh2/2);
+    g.fillText('NO', bx3 + bw2/2, by2 + bh2/2);
+  }
+}
+
+function updateShop(dt) {
+  // handle drag scroll
+  if (Input.down && !shopDrag.active && UI.clicked) {
+    shopDrag.active = true; shopDrag.y0 = UI.my; shopDrag.scroll0 = shopScroll;
+  }
+  if (!Input.down) shopDrag.active = false;
+  // We don't have continuous move tracking; simulate with clicks only for now
+  // Click handling
+  if (Input.anyPressed() && typeof UI !== 'undefined' && UI.clicked) {
+    // If confirm open, handle YES/NO
+    if (shopConfirm) {
+      const pw = CONFIG.width * 0.88, ph = 112;
+      const px = (CONFIG.width - pw)/2, py = CONFIG.height * 0.40;
+      const bw2 = 78, bh2 = 26; const by2 = py + ph - 36;
+      const gapB = 12; const bx2 = px + pw/2 - bw2 - gapB; const bx3 = px + pw/2 + gapB;
+      const x = UI.mx, y = UI.my;
+      if (x>=bx2 && x<=bx2+bw2 && y>=by2 && y<=by2+bh2) {
+        // YES
+        tryPurchase(shopConfirm.id);
+      }
+      // NO or outside
+      shopConfirm = null; UI.reset(); return;
+    }
+    // Start button
+    const bw = 110, bh = 24; const bx = (CONFIG.width - bw)/2; const by = CONFIG.height - 42;
+    if (UI.mx>=bx && UI.mx<=bx+bw && UI.my>=by && UI.my<=by+bh) {
+      UI.reset();
+      resetRun();
+      return;
+    }
+    // Item cards
+    const { cols, cellW, cellH, marginX, top } = shopGrid();
+    const gap = 8;
+    const lvl = getLevelByExp(exp);
+    const items = SHOP_ITEMS.filter(it => (it.minLevel || 1) <= lvl);
+    for (let i = 0; i < items.length; i++) {
+      const r = Math.floor(i / cols);
+      const c = i % cols;
+      const x = marginX + c * cellW + 6;
+      const y = top + r * (cellH + gap) - shopScroll;
+      const w = cellW - 12; const h = cellH;
+      if (UI.mx>=x && UI.mx<=x+w && UI.my>=y && UI.my<=y+h) {
+        // open confirm if purchasable
+        const it = items[i];
+        if (isItemSoldOut(it)) { UI.reset(); return; }
+        const price = it.type === 'level' ? it.price : it.price;
+        shopConfirm = { id: it.id, price };
+        UI.reset();
+        return;
+      }
+    }
+  }
+}
+
+function tryPurchase(id) {
+  const it = SHOP_ITEMS.find(x => x.id === id);
+  if (!it) return;
+  let price = it.price;
+  // enforce affordability
+  if (savings < price) { shopConfirm = null; return; }
+  if (isItemSoldOut(it)) { shopConfirm = null; return; }
+  if (id === 'glow') {
+    savings -= price; shopInv.glow = true; saveShopInv();
+  } else if (id === 'buds') {
+    const maxLv = currentBodySides();
+    savings -= price; shopInv.budsLevel = Math.min(maxLv, (shopInv.budsLevel || 0) + 1); saveShopInv();
+  } else if (id === 'plusjump') {
+    savings -= price; shopInv.plusJump = true; saveShopInv();
+  } else if (id === 'fly') {
+    savings -= price; shopInv.fly = true; saveShopInv();
+  }
+  try { localStorage.setItem(SAVINGS_KEY, String(savings)); } catch(_){}
+  shopConfirm = null;
+}
