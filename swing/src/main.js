@@ -294,6 +294,8 @@ class Rope {
     this.createdAt = params.createdAt || 0;
     this.id = params.id || Math.random().toString(36).slice(2);
     this.breakAt = null; // time when rope will snap (if scheduled)
+    this.isWebRope = params.isWebRope || false;
+    this.webTargetL = params.webTargetL || null;
   }
   // θ(t) = A cos(ω t + φ)
   theta(t) {
@@ -332,6 +334,12 @@ class Player {
   }
   update(dt, t) {
     if (this.mode === 'attached' && this.rope) {
+      if (this.rope.isWebRope && this.rope.L > this.rope.webTargetL) {
+        this.rope.L -= 250 * dt; // Retract speed
+        if (this.rope.L < this.rope.webTargetL) {
+            this.rope.L = this.rope.webTargetL;
+        }
+      }
       const tip = this.rope.tip(t);
       this.x = tip.x;
       this.y = tip.y;
@@ -515,6 +523,7 @@ let simTime = 0;
 const camera = { x: 0 };
 const SCREEN_TARGET_X = CONFIG.width * 0.22;
 const SAVINGS_KEY = 'webswing_savings_v1';
+const BEST_SCORE_KEY = 'webswing_best_v1';
 const EXP_KEY = 'webswing_exp_v1';
 let savings = 0; // money for shop
 let exp = 0;     // progression EXP for levels
@@ -523,6 +532,8 @@ const DEMO_DONE_KEY = 'webswing_demo_done_v1';
 const SHOP_INV_KEY = 'webswing_shop_inv_v1';
 let demoActive = false;
 let lastDemoLoss = false;
+let fastModeEnabled = false;
+let comboCount = 0;
 
 // Level system based on EXP thresholds
 const LEVEL_THRESHOLDS = [10, 50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000];
@@ -548,7 +559,7 @@ let shopHelp = false;    // show help popup under SHOP
 let lastShopHelpRect = null; // cached '?' button rect computed during render
 
 // Shop inventory
-let shopInv = { glow: false, budsLevel: 0, plusJump: false, fly: false, bigLevel: 0 };
+let shopInv = { glow: false, budsLevel: 0, plusJump: false, fly: false, bigLevel: 0, gambleActive: false, webActive: false };
 function loadShopInv() {
   try {
     const raw = localStorage.getItem(SHOP_INV_KEY);
@@ -574,6 +585,12 @@ let flyActiveRemaining = 0; // seconds of fly left for current hold
 let pressStartAt = 0; // simTime when current press began
 let flyLongPressTriggered = false;
 let usedFlyThisRun = false; // fly can be used once per run
+let usedWebThisRun = false;
+// Web rope creation marker (explicitly declared to avoid implicit globals)
+let webRopeJustCreated = false;
+// Prevent double rope buffering within one update step
+let ropesBufferedThisStep = false;
+// (removed gate based on lastBufferedAnchorX; use edge-based single-buffer strategy)
 // Item/box system
 const boxes = [];
 let pendingExtraJump = false;
@@ -582,7 +599,21 @@ let pendingSizeScale = 0;
 
 // Simple particle system for catch effects
 const particles = [];
-function spawnEffect(kind, x, y) {
+function spawnEffect(kind, x, y, text = '') {
+  if (kind === 'combo') {
+    particles.push({
+      x, y,
+      vx: randRange(-30, 30),
+      vy: -120,
+      life: 0,
+      ttl: 1.1,
+      size: 14,
+      color: '#fffa75',
+      type: 'text',
+      text: text,
+    });
+    return;
+  }
   // Dedicated break effect: lingering sparkles + shards
   if (kind === 'break') {
     // Shards: quick bright burst upwards
@@ -680,6 +711,7 @@ function updateParticles(dt) {
     const damp = (p.type === 'sparkle') ? 1.0 : 2.0;
     p.vx *= (1 - damp * dt);
     p.vy *= (1 - damp * dt);
+    if (p.type === 'text') p.vy += 200 * dt; // gravity on text
     // slight upward float for sparkles
     if (p.type === 'sparkle') p.vy -= 10 * dt;
     if (p.life >= p.ttl) particles.splice(i, 1);
@@ -690,13 +722,24 @@ function drawParticles(g) {
   g.translate(-camera.x, 0);
   // Draw non-additive first
   for (const p of particles) {
-    if (p.type === 'sparkle') continue;
+    if (p.type === 'sparkle' || p.type === 'text') continue;
     const a = Math.max(0, 1 - p.life / p.ttl);
     g.globalAlpha = a;
     g.fillStyle = p.color;
     g.beginPath();
     g.arc(p.x, p.y, p.size, 0, Math.PI * 2);
     g.fill();
+  }
+  // Draw text particles
+  for (const p of particles) {
+    if (p.type !== 'text') continue;
+    const a = Math.max(0, 1 - p.life / p.ttl);
+    g.globalAlpha = a;
+    g.fillStyle = p.color;
+    g.font = `${p.size}px "Press Start 2P", monospace`;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText(p.text, p.x, p.y);
   }
   // Additive sparkles with twinkle
   const prevComp = g.globalCompositeOperation;
@@ -728,13 +771,14 @@ function lv1Scale() {
 
 function spawnInitialRope() {
   // Create a rope whose tip passes through player's screenX at t=0 (attached start)
-  const A = deg2rad(randRange(CONFIG.AminDeg, CONFIG.AmaxDeg));
+  const speedMultiplier = fastModeEnabled ? 1.5 : 1.0;
+  const A = deg2rad(CONFIG.AmaxDeg);
   const L = 180;
-  const kOmega = randRange(CONFIG.kOmegaMin, CONFIG.kOmegaMax);
-  const omega = Math.sqrt(CONFIG.gravity / L) * kOmega;
+  const kOmega = CONFIG.kOmegaMax; // Use max speed factor
+  const omega = Math.sqrt(CONFIG.gravity / L) * kOmega * speedMultiplier;
   const t = simTime;
   // choose theta0 near 0 (bottom) for a calm start
-  const theta0 = randRange(-A * 0.4, A * 0.4);
+  const theta0 = -A; // Start at the peak for maximum initial swing
   const phi = Math.acos(Math.max(-1, Math.min(1, theta0 / A))) - omega * t;
   const desiredX = camera.x + SCREEN_TARGET_X;
   const anchorX = desiredX - L * Math.sin(theta0);
@@ -751,16 +795,21 @@ function spawnInitialRope() {
 
 function planNextRope() {
   // Plan next rope within screen so that a jump now with vx, vy0 reaches the tip around t_hit
+  const speedMultiplier = fastModeEnabled ? 1.5 : 1.0;
   const currentTip = player.rope ? player.rope.tip(simTime) : { x: player.x, y: player.y };
   const x0 = currentTip.x;
   const y0 = currentTip.y;
   const s = lv1Scale();
   // estimate velocities after detach
-  const vxEst = (player.mode === 'free') ? Math.max(CONFIG.minVx, Math.min(CONFIG.maxVx, player.vx)) : (CONFIG.baseVx + 40);
+  const vxEst = (player.mode === 'free') ? Math.max(CONFIG.minVx, Math.min(CONFIG.maxVx, player.vx)) : ((CONFIG.baseVx + 40) * speedMultiplier);
   const vy0 = -CONFIG.jumpImpulse * 0.9; // rough estimate for planning
 
   // Try multiple candidates for robust reachability
-  const prev = ropes[ropes.length - 1] || null;
+  // Use the last NORMAL rope (ignore any web rope) as the spacing base
+  let prev = null;
+  for (let i = ropes.length - 1; i >= 0; i--) {
+    if (!ropes[i].isWebRope) { prev = ropes[i]; break; }
+  }
   for (let tries = 0; tries < 60; tries++) {
     // Decide if this candidate should be a short rope; tie spacing accordingly
     const shortPick = Math.random() < CONFIG.shortLChance;
@@ -768,6 +817,7 @@ function planNextRope() {
     const useShort = shortPick || (Math.random() < CONFIG.DshortProb);
     let D = useShort ? randRange(CONFIG.DshortMin * s, CONFIG.Dmin * s) : randRange(CONFIG.Dmin * s, CONFIG.Dmax * s);
     D *= randRange(CONFIG.spacingJitterMin, CONFIG.spacingJitterMax);
+    if (demoActive) D *= 0.7; // Demo mode spacing reduction
     const baseX = prev ? prev.anchorX : x0;
     // Prefer spawning near the right edge with inward jitter
     const desiredEdgeX = camera.x + (CONFIG.maxAnchorX * s) - randRange(8, CONFIG.edgeSpawnJitter * s);
@@ -791,7 +841,7 @@ function planNextRope() {
     const A = deg2rad(randRange(CONFIG.AminDeg, CONFIG.AmaxDeg));
     let L = randRange(CONFIG.Lmin * s, CONFIG.Lmax * s);
     const kOmega = randRange(CONFIG.kOmegaMin, CONFIG.kOmegaMax);
-    const omega = Math.sqrt(CONFIG.gravity / L) * kOmega;
+    const omega = Math.sqrt(CONFIG.gravity / L) * kOmega * speedMultiplier;
 
     // choose target swing angle near bottom, but allow wider variety
     const theta_hit = randRange(-A * 0.75, A * 0.75);
@@ -811,7 +861,7 @@ function planNextRope() {
       else if (Math.random() < CONFIG.longLChance) L_jitter *= CONFIG.longLFactor;
       L = Math.max(CONFIG.Lmin * s, Math.min(CONFIG.Lmax * s, L_jitter));
     }
-    const omega2 = Math.sqrt(CONFIG.gravity / L) * kOmega;
+    const omega2 = Math.sqrt(CONFIG.gravity / L) * kOmega * speedMultiplier;
     const tipX2 = anchorX + L * Math.sin(theta_hit);
     const yTip2 = CONFIG.ceilingY + L * Math.cos(theta_hit);
     const dy = Math.abs(yTip2 - yProj);
@@ -833,7 +883,7 @@ function planNextRope() {
     L = Math.min(CONFIG.Lmax * s, L * CONFIG.longLFactor);
   }
   const kOmega = 1.0;
-  const omega = Math.sqrt(CONFIG.gravity / L) * kOmega;
+  const omega = Math.sqrt(CONFIG.gravity / L) * kOmega * speedMultiplier;
   const theta_hit = 0;
   const t_hit = 0.8;
   const desiredEdgeX2 = camera.x + (CONFIG.maxAnchorX * s) - randRange(8, CONFIG.edgeSpawnJitter * s);
@@ -843,28 +893,29 @@ function planNextRope() {
 }
 
 function ensureRopesBuffered() {
-  // Ensure one rope is queued near the right edge area, with jitter window
   const s = lv1Scale();
-  const edgeMin = camera.x + ((CONFIG.maxAnchorX * s) - (CONFIG.edgeSpawnJitter * s));
-  const edgeMax = camera.x + (CONFIG.maxAnchorX * s);
-  let count = ropes.filter(r => r.anchorX >= edgeMin && r.anchorX <= edgeMax).length;
-  if (count < 1) {
-    const prev = ropes.length ? ropes[ropes.length - 1] : null;
-    const r = planNextRope();
-    ropes.push(r);
-    // Maybe spawn a box between prev and new rope if eligible
-    if (prev && exp >= 50 && Math.random() < CONFIG.itemSpawnProb) {
-      const midX = prev.anchorX + (r.anchorX - prev.anchorX) * 0.5;
-      // Place much higher, with vertical randomness
-      const minY = CONFIG.ceilingY + 60;
-      const maxY = Math.min(CONFIG.height * 0.38, (CONFIG.height - CONFIG.groundH) - 140);
-      const by = randRange(minY, maxY);
-      const kinds = ['extraJump', 'wideCatch', 'bigSize'];
-      const kind = kinds[Math.floor(Math.random() * kinds.length)];
-      boxes.push({ x: midX, y: by, kind, active: true, phase: Math.random() * Math.PI * 2 });
-    }
+  // Spawn only when the farthest NORMAL rope is behind the target edge position
+  const targetEdgeX = camera.x + (CONFIG.maxAnchorX * s) - 8;
+  let prev = null;
+  for (let i = ropes.length - 1; i >= 0; i--) {
+    if (!ropes[i].isWebRope) { prev = ropes[i]; break; }
   }
-  cleanupRopes();
+  const farthestX = prev ? prev.anchorX : -Infinity;
+  if (farthestX >= targetEdgeX) return;
+  const r = planNextRope();
+  ropes.push(r);
+  ropesBufferedThisStep = true;
+  // Maybe spawn a box between prev and new rope if eligible
+  if (prev && exp >= 50 && Math.random() < CONFIG.itemSpawnProb) {
+    const midX = prev.anchorX + (r.anchorX - prev.anchorX) * 0.5;
+    // Place much higher, with vertical randomness
+    const minY = CONFIG.ceilingY + 60;
+    const maxY = Math.min(CONFIG.height * 0.38, (CONFIG.height - CONFIG.groundH) - 140);
+    const by = randRange(minY, maxY);
+    const kinds = ['extraJump', 'wideCatch', 'bigSize'];
+    const kind = kinds[Math.floor(Math.random() * kinds.length)];
+    boxes.push({ x: midX, y: by, kind, active: true, phase: Math.random() * Math.PI * 2 });
+  }
 }
 
 function cleanupRopes() {
@@ -885,6 +936,7 @@ function cleanupRopes() {
 function resetRun() {
   player.reset();
   score = 0;
+  comboCount = 0;
   State.current = 'run';
   simTime = 0;
   camera.x = 0;
@@ -903,6 +955,7 @@ function resetRun() {
   gameOverLevelUp = null;
   levelUpPopupTimer = 0;
   usedFlyThisRun = false;
+  usedWebThisRun = false;
 }
 
 function drawBackground(g) {
@@ -1083,6 +1136,8 @@ function drawRope(g, rope) {
 
 function updateRun(dt) {
   simTime += dt;
+  // reset per-step rope buffering flag
+  ropesBufferedThisStep = false;
 
   // Input
   if (Input.anyPressed()) {
@@ -1096,7 +1151,8 @@ function updateRun(dt) {
       // carry over momentum from swing and add forward + upward impulse
       const upFactor = 0.8 + 0.2 * Math.cos(tip.th || 0); // near bottom stronger
       const js = CONFIG.jumpSpeedScale || 1;
-      player.vx = Math.max(CONFIG.minVx, Math.min(CONFIG.maxVx, (tip.vx || 0) * js + CONFIG.baseVx * js));
+      const speedMultiplier = fastModeEnabled ? 1.5 : 1.0;
+      player.vx = Math.max(CONFIG.minVx, Math.min(CONFIG.maxVx, ((tip.vx || 0) * js + CONFIG.baseVx * js) * speedMultiplier));
       player.vy = (tip.vy || 0) * js - CONFIG.jumpImpulse * upFactor * js;
       // prevent instant re-catch on the same rope
       lastDetachedRope = player.rope;
@@ -1122,6 +1178,48 @@ function updateRun(dt) {
         player.airFlap();
         airJumpsLeft -= 1;
         usedAirJumps += 1;
+      } else if (shopInv.webActive && !usedWebThisRun && !shopInv.fly) {
+        // Web shot (if no fly ability)
+        usedWebThisRun = true;
+        shopInv.webActive = false;
+        saveShopInv();
+        const webAnchorY = player.y - 400;
+        const newWebRope = new Rope({
+            anchorX: player.x,
+            anchorY: webAnchorY,
+            L: 400,
+            A: 0, omega: 0, phi: 0,
+            isWebRope: true,
+                        webTargetL: 275,
+            id: `r${nextRopeId++}`
+        });
+        ropes.push(newWebRope);
+        player.rope = newWebRope;
+        player.mode = 'attached';
+        lastDetachedRope = null;
+        catchLockUntil = simTime + 0.2;
+        webRopeJustCreated = true;
+      } else if (shopInv.webActive && !usedWebThisRun && usedFlyThisRun) {
+        // Web shot (after fly is used)
+        usedWebThisRun = true;
+        shopInv.webActive = false;
+        saveShopInv();
+        const webAnchorY = player.y - 400;
+        const newWebRope = new Rope({
+            anchorX: player.x,
+            anchorY: webAnchorY,
+            L: 400,
+            A: 0, omega: 0, phi: 0,
+            isWebRope: true,
+                        webTargetL: 275,
+            id: `r${nextRopeId++}`
+        });
+        ropes.push(newWebRope);
+        player.rope = newWebRope;
+        player.mode = 'attached';
+        lastDetachedRope = null;
+        catchLockUntil = simTime + 0.2;
+        webRopeJustCreated = true;
       }
     }
   }
@@ -1129,7 +1227,9 @@ function updateRun(dt) {
   if (!Input.down) flyActiveRemaining = 0;
 
   // Update ropes buffer
-  ensureRopesBuffered();
+  if (!webRopeJustCreated) {
+    ensureRopesBuffered();
+  }
   cleanupRopes();
 
   // Box pickup
@@ -1141,10 +1241,22 @@ function updateRun(dt) {
     if (Math.hypot(dx, dy) <= 22) {
       // collect
       b.active = false;
-      spawnEffect('burst', b.x, b.y);
-      if (b.kind === 'extraJump') pendingExtraJump = true;
-      else if (b.kind === 'wideCatch') pendingCatchR = 50;
-      else if (b.kind === 'bigSize') pendingSizeScale = 1.5;
+      if (b.kind === 'star') {
+        starModeActive = true;
+        starModeEndTime = simTime + 3.0;
+        const currentRope = player.rope;
+        ropes.length = 0;
+        if (currentRope) {
+            ropes.push(currentRope);
+        }
+        boxes.length = 0;
+        spawnEffect('big', b.x, b.y);
+      } else {
+          spawnEffect('burst', b.x, b.y);
+          if (b.kind === 'extraJump') pendingExtraJump = true;
+          else if (b.kind === 'wideCatch') pendingCatchR = 50;
+          else if (b.kind === 'bigSize') pendingSizeScale = 1.5;
+      }
     }
   }
 
@@ -1175,6 +1287,7 @@ function updateRun(dt) {
     const tipNow = player.rope.tip(simTime);
     // Force detach without upward impulse (penalty)
     player.mode = 'free';
+    comboCount = 0; // Reset combo on snap
     // carry minimal forward from tip, no extra upward boost
     const js = CONFIG.jumpSpeedScale || 1;
     player.vx = Math.max(CONFIG.minVx, Math.min(CONFIG.maxVx, (tipNow.vx || 0) * js + CONFIG.baseVx * 0.2 * js));
@@ -1218,6 +1331,15 @@ function updateRun(dt) {
         const kind = (gained === 3) ? 'big' : (gained === 2) ? 'medium' : 'small';
         const tipNow = rope.tip(simTime);
         spawnEffect(kind, tipNow.x, tipNow.y);
+
+        if (usedAirJumps === 0) {
+          comboCount++;
+          if (comboCount >= 2) {
+            spawnEffect('combo', player.x, player.y - 30, `${comboCount} COMBO`);
+          }
+        } else {
+          comboCount = 0;
+        }
         // Schedule snap if EXP milestone reached (>= 10)
         if (exp >= 10) {
           if (Math.random() < CONFIG.ropeBreakProb) {
@@ -1228,7 +1350,8 @@ function updateRun(dt) {
         } else {
           rope.breakAt = null;
         }
-        ensureRopesBuffered();
+        // Avoid spawning two ropes in the same step due to camera shift
+        if (!ropesBufferedThisStep) ensureRopesBuffered();
         lastDetachedRope = null;
         airJumpsLeft = 0; // reset jump count on attach
         usedAirJumps = 0;
@@ -1246,10 +1369,16 @@ function updateRun(dt) {
   const collR = playerCollisionRadius();
   if (player.y + collR >= groundY) {
     player.y = groundY - collR;
+    comboCount = 0; // Reset combo on death
     // Ground break effect at impact
     spawnEffect('break', player.x, groundY);
     // Earnings and EXP: $1 and 1 EXP per point beyond 5 this run
-    const earned = Math.max(0, Math.floor(score - 5));
+    let earned = Math.max(0, Math.floor(score - 5));
+    if (shopInv.gambleActive) {
+      earned = Math.floor(earned * 1.5);
+      shopInv.gambleActive = false; // Consume gamble
+      saveShopInv();
+    }
     lastEarned = earned;
     // Compute potential level-up BEFORE applying demo resets (based on EXP)
     const prevLevel = getLevelByExp(exp);
@@ -1282,11 +1411,14 @@ function updateRun(dt) {
         // Reset EXP and clear all items when demo ends
         exp = 0;
         localStorage.setItem(EXP_KEY, '0');
-        shopInv = { glow: false, budsLevel: 0, plusJump: false, fly: false };
+        shopInv = { glow: false, budsLevel: 0, plusJump: false, fly: false, bigLevel: 0, gambleActive: false, webActive: false };
         saveShopInv();
       } catch(_){}
     }
     best = Math.max(best, score);
+    try {
+      localStorage.setItem(BEST_SCORE_KEY, String(best));
+    } catch(_) {}
     State.current = 'gameover';
     // Clear current input edges and lock inputs briefly to avoid instant restart
     if (typeof UI !== 'undefined') UI.reset();
@@ -1356,7 +1488,7 @@ function renderRun(g) {
   g.fillText(`SCORE ${score}`, 12, 10);
   g.fillText(`BEST ${best}`, 12, 28);
   g.textAlign = 'right';
-  g.fillText(`SAV $${savings}`, CONFIG.width - 12, 10);
+  g.fillText(`SAV ${savings}`, CONFIG.width - 12, 10);
   // Pending item indicators
   g.textAlign = 'right';
   g.font = `10px "Press Start 2P", monospace`;
@@ -1382,8 +1514,20 @@ function updateGameOver(dt) {
   }
   // Direct restart on input; avoid any intro flicker
   if (gameOverTimer >= wait && (Input.anyPressed() || (typeof UI !== 'undefined' && (UI.clicked || UI.keyPressed === 'Space' || UI.keyPressed === 'Escape')))) {
-    // If clicked inside SHOP button (and lvl>=2), go to shop; else restart
     const lvl = getLevelByExp(exp);
+    // Check for fast mode toggle click
+    if (lvl >= 8 && typeof UI !== 'undefined' && UI.clicked) {
+        const bw = 140, bh = 24;
+        const bx = (CONFIG.width - bw) / 2;
+        const by = CONFIG.height * 0.80 + 50;
+        if (UI.mx >= bx && UI.mx <= bx + bw && UI.my >= by && UI.my <= by + bh) {
+            fastModeEnabled = !fastModeEnabled;
+            UI.reset();
+            return; // Prevent other actions on this click
+        }
+    }
+
+    // If clicked inside SHOP button (and lvl>=2), go to shop; else restart
     let intoShop = false;
     if (typeof UI !== 'undefined' && UI.clicked && lvl >= 2) {
       const bw = 86, bh = 44;
@@ -1485,6 +1629,23 @@ function renderGameOver(g) {
       g.textBaseline = 'middle';
       g.font = `10px "Press Start 2P", monospace`;
       g.fillText('SHOP', bx + bw/2, by + bh/2 + 1);
+
+      // Fast mode toggle (Level >= 8)
+      if (lvl >= 8) {
+        const bw = 140, bh = 24;
+        const bx = (CONFIG.width - bw) / 2;
+        const by = CONFIG.height * 0.80 + 50;
+        g.fillStyle = fastModeEnabled ? '#4a6e33' : '#22334a';
+        g.strokeStyle = '#b4c0d9';
+        g.lineWidth = 2;
+        g.fillRect(bx, by, bw, bh);
+        g.strokeRect(bx, by, bw, bh);
+        g.fillStyle = '#ffffff';
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
+        g.font = `10px "Press Start 2P", monospace`;
+        g.fillText(`FAST MODE: ${fastModeEnabled ? 'ON' : 'OFF'}`, bx + bw/2, by + bh/2 + 1);
+      }
     }
   }
 }
@@ -1505,6 +1666,11 @@ async function start() {
   const dbg = document.getElementById('debug-panel'); if (dbg) dbg.hidden = !DEBUG;
   // Load savings and EXP from localStorage
   try {
+    const rawBest = localStorage.getItem(BEST_SCORE_KEY);
+    if (rawBest) {
+        const val = parseInt(rawBest, 10);
+        if (!Number.isNaN(val)) best = Math.max(0, val);
+    }
     const rawSav = localStorage.getItem(SAVINGS_KEY);
     if (rawSav) {
       const val = parseInt(rawSav, 10);
@@ -1564,8 +1730,8 @@ function tick(now) {
     acc -= dt;
     Input.endFrame();
   }
-
-  // Render
+  webRopeJustCreated = false;
+    // Render
   if (State.current === 'intro') renderIntro(ctx, now / 1000);
   else if (State.current === 'run') renderRun(ctx);
   else if (State.current === 'gameover') renderGameOver(ctx);
@@ -1586,6 +1752,8 @@ const SHOP_ITEMS = [
   { id: 'plusjump', name: '+Jump', type: 'single', price: 100, minLevel: 2 },
   { id: 'fly', name: 'Fly', type: 'single', price: 200, minLevel: 2 },
   { id: 'big', name: 'Big', type: 'level', price: 20, minLevel: 5 },
+  { id: 'gamble', name: 'Gamble', type: 'single', price: 10, minLevel: 1 },
+  { id: 'web', name: 'Web', type: 'single', price: 3, minLevel: 1 },
 ];
 
 function getItemLevel(it) {
@@ -1594,6 +1762,8 @@ function getItemLevel(it) {
   if (it.id === 'plusjump') return shopInv.plusJump ? 1 : 0;
   if (it.id === 'fly') return shopInv.fly ? 1 : 0;
   if (it.id === 'big') return shopInv.bigLevel || 0;
+  if (it.id === 'gamble') return shopInv.gambleActive ? 1 : 0;
+  if (it.id === 'web') return shopInv.webActive ? 1 : 0;
   return 0;
 }
 function currentBodySides() {
@@ -1603,6 +1773,8 @@ function currentBodySides() {
   return 3 + Math.max(0, groupIdx);
 }
 function isItemSoldOut(it) {
+  if (it.id === 'gamble') return !!shopInv.gambleActive;
+  if (it.id === 'web') return !!shopInv.webActive;
   if (it.type === 'single') return getItemLevel(it) >= 1;
   if (it.type === 'level') {
     // dynamic caps by item
@@ -1641,6 +1813,8 @@ function itemDescription(id) {
   if (id === 'glow' || id === 'Glow') return 'Emits a soft glow.';
   if (id === 'buds' || id === 'Buds') return 'Adds small trailing shapes.';
   if (id === 'big' || id === 'Big') return 'Grows by 5% per level.';
+  if (id === 'gamble' || id === 'Gamble') return 'Next run earns 1.5x money.';
+  if (id === 'web' || id === 'Web') return 'Last resort safety web.';
   return 'No description.';
 }
 
@@ -1727,6 +1901,8 @@ function renderShop(g) {
     else if (items[i].id === 'buds') label = '+';
     else if (items[i].id === 'plusjump') label = 'J';
     else if (items[i].id === 'fly') label = '^';
+    else if (items[i].id === 'gamble') label = '$';
+    else if (items[i].id === 'web') label = 'W';
     else label = '?';
     g.fillText(label, x + cellW/2, y + Math.floor(cellH * 0.60));
     // 4) Level line (no max display)
@@ -1741,7 +1917,7 @@ function renderShop(g) {
       g.fillRect(x + 6, y, cellW - 12, cellH);
       g.textAlign = 'center';
       g.font = `10px "Press Start 2P", monospace`;
-      if (items[i].type === 'single') {
+      if (items[i].type === 'single' || (items[i].id === 'gamble' || items[i].id === 'web')) {
         g.fillStyle = '#ff6666';
         g.fillText('SOLD OUT', x + cellW/2, y + cellH/2 + 2);
       } else {
@@ -1966,7 +2142,7 @@ function updateShop(dt) {
 function tryPurchase(id) {
   const it = SHOP_ITEMS.find(x => x.id === id);
   if (!it) return;
-  let price = it.price;
+  let price = nextPriceForItem(it);
   // enforce affordability
   if (savings < price) {
     shopMsg = 'Insufficient funds';
@@ -1991,6 +2167,10 @@ function tryPurchase(id) {
     savings -= dynPrice;
     shopInv.bigLevel = Math.min(maxLv, current + 1);
     saveShopInv();
+  } else if (id === 'gamble') {
+    savings -= price; shopInv.gambleActive = true; saveShopInv();
+  } else if (id === 'web') {
+    savings -= price; shopInv.webActive = true; saveShopInv();
   }
   try { localStorage.setItem(SAVINGS_KEY, String(savings)); } catch(_){}
   shopConfirm = null;
