@@ -59,6 +59,13 @@ const CONFIG = {
   // Buds sway (as percentage of body radius)
   budSwayMinPct: 0.08,
   budSwayMaxPct: 0.32,
+  // Star (fever) mode rope pattern
+  starDuration: 3.0,
+  starL: 160,           // fixed rope length
+  starAdeg: 10,         // swing amplitude (degrees)
+  starDmin: 70,         // dense spacing min
+  starDmax: 110,        // dense spacing max
+  starEdgeJitter: 10,   // smaller edge jitter for uniform look
 };
 
 const canvas = document.getElementById('game');
@@ -334,12 +341,12 @@ class Player {
   }
   update(dt, t) {
     if (this.mode === 'attached' && this.rope) {
-      if (this.rope.isWebRope && this.rope.L > this.rope.webTargetL) {
-        this.rope.L -= 250 * dt; // Retract speed
-        if (this.rope.L < this.rope.webTargetL) {
-            this.rope.L = this.rope.webTargetL;
-        }
+    if (this.rope.isWebRope && this.rope.webTargetL != null && this.rope.L > this.rope.webTargetL) {
+      this.rope.L -= 250 * dt; // Retract speed
+      if (this.rope.L < this.rope.webTargetL) {
+          this.rope.L = this.rope.webTargetL;
       }
+    }
       const tip = this.rope.tip(t);
       this.x = tip.x;
       this.y = tip.y;
@@ -591,6 +598,9 @@ let webRopeJustCreated = false;
 // Prevent double rope buffering within one update step
 let ropesBufferedThisStep = false;
 // (removed gate based on lastBufferedAnchorX; use edge-based single-buffer strategy)
+// Star mode (from star box); explicitly declared for clarity
+let starModeActive = false;
+let starModeEndTime = 0;
 // Item/box system
 const boxes = [];
 let pendingExtraJump = false;
@@ -810,6 +820,51 @@ function planNextRope() {
   for (let i = ropes.length - 1; i >= 0; i--) {
     if (!ropes[i].isWebRope) { prev = ropes[i]; break; }
   }
+
+  // Star (fever) mode: fixed-length, dense spacing, small jitter; loosen catch acceptance
+  if (starModeActive) {
+    const A = deg2rad(CONFIG.starAdeg);
+    let L = CONFIG.starL * s;
+    const kOmega = 1.0;
+    const desiredEdgeX = camera.x + (CONFIG.maxAnchorX * s) - randRange(4, CONFIG.starEdgeJitter * s);
+    for (let tries = 0; tries < 60; tries++) {
+      const useShort = true;
+      let D = randRange(CONFIG.starDmin * s, CONFIG.starDmax * s);
+      const baseX = prev ? prev.anchorX : x0;
+      let anchorX = Math.max(baseX + D, desiredEdgeX);
+      const kOmega2 = kOmega * (fastModeEnabled ? 1.4 : 1.0);
+      const omega = Math.sqrt(CONFIG.gravity / L) * kOmega2;
+      const theta_hit = randRange(-A * 0.6, A * 0.6);
+      const tipX = anchorX + L * Math.sin(theta_hit);
+      const t_hit = (tipX - x0) / Math.max(120, vxEst);
+      if (t_hit < 0.30 || t_hit > 1.00) continue;
+      const yProj = y0 + vy0 * t_hit + 0.5 * CONFIG.gravity * t_hit * t_hit;
+      const L_target = (yProj - CONFIG.ceilingY) / Math.cos(theta_hit);
+      if (isFinite(L_target)) {
+        L = Math.max(CONFIG.Lmin * s, Math.min(CONFIG.Lmax * s, CONFIG.starL * s));
+      }
+      const omega2 = Math.sqrt(CONFIG.gravity / L) * kOmega2;
+      const tipX2 = anchorX + L * Math.sin(theta_hit);
+      const yTip2 = CONFIG.ceilingY + L * Math.cos(theta_hit);
+      const dy = Math.abs(yTip2 - yProj);
+      const phi = Math.acos(Math.max(-1, Math.min(1, theta_hit / A))) - omega2 * (simTime + t_hit);
+      const catchR = (pendingCatchR > 0 ? pendingCatchR : CONFIG.catchBase) * 1.2;
+      if (Math.abs(tipX2 - (x0 + vxEst * t_hit)) < 12 && dy <= catchR) {
+        return new Rope({ anchorX, anchorY: CONFIG.ceilingY, L, A, omega: omega2, phi, createdAt: simTime, id: `r${nextRopeId++}` });
+      }
+    }
+    // Fallback for star mode
+    const A2 = A;
+    const L2 = Math.max(CONFIG.Lmin * s, Math.min(CONFIG.Lmax * s, CONFIG.starL * s));
+    const omega = Math.sqrt(CONFIG.gravity / L2) * (fastModeEnabled ? 1.4 : 1.0);
+    const theta_hit = 0;
+    const t_hit = 0.6;
+    const desiredEdgeX2 = camera.x + (CONFIG.maxAnchorX * s) - randRange(4, CONFIG.starEdgeJitter * s);
+    const baseX = prev ? prev.anchorX : x0;
+    let anchorX = Math.max(baseX + CONFIG.starDmin * s, desiredEdgeX2);
+    const phi = Math.acos(Math.max(-1, Math.min(1, (theta_hit || 1e-6) / A2))) - omega * (simTime + t_hit);
+    return new Rope({ anchorX, anchorY: CONFIG.ceilingY, L: L2, A: A2, omega, phi, createdAt: simTime, id: `r${nextRopeId++}` });
+  }
   for (let tries = 0; tries < 60; tries++) {
     // Decide if this candidate should be a short rope; tie spacing accordingly
     const shortPick = Math.random() < CONFIG.shortLChance;
@@ -896,25 +951,32 @@ function ensureRopesBuffered() {
   const s = lv1Scale();
   // Spawn only when the farthest NORMAL rope is behind the target edge position
   const targetEdgeX = camera.x + (CONFIG.maxAnchorX * s) - 8;
-  let prev = null;
-  for (let i = ropes.length - 1; i >= 0; i--) {
-    if (!ropes[i].isWebRope) { prev = ropes[i]; break; }
-  }
-  const farthestX = prev ? prev.anchorX : -Infinity;
-  if (farthestX >= targetEdgeX) return;
-  const r = planNextRope();
-  ropes.push(r);
-  ropesBufferedThisStep = true;
-  // Maybe spawn a box between prev and new rope if eligible
-  if (prev && exp >= 50 && Math.random() < CONFIG.itemSpawnProb) {
-    const midX = prev.anchorX + (r.anchorX - prev.anchorX) * 0.5;
-    // Place much higher, with vertical randomness
-    const minY = CONFIG.ceilingY + 60;
-    const maxY = Math.min(CONFIG.height * 0.38, (CONFIG.height - CONFIG.groundH) - 140);
-    const by = randRange(minY, maxY);
-    const kinds = ['extraJump', 'wideCatch', 'bigSize'];
-    const kind = kinds[Math.floor(Math.random() * kinds.length)];
-    boxes.push({ x: midX, y: by, kind, active: true, phase: Math.random() * Math.PI * 2 });
+  const fillUntil = starModeActive ? (camera.x + (CONFIG.maxAnchorX * s) + CONFIG.width * 0.25) : targetEdgeX;
+  let spawnCount = 0;
+  while (true) {
+    let prev = null;
+    for (let i = ropes.length - 1; i >= 0; i--) {
+      if (!ropes[i].isWebRope) { prev = ropes[i]; break; }
+    }
+    const farthestX = prev ? prev.anchorX : -Infinity;
+    if (farthestX >= fillUntil) break;
+    const r = planNextRope();
+    ropes.push(r);
+    ropesBufferedThisStep = true;
+    // Maybe spawn a box between prev and new rope if eligible
+    if (!starModeActive && prev && exp >= 50 && Math.random() < CONFIG.itemSpawnProb) {
+      const midX = prev.anchorX + (r.anchorX - prev.anchorX) * 0.5;
+      // Place much higher, with vertical randomness
+      const minY = CONFIG.ceilingY + 60;
+      const maxY = Math.min(CONFIG.height * 0.38, (CONFIG.height - CONFIG.groundH) - 140);
+      const by = randRange(minY, maxY);
+      const kinds = ['extraJump', 'wideCatch', 'bigSize'];
+      // Test: 50% chance to spawn a star box, else pick from normal kinds
+      const kind = (Math.random() < 0.5) ? 'star' : kinds[Math.floor(Math.random() * kinds.length)];
+      boxes.push({ x: midX, y: by, kind, active: true, phase: Math.random() * Math.PI * 2 });
+    }
+    spawnCount++;
+    if (!starModeActive || spawnCount >= 10) break; // safety cap
   }
 }
 
@@ -942,6 +1004,9 @@ function resetRun() {
   camera.x = 0;
   ropes.length = 0;
   boxes.length = 0;
+  // Ensure fever state is cleared on fresh run
+  starModeActive = false;
+  starModeEndTime = 0;
   spawnInitialRope();
   ensureRopesBuffered();
   airJumpsLeft = 0;
@@ -1083,6 +1148,19 @@ function drawRope(g, rope) {
   // Line
   let stroke = '#b4c0d9';
   let lw = 2;
+  if (starModeActive) {
+    const pulse = 0.6 + 0.4 * Math.sin(simTime * 8);
+    stroke = '#ffd966';
+    lw = 3 + pulse;
+    g.save();
+    const prevComp = g.globalCompositeOperation;
+    g.globalCompositeOperation = 'lighter';
+    g.strokeStyle = 'rgba(255,217,102,0.35)';
+    g.lineWidth = lw * 2.2;
+    g.beginPath(); g.moveTo(sx, sy); g.lineTo(tx, ty); g.stroke();
+    g.globalCompositeOperation = prevComp;
+    g.restore();
+  }
   // Flashing warning if this rope is about to snap while attached
   if (player.rope === rope && rope.breakAt) {
     const rem = Math.max(0, rope.breakAt - simTime);
@@ -1097,7 +1175,7 @@ function drawRope(g, rope) {
   g.lineTo(tx, ty);
   g.stroke();
   // Anchor dot
-  g.fillStyle = '#92a0bb';
+  g.fillStyle = starModeActive ? '#ffd966' : '#92a0bb';
   g.beginPath();
   g.arc(sx, sy, 3, 0, Math.PI * 2);
   g.fill();
@@ -1138,6 +1216,12 @@ function updateRun(dt) {
   simTime += dt;
   // reset per-step rope buffering flag
   ropesBufferedThisStep = false;
+
+  // Star mode timeout
+  if (starModeActive && simTime >= starModeEndTime) {
+    starModeActive = false;
+    // Keep existing ropes; normal spawning will take over
+  }
 
   // Input
   if (Input.anyPressed()) {
@@ -1242,14 +1326,30 @@ function updateRun(dt) {
       // collect
       b.active = false;
       if (b.kind === 'star') {
+        // Activate fever and immediately attach a web rope like web item
         starModeActive = true;
-        starModeEndTime = simTime + 3.0;
-        const currentRope = player.rope;
+        starModeEndTime = simTime + (CONFIG.starDuration || 3.0);
+        const webAnchorY = player.y - 400;
+        const newWebRope = new Rope({
+            anchorX: player.x,
+            anchorY: webAnchorY,
+            L: 400,
+            A: 0, omega: 0, phi: 0,
+            isWebRope: true,
+            // Do NOT retract for star-start attach (starts at same height)
+            webTargetL: null,
+            id: `r${nextRopeId++}`
+        });
+        // Reset ropes to only this web rope, clear boxes
         ropes.length = 0;
-        if (currentRope) {
-            ropes.push(currentRope);
-        }
+        ropes.push(newWebRope);
         boxes.length = 0;
+        // Attach player
+        player.rope = newWebRope;
+        player.mode = 'attached';
+        lastDetachedRope = null;
+        catchLockUntil = simTime + 0.2;
+        webRopeJustCreated = true;
         spawnEffect('big', b.x, b.y);
       } else {
           spawnEffect('burst', b.x, b.y);
@@ -1262,6 +1362,26 @@ function updateRun(dt) {
 
   // Update player
   player.update(dt, simTime);
+  // Star trail particles while in fever mode
+  if (starModeActive) {
+    const px = player.x, py = player.y;
+    const count = 2;
+    for (let i = 0; i < count; i++) {
+      particles.push({
+        x: px + randRange(-4, 4),
+        y: py + randRange(-4, 4),
+        vx: randRange(-20, 20),
+        vy: randRange(-10, 10),
+        life: 0,
+        ttl: 0.35 + Math.random() * 0.25,
+        size: 1.2 + Math.random() * 1.6,
+        color: '#ffd966',
+        type: 'sparkle',
+        twinkleFreq: 8 + Math.random() * 6,
+        twinklePhase: Math.random() * Math.PI * 2,
+      });
+    }
+  }
   // Detect long press for fly activation (only once per run, only when no jumps left)
   if (shopInv.fly && Input.down && !flyLongPressTriggered && !usedFlyThisRun) {
     if (player.mode === 'free' && airJumpsLeft <= 0) {
@@ -1326,13 +1446,13 @@ function updateRun(dt) {
         // Attach
         player.mode = 'attached';
         player.rope = rope;
-        const gained = (usedAirJumps === 0) ? 3 : (usedAirJumps === 1) ? 2 : 1;
+        const gained = starModeActive ? 3 : ((usedAirJumps === 0) ? 3 : (usedAirJumps === 1) ? 2 : 1);
         score += gained;
         const kind = (gained === 3) ? 'big' : (gained === 2) ? 'medium' : 'small';
         const tipNow = rope.tip(simTime);
         spawnEffect(kind, tipNow.x, tipNow.y);
 
-        if (usedAirJumps === 0) {
+        if (starModeActive || usedAirJumps === 0) {
           comboCount++;
           if (comboCount >= 2) {
             spawnEffect('combo', player.x, player.y - 30, `${comboCount} COMBO`);
@@ -1341,7 +1461,7 @@ function updateRun(dt) {
           comboCount = 0;
         }
         // Schedule snap if EXP milestone reached (>= 10)
-        if (exp >= 10) {
+        if (exp >= 10 && !starModeActive) {
           if (Math.random() < CONFIG.ropeBreakProb) {
             rope.breakAt = simTime + 1.0; // snap after 1s unless player jumps
           } else {
@@ -1419,6 +1539,9 @@ function updateRun(dt) {
     try {
       localStorage.setItem(BEST_SCORE_KEY, String(best));
     } catch(_) {}
+    // End fever state on game over
+    starModeActive = false;
+    starModeEndTime = 0;
     State.current = 'gameover';
     // Clear current input edges and lock inputs briefly to avoid instant restart
     if (typeof UI !== 'undefined') UI.reset();
@@ -1435,6 +1558,14 @@ function updateRun(dt) {
 
 function renderRun(g) {
   drawBackground(g);
+  // Fever overlay
+  if (starModeActive) {
+    g.save();
+    const pulse = 0.08 + 0.06 * (Math.sin(simTime * 6) * 0.5 + 0.5);
+    g.fillStyle = `rgba(255,217,102,${pulse.toFixed(3)})`;
+    g.fillRect(0, 0, CONFIG.width, CONFIG.height);
+    g.restore();
+  }
   // Ropes behind player
   for (let i = 0; i < ropes.length; i++) drawRope(g, ropes[i]);
   // Draw boxes
@@ -1456,7 +1587,11 @@ function renderRun(g) {
     g.font = `11px "Press Start 2P", monospace`;
     g.textAlign = 'center';
     g.textBaseline = 'middle';
-    const label = b.kind === 'extraJump' ? 'J' : (b.kind === 'wideCatch' ? 'R' : 'S');
+    const label = (b.kind === 'extraJump') ? 'J'
+                  : (b.kind === 'wideCatch') ? 'R'
+                  : (b.kind === 'bigSize') ? 'S'
+                  : (b.kind === 'star') ? '*'
+                  : '?';
     g.fillText(label, sx, sy + 1);
     g.restore();
   }
@@ -1489,6 +1624,23 @@ function renderRun(g) {
   g.fillText(`BEST ${best}`, 12, 28);
   g.textAlign = 'right';
   g.fillText(`SAV ${savings}`, CONFIG.width - 12, 10);
+  // Fever badge and timer
+  if (starModeActive) {
+    const rem = Math.max(0, starModeEndTime - simTime);
+    g.textAlign = 'center';
+    g.fillStyle = '#ffd966';
+    g.font = `12px "Press Start 2P", monospace`;
+    g.fillText('FEVER', CONFIG.width / 2, 10);
+    // Timer bar under the title
+    const bw = 120, bh = 6;
+    const bx = (CONFIG.width - bw) / 2;
+    const by = 26;
+    g.fillStyle = 'rgba(255,255,255,0.15)';
+    g.fillRect(bx, by, bw, bh);
+    const ratio = Math.max(0, Math.min(1, rem / (CONFIG.starDuration || 3.0)));
+    g.fillStyle = '#ffd966';
+    g.fillRect(bx, by, bw * ratio, bh);
+  }
   // Pending item indicators
   g.textAlign = 'right';
   g.font = `10px "Press Start 2P", monospace`;
@@ -1519,7 +1671,7 @@ function updateGameOver(dt) {
     if (lvl >= 8 && typeof UI !== 'undefined' && UI.clicked) {
         const bw = 140, bh = 24;
         const bx = (CONFIG.width - bw) / 2;
-        const by = CONFIG.height * 0.80 + 50;
+        const by = CONFIG.height * 0.80 + 80; // moved down by 30px
         if (UI.mx >= bx && UI.mx <= bx + bw && UI.my >= by && UI.my <= by + bh) {
             fastModeEnabled = !fastModeEnabled;
             UI.reset();
@@ -1634,7 +1786,7 @@ function renderGameOver(g) {
       if (lvl >= 8) {
         const bw = 140, bh = 24;
         const bx = (CONFIG.width - bw) / 2;
-        const by = CONFIG.height * 0.80 + 50;
+        const by = CONFIG.height * 0.80 + 80; // moved down by 30px
         g.fillStyle = fastModeEnabled ? '#4a6e33' : '#22334a';
         g.strokeStyle = '#b4c0d9';
         g.lineWidth = 2;
