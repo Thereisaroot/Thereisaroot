@@ -91,7 +91,9 @@ const Fonts = {
     try {
       // Attempt to load; browser will no-op if unsupported
       if (document.fonts && document.fonts.load) {
-        await document.fonts.load('12px "Press Start 2P"');
+        try { await document.fonts.load('12px "GameFont"'); } catch {}
+        try { await document.fonts.load('12px "Press Start 2P"'); } catch {}
+        try { await document.fonts.load('12px "Dalmoori"'); } catch {}
       } else {
         // Fallback small delay
         await new Promise((r) => setTimeout(r, 300));
@@ -218,10 +220,11 @@ function setupDebugUI() {
 // UI helper for intro interactions
 const UI = {
   clicked: false,
+  justReleased: false,
   mx: 0,
   my: 0,
   keyPressed: null, // 'Space' | 'Escape' | null
-  reset() { this.clicked = false; this.keyPressed = null; },
+  reset() { this.clicked = false; this.justReleased = false; this.keyPressed = null; },
 };
 
 function isFromDebug(e) {
@@ -252,15 +255,60 @@ function onPress(e) {
     const cy = e.clientY !== undefined ? e.clientY : e.touches[0].clientY;
     UI.mx = (cx - rect.left) * (CONFIG.width / rect.width);
     UI.my = (cy - rect.top) * (CONFIG.height / rect.height);
-    UI.clicked = true;
+    // Don't set UI.clicked on mousedown, wait for mouseup
+    
+    // Start help popup drag if clicking in help area
+    if (State.current === 'shop' && shopHelp) {
+      helpDrag.active = true;
+      helpDrag.y0 = cy;
+      helpDrag.startY = cy;
+      helpDrag.scroll0 = shopHelpScroll;
+      helpDrag.hasMoved = false;
+    }
   }
   if (!Input.down) {
     Input.down = true;
     Input.justPressed = true;
   }
 }
-function onRelease() {
+function onRelease(e) {
   Input.down = false;
+  
+  // Record position for all states
+  if (e && (e.clientX !== undefined || (e.changedTouches && e.changedTouches.length > 0))) {
+    const rect = canvas.getBoundingClientRect();
+    if (e.clientX !== undefined) {
+      UI.mx = (e.clientX - rect.left) * (CONFIG.width / rect.width);
+      UI.my = (e.clientY - rect.top) * (CONFIG.height / rect.height);
+    } else if (e.changedTouches && e.changedTouches.length > 0) {
+      UI.mx = (e.changedTouches[0].clientX - rect.left) * (CONFIG.width / rect.width);
+      UI.my = (e.changedTouches[0].clientY - rect.top) * (CONFIG.height / rect.height);
+    }
+    
+    // Handle click on release for shop state
+    if (State.current === 'shop') {
+      // Only trigger click if not dragging
+      if (!shopDrag.hasMoved || shopConfirm) {
+        UI.clicked = true;
+        UI.justReleased = true; // New flag for mouseup
+      } else if (shopHelp && !helpDrag.hasMoved) {
+        // For help popup, only trigger click if not dragging
+        UI.clicked = true;
+        UI.justReleased = true;
+      }
+    } else {
+      // For other states, always set clicked on release
+      UI.clicked = true;
+      UI.justReleased = true;
+    }
+  }
+  
+  // Reset drag states
+  if (shopDrag.active) {
+    shopDrag.active = false;
+    shopDrag.hasMoved = false;
+  }
+  // Don't reset helpDrag.hasMoved here, we need it for the click check
 }
 
 window.addEventListener('keydown', (e) => {
@@ -285,9 +333,191 @@ window.addEventListener('keyup', (e) => {
   if (e.code === 'Space' || e.key === ' ' || e.key === 'Spacebar' ) onRelease();
 });
 window.addEventListener('mousedown', onPress);
-window.addEventListener('mouseup', onRelease);
+window.addEventListener('mouseup', (e) => onRelease(e));
 window.addEventListener('touchstart', onPress, { passive: false });
-window.addEventListener('touchend', onRelease);
+window.addEventListener('touchend', (e) => onRelease(e));
+
+// Mouse wheel support for shop scrolling
+window.addEventListener('wheel', (e) => {
+  if (State.current === 'shop') {
+    e.preventDefault();
+    
+    if (shopHelp) {
+      // Scroll help popup
+      shopHelpScroll += e.deltaY * 0.5;
+      
+      // Calculate max scroll based on shop mode
+      let maxHelpScroll = 0;
+      if (shopMode === 'chars') {
+        // Character shop help - 5 characters at 45px each
+        const chars = Object.entries(PIXEL_CHARACTERS);
+        const charHeight = 55; // Updated for 2-line descriptions
+        const totalContentHeight = chars.length * charHeight;
+        const viewportHeight = 230; // contentH from renderCharacterShop
+        maxHelpScroll = Math.max(0, totalContentHeight - viewportHeight);
+      } else {
+        // Item shop help - calculate based on descriptions
+        const lvl = getLevelByExp(exp);
+        const visibleItems = SHOP_ITEMS.filter(it => (it.minLevel || 1) <= lvl);
+        const itemHeight = 36; // name + desc + price + spacing
+        const totalContentHeight = visibleItems.length * itemHeight;
+        const viewportHeight = 230;
+        maxHelpScroll = Math.max(0, totalContentHeight - viewportHeight);
+      }
+      
+      shopHelpScroll = Math.max(0, Math.min(maxHelpScroll, shopHelpScroll));
+    } else if (!shopConfirm) {
+      // Scroll shop items/characters
+      shopScroll += e.deltaY * 0.5;
+      
+      if (shopMode === 'chars') {
+        // Character shop scroll limits
+        const chars = Object.entries(PIXEL_CHARACTERS);
+        const cols = 2;
+        const cellH = 100;
+        const gap = 10;
+        const titleY = CONFIG.height * 0.12;
+        const top = titleY + 50;
+        const rows = Math.ceil(chars.length / cols);
+        const contentH = rows * (cellH + gap) - gap;
+        const viewportH = CONFIG.height - top - 100;
+        const maxScroll = Math.max(0, contentH - viewportH);
+        shopScroll = Math.max(0, Math.min(maxScroll, shopScroll));
+      } else {
+        // Item shop scroll limits
+        const { cols, cellW, cellH, marginX, top, paddingTop, paddingBottom } = shopGrid();
+        const gap = 8;
+        const lvl = getLevelByExp(exp);
+        const items = SHOP_ITEMS.filter(it => (it.minLevel || 1) <= lvl);
+        const rows = Math.ceil(items.length / cols) || 1;
+        const contentH = paddingTop + rows * (cellH + gap) - gap + paddingBottom;
+        const viewportH = CONFIG.height - top - 90;
+        const maxScroll = Math.max(0, contentH - viewportH);
+        shopScroll = Math.max(0, Math.min(maxScroll, shopScroll));
+      }
+    }
+  }
+}, { passive: false });
+
+// Mouse move tracking for drag scroll
+let lastMouseY = 0;
+let helpDrag = { active: false, y0: 0, scroll0: 0, hasMoved: false, startY: 0 };
+window.addEventListener('mousemove', (e) => {
+  UI.mx = e.clientX;
+  UI.my = e.clientY;
+  lastMouseY = e.clientY;
+  
+  // Handle help popup drag
+  if (State.current === 'shop' && shopHelp && helpDrag.active) {
+    const moveDistance = Math.abs(e.clientY - helpDrag.startY);
+    if (moveDistance > 5) {
+      helpDrag.hasMoved = true;
+      console.log('Help drag detected:', moveDistance);
+    }
+    const delta = helpDrag.y0 - e.clientY;
+    const newScroll = helpDrag.scroll0 + delta;
+    
+    // Calculate max scroll based on shop mode
+    let maxHelpScroll = 0;
+    if (shopMode === 'chars') {
+      // Character shop help - 5 characters at 45px each
+      const chars = Object.entries(PIXEL_CHARACTERS);
+      const charHeight = 45;
+      const totalContentHeight = chars.length * charHeight;
+      const viewportHeight = 230; // contentH from renderCharacterShop
+      maxHelpScroll = Math.max(0, totalContentHeight - viewportHeight);
+    } else {
+      // Item shop help - calculate based on descriptions
+      const lvl = getLevelByExp(exp);
+      const visibleItems = SHOP_ITEMS.filter(it => (it.minLevel || 1) <= lvl);
+      const lineHeight = 14;
+      const itemHeight = 36;
+      const totalContentHeight = visibleItems.length * itemHeight;
+      const viewportHeight = 230;
+      maxHelpScroll = Math.max(0, totalContentHeight - viewportHeight);
+    }
+    
+    shopHelpScroll = Math.max(0, Math.min(maxHelpScroll, newScroll));
+  }
+  // Handle shop items drag
+  else if (State.current === 'shop' && shopDrag.active && !shopHelp && !shopConfirm) {
+    // Check if mouse moved enough to be considered a drag (threshold: 5px)
+    const moveDistance = Math.abs(e.clientY - shopDrag.y0) + Math.abs(e.clientX - shopDrag.startX);
+    if (moveDistance > 5) {
+      shopDrag.hasMoved = true;
+    }
+    
+    const delta = shopDrag.y0 - e.clientY;
+    shopScroll = shopDrag.scroll0 + delta;
+    
+    if (shopMode === 'chars') {
+      // Character shop scroll limits
+      const chars = Object.entries(PIXEL_CHARACTERS);
+      const cols = 2;
+      const cellH = 100;
+      const gap = 10;
+      const titleY = CONFIG.height * 0.12;
+      const top = titleY + 50;
+      const rows = Math.ceil(chars.length / cols);
+      const contentH = rows * (cellH + gap) - gap;
+      const viewportH = CONFIG.height - top - 100;
+      const maxScroll = Math.max(0, contentH - viewportH);
+      shopScroll = Math.max(0, Math.min(maxScroll, shopScroll));
+    } else {
+      // Item shop scroll limits
+      const { cols, cellW, cellH, marginX, top, paddingTop, paddingBottom } = shopGrid();
+      const gap = 8;
+      const lvl = getLevelByExp(exp);
+      const items = SHOP_ITEMS.filter(it => (it.minLevel || 1) <= lvl);
+      const rows = Math.ceil(items.length / cols) || 1;
+      const contentH = paddingTop + rows * (cellH + gap) - gap + paddingBottom;
+      const viewportH = CONFIG.height - top - 90;
+      const maxScroll = Math.max(0, contentH - viewportH);
+      shopScroll = Math.max(0, Math.min(maxScroll, shopScroll));
+    }
+  }
+});
+
+// Touch move for mobile drag scroll
+window.addEventListener('touchmove', (e) => {
+  if (State.current === 'shop' && shopDrag.active && !shopHelp && !shopConfirm) {
+    const touch = e.touches[0];
+    // Check if touch moved enough to be considered a drag
+    const moveDistance = Math.abs(touch.clientY - shopDrag.y0) + Math.abs(touch.clientX - shopDrag.startX);
+    if (moveDistance > 5) {
+      shopDrag.hasMoved = true;
+    }
+    
+    const delta = shopDrag.y0 - touch.clientY;
+    shopScroll = shopDrag.scroll0 + delta;
+    
+    if (shopMode === 'chars') {
+      // Character shop scroll limits
+      const chars = Object.entries(PIXEL_CHARACTERS);
+      const cols = 2;
+      const cellH = 100;
+      const gap = 10;
+      const titleY = CONFIG.height * 0.12;
+      const top = titleY + 50;
+      const rows = Math.ceil(chars.length / cols);
+      const contentH = rows * (cellH + gap) - gap;
+      const viewportH = CONFIG.height - top - 100;
+      const maxScroll = Math.max(0, contentH - viewportH);
+      shopScroll = Math.max(0, Math.min(maxScroll, shopScroll));
+    } else {
+      // Item shop scroll limits
+      const { cols, cellW, cellH, marginX, top, paddingTop, paddingBottom } = shopGrid();
+      const gap = 8;
+      const lvl = getLevelByExp(exp);
+      const items = SHOP_ITEMS.filter(it => (it.minLevel || 1) <= lvl);
+      const rows = Math.ceil(items.length / cols) || 1;
+      const contentH = paddingTop + rows * (cellH + gap) - gap + paddingBottom;
+      const viewportH = CONFIG.height - top - 90;
+      const maxScroll = Math.max(0, contentH - viewportH);
+      shopScroll = Math.max(0, Math.min(maxScroll, shopScroll));
+    }
+  }
+}, { passive: false });
 
 // Rope entity
 class Rope {
@@ -382,6 +612,9 @@ class Player {
     const segColors = ['#e53d3d', '#6aa8ff', '#ffa24d'];
     const size = this.r * 2 * this.sizeScale;
     const levelScale = (level > 1) ? 1.3 : 1.0;
+    
+    // Check if using pixel character
+    const isPixelChar = selectedCharacter !== 'default' && PIXEL_CHARACTERS[selectedCharacter];
 
     function drawPolygonPath(ctx, sides, radius, rotationRad) {
       const r = radius;
@@ -395,22 +628,167 @@ class Player {
       ctx.closePath();
     }
 
-    // Glow effect if purchased
-    if (shopInv.glow) {
-      const base = 0.3 + 0.2 * Math.sin(simTime * 3.1);
+    // Glow effect if purchased (3 levels with different colors and alpha)
+    if (shopInv.glowLevel && shopInv.glowLevel > 0) {
+      const glowLv = shopInv.glowLevel;
+      // Level 1: white, fast blink, low alpha
+      // Level 2: yellow, medium blink, medium alpha  
+      // Level 3: sky blue, slow blink, high alpha
+      const colors = ['#ffffff', '#ffff88', '#88ddff'];
+      const speeds = [5.0, 3.5, 2.0]; // Blink speed
+      const minAlphas = [0.05, 0.08, 0.1]; // Lower min alphas for pixel chars
+      const maxAlphas = [0.2, 0.25, 0.3]; // Max alpha 0.3 for level 3
+      
+      const color = colors[Math.min(glowLv - 1, 2)];
+      const speed = speeds[Math.min(glowLv - 1, 2)];
+      const minAlpha = minAlphas[Math.min(glowLv - 1, 2)];
+      const maxAlpha = maxAlphas[Math.min(glowLv - 1, 2)];
+      
+      const pulse = (Math.sin(simTime * speed) + 1) / 2; // 0 to 1
+      const alpha = minAlpha + (maxAlpha - minAlpha) * pulse;
+      
       g.save();
-      g.globalAlpha = Math.max(0.1, Math.min(0.5, base));
-      g.fillStyle = '#ffffff';
-      const bigScale = 1 + 0.05 * (shopInv.bigLevel || 0);
+      // Use screen blend mode for better glow effect
+      g.globalCompositeOperation = 'screen';
+      g.globalAlpha = alpha;
+      g.fillStyle = color;
+      const bigScale = 1 + 0.025 * (shopInv.bigLevel || 0);
       const gr = (this.r * this.sizeScale * bigScale) * ((level > 1) ? 1.3 : 1.0) * 1.6;
-      g.beginPath();
-      g.arc(0, 0, gr, 0, Math.PI * 2);
-      g.fill();
+      
+      // Draw glow shape
+      if (isPixelChar) {
+        // Sunburst/starburst effect for pixel characters with varying ray sizes
+        const rays = 12;
+        const innerR = gr * 0.5;
+        
+        // Different sizes for each ray for more organic look
+        const rayScales = [1.0, 0.7, 0.9, 0.6, 1.1, 0.8, 0.95, 0.65, 1.05, 0.75, 0.85, 0.7];
+        
+        g.beginPath();
+        for (let i = 0; i < rays; i++) {
+          const angle = (i / rays) * Math.PI * 2;
+          const nextAngle = ((i + 0.5) / rays) * Math.PI * 2;
+          
+          // Vary the outer radius for each ray
+          const outerR = gr * rayScales[i];
+          
+          // Outer point
+          const x1 = Math.cos(angle) * outerR;
+          const y1 = Math.sin(angle) * outerR;
+          
+          // Inner point (also vary slightly)
+          const innerScale = 0.9 + Math.sin(i * 1.7) * 0.1;
+          const x2 = Math.cos(nextAngle) * innerR * innerScale;
+          const y2 = Math.sin(nextAngle) * innerR * innerScale;
+          
+          if (i === 0) {
+            g.moveTo(x1, y1);
+          } else {
+            g.lineTo(x1, y1);
+          }
+          g.lineTo(x2, y2);
+        }
+        g.closePath();
+        g.fill();
+      } else if (level === 1) {
+        // Circle for level 1
+        g.beginPath();
+        g.arc(0, 0, gr, 0, Math.PI * 2);
+        g.fill();
+      } else {
+        // Polygon for level 2+
+        const groupIdx = Math.floor((level - 2) / 3);
+        const sides = 3 + Math.max(0, groupIdx);
+        const rot = Math.PI / 10; // Match player's rotation
+        drawPolygonPath(g, sides, gr, rot);
+        g.fill();
+      }
       g.restore();
     }
-    if (level === 1) {
+    
+    // Draw character (pixel or default)
+    if (isPixelChar) {
+      // Draw pixel character with animation
+      const charData = PIXEL_CHARACTERS[selectedCharacter];
+      const bigScale = 1 + 0.025 * (shopInv.bigLevel || 0);
+      const pixelSize = 3 * this.sizeScale * bigScale * levelScale;
+      
+      // Animation effects based on player state
+      const isSwinging = this.mode === 'attached';
+      const isFalling = this.mode === 'free' && this.vy > 50;
+      const isJumping = this.mode === 'free' && this.vy < -50;
+      
+      // Squash and stretch animation
+      let scaleX = 1;
+      let scaleY = 1;
+      let offsetY = 0;
+      
+      if (isSwinging) {
+        // Subtle swing animation
+        scaleX = 1 + Math.sin(simTime * 8) * 0.05;
+        scaleY = 1 - Math.sin(simTime * 8) * 0.05;
+      } else if (isJumping) {
+        // Stretch when jumping up
+        scaleX = 0.9;
+        scaleY = 1.15;
+      } else if (isFalling) {
+        // Squash when falling down
+        scaleX = 1.1;
+        scaleY = 0.9;
+      }
+      
+      // Eye blink animation
+      const blinkCycle = Math.floor(simTime * 0.3) % 20;
+      const isBlinking = blinkCycle === 0;
+      
+      // Apply animation transforms
+      g.save();
+      g.scale(scaleX, scaleY);
+      
+      // Draw pixels with animation
+      charData.pixels.forEach((row, ry) => {
+        row.forEach((pixel, rx) => {
+          if (pixel) {
+            // Special handling for eyes (usually pixel value 2)
+            if (pixel === 2 && isBlinking) {
+              // Don't draw eyes when blinking
+              return;
+            }
+            
+            // Add slight wobble for certain characters
+            let pixelOffsetX = 0;
+            let pixelOffsetY = 0;
+            
+            if (selectedCharacter === 'ninja' && isSwinging) {
+              // Ninja's scarf/ribbon effect - animate bottom pixels
+              if (ry >= 6) {
+                pixelOffsetX = Math.sin(simTime * 10 + ry) * 1;
+              }
+            } else if (selectedCharacter === 'wizard' && isSwinging) {
+              // Wizard's robe flutter - animate bottom pixels
+              if (ry >= 5) {
+                pixelOffsetX = Math.cos(simTime * 8 + ry * 0.5) * 0.8;
+              }
+            }
+            
+            g.fillStyle = charData.colors[pixel - 1] || '#ffffff';
+            g.fillRect(
+              (rx - charData.pixels[0].length / 2) * pixelSize + pixelOffsetX,
+              (ry - charData.pixels.length / 2) * pixelSize + pixelOffsetY + offsetY,
+              pixelSize,
+              pixelSize
+            );
+          }
+        });
+      });
+      
+      g.restore();
+      
+      // No outline for pixel characters to avoid black border
+      
+    } else if (level === 1) {
       // Pure white circle (egg)
-      const bigScale = 1 + 0.05 * (shopInv.bigLevel || 0);
+      const bigScale = 1 + 0.025 * (shopInv.bigLevel || 0);
       const r = this.r * this.sizeScale * bigScale * levelScale;
       g.fillStyle = '#ffffff';
       g.beginPath();
@@ -430,11 +808,11 @@ class Player {
       g.lineTo(r * 0.1, 5);
       g.closePath();
       g.fill();
-  } else {
+    } else {
       // Shape mapping: L2-4 triangle (3), L5-7 square (4), L8-10 pentagon (5), ...
       const groupIdx = Math.floor((level - 2) / 3); // 0 for L2-4, 1 for L5-7, ...
       const sides = 3 + groupIdx;
-      const bigScale = 1 + 0.05 * (shopInv.bigLevel || 0);
+      const bigScale = 1 + 0.025 * (shopInv.bigLevel || 0);
       const r = this.r * this.sizeScale * bigScale * levelScale;
       const rot = Math.PI / 10; // slight rotation
       // Clip to polygon
@@ -458,11 +836,42 @@ class Player {
       g.stroke();
     }
 
-    // Buds attached to polygon vertices; max count equals current vertex count
-    if (shopInv.budsLevel && shopInv.budsLevel > 0 && level > 1) {
+    // Buds - works with both pixel and polygon characters
+    if (shopInv.budsLevel && shopInv.budsLevel > 0) {
+      if (isPixelChar) {
+        // For pixel characters, place buds at corners
+        const charData = PIXEL_CHARACTERS[selectedCharacter];
+        const bigScale = 1 + 0.025 * (shopInv.bigLevel || 0);
+        const pixelSize = 3 * this.sizeScale * bigScale * levelScale;
+        const width = charData.pixels[0].length * pixelSize;
+        const height = charData.pixels.length * pixelSize;
+        const positions = [
+          {x: -width/2, y: -height/2}, // top-left
+          {x: width/2, y: -height/2},  // top-right
+          {x: width/2, y: height/2},   // bottom-right
+          {x: -width/2, y: height/2},  // bottom-left
+        ];
+        const maxBuds = Math.min(4, shopInv.budsLevel);
+        for (let i = 0; i < maxBuds; i++) {
+          const pos = positions[i];
+          const phase = simTime * 3 + i * (Math.PI * 0.5);
+          const swayX = Math.sin(phase) * 4;
+          const swayY = Math.cos(phase * 1.3) * 2;
+          g.save();
+          g.translate(pos.x + swayX, pos.y + swayY);
+          g.fillStyle = i < segCount ? segColors[i] : '#ffffff';
+          g.beginPath();
+          g.arc(0, 0, 4, 0, Math.PI * 2);
+          g.fill();
+          g.strokeStyle = '#333333';
+          g.lineWidth = 1;
+          g.stroke();
+          g.restore();
+        }
+      } else if (level > 1) {
       const groupIdx = Math.floor((level - 2) / 3);
       const sides = 3 + Math.max(0, groupIdx);
-      const bigScale = 1 + 0.05 * (shopInv.bigLevel || 0);
+      const bigScale = 1 + 0.025 * (shopInv.bigLevel || 0);
       const baseR = this.r * this.sizeScale * bigScale * ((level > 1) ? 1.3 : 1.0);
       const childR = baseR * 0.40;
       const rot2 = Math.PI / 10; // body polygon rotation offset
@@ -503,6 +912,7 @@ class Player {
         g.fill();
         g.stroke();
         g.restore();
+      }
       }
     }
 
@@ -557,16 +967,118 @@ let gameOverLevelUp = null; // { from, to }
 let levelUpPopupTimer = 0;
 
 // Shop state
+let shopMode = 'items'; // 'items' or 'chars'
 let shopScroll = 0;
 let shopDrag = { active: false, y0: 0, scroll0: 0 };
+let previousState = 'intro'; // 상점 진입 전 상태 저장
 let shopConfirm = null; // { id, price }
+let selectedCharacter = 'default'; // Currently selected character
 let shopMsg = null;      // string message inside confirm (e.g., insufficient funds)
 let shopMsgTimer = 0;    // seconds until message auto-dismiss
 let shopHelp = false;    // show help popup under SHOP
+let shopHelpScroll = 0;  // scroll position for help popup
 let lastShopHelpRect = null; // cached '?' button rect computed during render
 
+
+// Pixel character definitions (8x8 grids)
+const PIXEL_CHARACTERS = {
+  default: {
+    name: 'Polygon',
+    price: 0,
+    minLevel: 1,
+    pixels: [], // Empty - uses the normal polygon rendering
+    colors: [],
+    description: 'Classic geometric shape that evolves with level'
+  },
+  robot: {
+    name: 'Robot',
+    price: 1000,
+    minLevel: 3,
+    pixels: [
+      [0,0,1,1,1,1,0,0],
+      [0,1,2,1,1,2,1,0],
+      [0,1,1,1,1,1,1,0],
+      [0,0,1,1,1,1,0,0],
+      [1,1,1,1,1,1,1,1],
+      [1,0,1,1,1,1,0,1],
+      [1,0,1,0,0,1,0,1],
+      [0,0,1,0,0,1,0,0]
+    ],
+    colors: ['#8B93AF', '#4A90E2', '#2E5266'], // 0: transparent, 1: body, 2: eyes
+    description: 'Mechanical precision'
+  },
+  ninja: {
+    name: 'Ninja',
+    price: 1500,
+    minLevel: 5,
+    pixels: [
+      [0,0,1,1,1,1,0,0],
+      [0,1,1,1,1,1,1,0],
+      [0,1,2,1,1,2,1,0],
+      [0,1,1,1,1,1,1,0],
+      [0,0,1,1,1,1,0,0],
+      [0,1,1,1,1,1,1,0],
+      [0,1,0,1,1,0,1,0],
+      [1,0,0,0,0,0,0,1]
+    ],
+    colors: ['#1a1a1a', '#ffffff', '#ff0000'], // black body, white eyes, red band
+    description: 'Silent and deadly'
+  },
+  pirate: {
+    name: 'Pirate',
+    price: 2000,
+    minLevel: 7,
+    pixels: [
+      [0,1,1,1,1,1,1,0],
+      [1,1,1,1,1,1,1,1],
+      [0,1,2,1,3,1,1,0],
+      [0,1,1,1,1,1,1,0],
+      [0,0,1,1,1,1,0,0],
+      [0,1,1,1,1,1,1,0],
+      [0,1,0,1,1,0,1,0],
+      [1,0,0,0,0,0,0,1]
+    ],
+    colors: ['#8B4513', '#ffffff', '#000000', '#FFD700'], // brown, white, black (eyepatch), gold
+    description: 'Arr! +15% gold'
+  },
+  wizard: {
+    name: 'Wizard',
+    price: 2500,
+    minLevel: 10,
+    pixels: [
+      [0,0,0,1,0,0,0,0],
+      [0,0,1,1,1,0,0,0],
+      [0,1,1,1,1,1,0,0],
+      [0,1,2,1,2,1,0,0],
+      [0,1,1,1,1,1,0,0],
+      [0,1,3,3,3,1,0,0],
+      [0,1,1,1,1,1,0,0],
+      [0,1,0,0,0,1,0,0]
+    ],
+    colors: ['#4B0082', '#ffffff', '#FFD700', '#C0C0C0'], // purple, white, gold stars, silver beard
+    description: 'Magical powers'
+  },
+  knight: {
+    name: 'Knight',
+    price: 3000,
+    minLevel: 12,
+    pixels: [
+      [0,1,1,1,1,1,1,0],
+      [0,1,1,2,2,1,1,0],
+      [0,1,1,1,1,1,1,0],
+      [0,1,3,1,1,3,1,0],
+      [0,1,1,1,1,1,1,0],
+      [0,1,1,1,1,1,1,0],
+      [0,1,0,1,1,0,1,0],
+      [1,0,0,0,0,0,0,1]
+    ],
+    colors: ['#C0C0C0', '#808080', '#FF0000', '#FFD700'], // silver, dark gray, red cross, gold
+    description: 'Heavy armor protection'
+  }
+};
+
 // Shop inventory
-let shopInv = { glow: false, budsLevel: 0, plusJump: false, fly: false, bigLevel: 0, gambleActive: false, webActive: false };
+let shopInv = { glow: false, budsLevel: 0, plusJump: false, fly: false, bigLevel: 0, gambleActive: false, webActive: false, characters: [] };
 function loadShopInv() {
   try {
     const raw = localStorage.getItem(SHOP_INV_KEY);
@@ -746,7 +1258,7 @@ function drawParticles(g) {
     const a = Math.max(0, 1 - p.life / p.ttl);
     g.globalAlpha = a;
     g.fillStyle = p.color;
-    g.font = `${p.size}px "Press Start 2P", monospace`;
+    g.font = `${p.size}px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
     g.textAlign = 'center';
     g.textBaseline = 'middle';
     g.fillText(p.text, p.x, p.y);
@@ -848,7 +1360,8 @@ function planNextRope() {
       const yTip2 = CONFIG.ceilingY + L * Math.cos(theta_hit);
       const dy = Math.abs(yTip2 - yProj);
       const phi = Math.acos(Math.max(-1, Math.min(1, theta_hit / A))) - omega2 * (simTime + t_hit);
-      const catchR = (pendingCatchR > 0 ? pendingCatchR : CONFIG.catchBase) * 1.2;
+      const glowBonus = shopInv.glowLevel ? (shopInv.glowLevel * 0.167 * CONFIG.catchBase) : 0;
+      const catchR = ((pendingCatchR > 0 ? pendingCatchR : CONFIG.catchBase) + glowBonus) * 1.2;
       if (Math.abs(tipX2 - (x0 + vxEst * t_hit)) < 12 && dy <= catchR) {
         return new Rope({ anchorX, anchorY: CONFIG.ceilingY, L, A, omega: omega2, phi, createdAt: simTime, id: `r${nextRopeId++}` });
       }
@@ -1044,7 +1557,7 @@ function drawCenteredText(g, text, y, size = 18, color = '#fff') {
   g.fillStyle = color;
   g.textAlign = 'center';
   g.textBaseline = 'middle';
-  g.font = `${size}px "Press Start 2P", monospace`;
+  g.font = `${size}px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
   g.fillText(text, CONFIG.width / 2, y);
 }
 
@@ -1052,7 +1565,7 @@ let showGuide = false;
 function guideButtonRect() {
   const w = 92, h = 24;
   const x = (CONFIG.width - w) / 2;
-  const y = CONFIG.height * 0.68;
+  const y = CONFIG.height * 0.85;  // Moved down significantly to avoid overlap
   return { x, y, w, h };
 }
 function pointInRect(px, py, r) { return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h; }
@@ -1073,7 +1586,39 @@ function updateIntro(dt) {
     UI.reset();
     return;
   }
-  // Start game on space or click outside guide
+  
+  // Check for shop button clicks (if level >= 2)
+  const lvl = getLevelByExp(exp);
+  if (lvl >= 2 && UI.clicked) {
+    const bw = 100, bh = 36;
+    const spacing = 10;
+    const totalWidth = bw * 2 + spacing;
+    const startX = (CONFIG.width - totalWidth) / 2;
+    const by = CONFIG.height * 0.65;
+    
+    // ITEMS button
+    if (UI.mx >= startX && UI.mx <= startX + bw && UI.my >= by && UI.my <= by + bh) {
+      previousState = State.current; // 이전 상태 저장
+      State.current = 'shop';
+      shopMode = 'items';
+      shopScroll = 0;
+      UI.reset();
+      return;
+    }
+    
+    // CHARS button
+    const charsX = startX + bw + spacing;
+    if (UI.mx >= charsX && UI.mx <= charsX + bw && UI.my >= by && UI.my <= by + bh) {
+      previousState = State.current; // 이전 상태 저장
+      State.current = 'shop';
+      shopMode = 'chars';
+      shopScroll = 0;
+      UI.reset();
+      return;
+    }
+  }
+  
+  // Start game on space or click outside buttons
   if (UI.keyPressed === 'Space' || UI.clicked) {
     UI.reset();
     resetRun();
@@ -1083,11 +1628,43 @@ function updateIntro(dt) {
 
 function renderIntro(g, t) {
   drawBackground(g);
-  drawCenteredText(g, 'WEB SWING', CONFIG.height * 0.28, 20);
+  drawCenteredText(g, '쩜푸 쩜푸', CONFIG.height * 0.28, 20);
   const blink = Math.sin(t * 3) > 0 ? 1 : 0.3;
   g.globalAlpha = blink;
   drawCenteredText(g, 'PRESS START', CONFIG.height * 0.52, 14);
   g.globalAlpha = 1;
+  
+  // Shop buttons (if level >= 2)
+  const lvl = getLevelByExp(exp);
+  if (lvl >= 2) {
+    const bw = 100, bh = 36;
+    const spacing = 10;
+    const totalWidth = bw * 2 + spacing;
+    const startX = (CONFIG.width - totalWidth) / 2;
+    const by = CONFIG.height * 0.65;
+    
+    // ITEMS button
+    g.fillStyle = '#22334a';
+    g.strokeStyle = '#b4c0d9';
+    g.lineWidth = 2;
+    g.fillRect(startX, by, bw, bh);
+    g.strokeRect(startX, by, bw, bh);
+    g.fillStyle = '#ffffff';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+    g.fillText('ITEMS', startX + bw/2, by + bh/2 + 1);
+    
+    // CHARS button
+    const charsX = startX + bw + spacing;
+    g.fillStyle = '#22334a';
+    g.fillRect(charsX, by, bw, bh);
+    g.strokeStyle = '#b4c0d9';
+    g.strokeRect(charsX, by, bw, bh);
+    g.fillStyle = '#ffffff';
+    g.fillText('CHARS', charsX + bw/2, by + bh/2 + 1);
+  }
+  
   // Guide button
   const btn = guideButtonRect();
   g.fillStyle = '#22334a';
@@ -1098,7 +1675,7 @@ function renderIntro(g, t) {
   g.fillStyle = '#ffffff';
   g.textAlign = 'center';
   g.textBaseline = 'middle';
-  g.font = `10px "Press Start 2P", monospace`;
+  g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
   g.fillText('GUIDE', btn.x + btn.w/2, btn.y + btn.h/2 + 1);
 
   // Popup overlay
@@ -1125,14 +1702,14 @@ function renderIntro(g, t) {
     g.fillStyle = '#ffffff';
     g.textAlign = 'left';
     g.textBaseline = 'top';
-    g.font = `9px "Press Start 2P", monospace`;
+    g.font = `9px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
     let ly = py + 14;
     for (const line of lines) {
       g.fillText(line, px + 12, ly);
       ly += 14;
     }
     g.fillStyle = '#b4c0d9';
-    g.font = `8px "Press Start 2P", monospace`;
+    g.font = `8px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
     g.textAlign = 'center';
     g.fillText('Click anywhere to close', px + pw/2, py + ph - 18);
     g.restore();
@@ -1181,7 +1758,8 @@ function drawRope(g, rope) {
   g.fill();
   // Debug: tip-only catch radius and distance readout
   if (DEBUG) {
-    const catchR = CONFIG.catchBase;
+    const glowBonus = shopInv.glowLevel ? (shopInv.glowLevel * 0.167 * CONFIG.catchBase) : 0;
+    const catchR = CONFIG.catchBase + glowBonus;
     g.save();
     g.fillStyle = 'rgba(255,105,180,0.12)';
     g.strokeStyle = 'rgba(255,105,180,0.5)';
@@ -1191,7 +1769,7 @@ function drawRope(g, rope) {
     g.fill();
     g.stroke();
     // numeric debug
-    g.font = `10px "Press Start 2P", monospace`;
+    g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
     g.textAlign = 'left';
     g.textBaseline = 'top';
     g.fillStyle = '#ff69b4';
@@ -1204,7 +1782,7 @@ function drawRope(g, rope) {
     const rem = Math.max(0, rope.breakAt - simTime);
     g.save();
     g.fillStyle = rem < 0.5 ? '#ff5a5a' : '#ffa64d';
-    g.font = `10px "Press Start 2P", monospace`;
+    g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
     g.textAlign = 'center';
     g.textBaseline = 'bottom';
     g.fillText('!', tx, ty - 6);
@@ -1441,7 +2019,8 @@ function updateRun(dt) {
       const bx = tip.x, by = tip.y;
       const dx = bx - player.x;
       const dy = by - player.y;
-      const catchR = pendingCatchR > 0 ? pendingCatchR : CONFIG.catchBase;
+      const glowBonus = shopInv.glowLevel ? (shopInv.glowLevel * 0.167 * CONFIG.catchBase) : 0;
+      const catchR = (pendingCatchR > 0 ? pendingCatchR : CONFIG.catchBase) + glowBonus;
       if (Math.hypot(dx, dy) <= catchR) {
         // Attach
         player.mode = 'attached';
@@ -1584,7 +2163,7 @@ function renderRun(g) {
     g.stroke();
     // icon
     g.fillStyle = '#fff';
-    g.font = `11px "Press Start 2P", monospace`;
+    g.font = `11px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
     g.textAlign = 'center';
     g.textBaseline = 'middle';
     const label = (b.kind === 'extraJump') ? 'J'
@@ -1619,7 +2198,7 @@ function renderRun(g) {
   g.fillStyle = '#ffffff';
   g.textAlign = 'left';
   g.textBaseline = 'top';
-  g.font = `12px "Press Start 2P", monospace`;
+  g.font = `12px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
   g.fillText(`SCORE ${score}`, 12, 10);
   g.fillText(`BEST ${best}`, 12, 28);
   g.textAlign = 'right';
@@ -1629,7 +2208,7 @@ function renderRun(g) {
     const rem = Math.max(0, starModeEndTime - simTime);
     g.textAlign = 'center';
     g.fillStyle = '#ffd966';
-    g.font = `12px "Press Start 2P", monospace`;
+    g.font = `12px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
     g.fillText('FEVER', CONFIG.width / 2, 10);
     // Timer bar under the title
     const bw = 120, bh = 6;
@@ -1643,12 +2222,12 @@ function renderRun(g) {
   }
   // Pending item indicators
   g.textAlign = 'right';
-  g.font = `10px "Press Start 2P", monospace`;
+  g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
   const itemText = `${pendingExtraJump ? '+J ' : ''}${pendingCatchR ? 'R50 ' : ''}${pendingSizeScale ? 'S+ ' : ''}`.trim();
   if (itemText) g.fillText(itemText, CONFIG.width - 12, 28);
   // Level display
   g.textAlign = 'left';
-  g.font = `10px "Press Start 2P", monospace`;
+  g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
   g.fillText(`LV ${getLevelByExp(exp)}`, 12, 46);
 }
 
@@ -1659,46 +2238,68 @@ function updateGameOver(dt) {
   gameOverTimer += dt;
   levelUpPopupTimer += dt;
   const wait = CONFIG.gameOverWait || 5.0;
-  // During lock period, consume/clear any inputs so they don't auto-trigger later
+  // 잠금 기간 동안 입력을 소비/지우기 (나중에 자동 트리거되지 않도록)
   if (gameOverTimer < wait) {
     if (typeof UI !== 'undefined') UI.reset();
     Input.down = false; Input.justPressed = false;
+    return; // 타이머가 준비되지 않았으면 여기서 종료
   }
-  // Direct restart on input; avoid any intro flicker
-  if (gameOverTimer >= wait && (Input.anyPressed() || (typeof UI !== 'undefined' && (UI.clicked || UI.keyPressed === 'Space' || UI.keyPressed === 'Escape')))) {
-    const lvl = getLevelByExp(exp);
-    // Check for fast mode toggle click
-    if (lvl >= 8 && typeof UI !== 'undefined' && UI.clicked) {
-        const bw = 140, bh = 24;
-        const bx = (CONFIG.width - bw) / 2;
-        const by = CONFIG.height * 0.80 + 80; // moved down by 30px
-        if (UI.mx >= bx && UI.mx <= bx + bw && UI.my >= by && UI.my <= by + bh) {
-            fastModeEnabled = !fastModeEnabled;
-            UI.reset();
-            return; // Prevent other actions on this click
-        }
-    }
-
-    // If clicked inside SHOP button (and lvl>=2), go to shop; else restart
-    let intoShop = false;
-    if (typeof UI !== 'undefined' && UI.clicked && lvl >= 2) {
-      const bw = 86, bh = 44;
-      const bx = (CONFIG.width - bw) / 2;
-      const by = CONFIG.height * 0.80;
-      if (UI.mx >= bx && UI.mx <= bx + bw && UI.my >= by && UI.my <= by + bh) intoShop = true;
-    }
-    if (intoShop) {
+  
+  // 타이머가 준비되면 버튼 클릭 확인
+  const lvl = getLevelByExp(exp);
+  
+  // 우선순위 1: ITEMS 또는 CHARS 버튼 클릭 확인 (레벨>=2)
+  if (typeof UI !== 'undefined' && (UI.clicked || UI.justReleased) && lvl >= 2) {
+    const bw = 100, bh = 36;
+    const spacing = 10;
+    const totalWidth = bw * 2 + spacing;
+    const startX = (CONFIG.width - totalWidth) / 2;
+    const by = CONFIG.height * 0.80;
+    
+    
+    // ITEMS 버튼 확인
+    const itemsBx = startX;
+    if (UI.mx >= itemsBx && UI.mx <= itemsBx + bw && UI.my >= by && UI.my <= by + bh) {
+      previousState = State.current; // 이전 상태 저장
       State.current = 'shop';
-      // init shop scroll
-      shopScroll = 0; shopDrag.active = false; shopConfirm = null;
+      shopMode = 'items'; // 아이템 상점 모드로 설정
+      shopScroll = 0; shopDrag.active = false; shopConfirm = null; shopHelp = false;
       if (typeof UI !== 'undefined') UI.reset();
       Input.down = false; Input.justPressed = false;
       return;
-    } else {
+    }
+    
+    // CHARS 버튼 확인
+    const charsBx = startX + bw + spacing;
+    if (UI.mx >= charsBx && UI.mx <= charsBx + bw && UI.my >= by && UI.my <= by + bh) {
+      previousState = State.current; // 이전 상태 저장
+      State.current = 'shop'; 
+      shopMode = 'chars'; // 캐릭터 상점 모드로 설정
+      shopScroll = 0; shopDrag.active = false; shopConfirm = null; shopHelp = false;
       if (typeof UI !== 'undefined') UI.reset();
       Input.down = false; Input.justPressed = false;
-      resetRun();
+      return;
     }
+  }
+  
+  // 우선순위 2: 빠른 모드 토글 클릭 확인 (레벨>=8)
+  if (lvl >= 8 && typeof UI !== 'undefined' && (UI.clicked || UI.justReleased)) {
+    const bw = 140, bh = 24;
+    const bx = (CONFIG.width - bw) / 2;
+    const by = CONFIG.height * 0.80 + 80; // moved down by 30px
+    if (UI.mx >= bx && UI.mx <= bx + bw && UI.my >= by && UI.my <= by + bh) {
+      fastModeEnabled = !fastModeEnabled;
+      UI.reset();
+      return; // 이 클릭에서 다른 동작 방지
+    }
+  }
+  
+  // 우선순위 3: 다른 입력으로 직접 재시작 (버튼을 클릭하지 않은 경우에만)
+  // Input.anyPressed()를 제거하고 mouseup 이벤트(UI.clicked)만 사용
+  if (typeof UI !== 'undefined' && (UI.clicked || UI.keyPressed === 'Space' || UI.keyPressed === 'Escape')) {
+    if (typeof UI !== 'undefined') UI.reset();
+    Input.down = false; Input.justPressed = false;
+    resetRun();
   }
 }
 
@@ -1710,7 +2311,7 @@ function renderGameOver(g) {
     g.fillStyle = '#ffffff';
     g.textAlign = 'center';
     g.textBaseline = 'top';
-    g.font = `12px "Press Start 2P", monospace`;
+    g.font = `12px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
     g.fillText('YOU LOSE EVERYTHING.', CONFIG.width / 2, CONFIG.height * 0.40 - 20);
     g.fillText('YOU WILL BECOME A SMALL EGG.', CONFIG.width / 2, CONFIG.height * 0.46 - 20);
   } else {
@@ -1737,10 +2338,10 @@ function renderGameOver(g) {
     }
     const earnedText = (lastEarned > 0) ? `Gained: $${lastEarned} / +${lastEarned}P` : 'Earn $ and P by scoring over 5';
     // Next Target line with Score font size (12px)
-    g.font = `12px "Press Start 2P", monospace`;
+    g.font = `12px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
     g.fillText(nextText, CONFIG.width / 2, y0);
     // Other lines with default small font (10px)
-    g.font = `10px "Press Start 2P", monospace`;
+    g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
     // EXP and SAV in one line
     g.fillText(`EXP: ${exp}P | SAV: $${savings}`, CONFIG.width / 2, y0 + 32);
     // Earn explanation three lines below
@@ -1754,7 +2355,7 @@ function renderGameOver(g) {
     g.fillStyle = '#ffffff';
     g.textAlign = 'center';
     g.textBaseline = 'middle';
-    g.font = `12px "Press Start 2P", monospace`;
+    g.font = `12px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
     g.fillText(`LEVEL UP! LV ${gameOverLevelUp.to}`, cx, cy);
   }
   const wait = CONFIG.gameOverWait || 5.0;
@@ -1765,22 +2366,36 @@ function renderGameOver(g) {
     drawCenteredText(g, `RETRY IN ${sec}`, CONFIG.height * 0.74 - 20, 10, '#b4c0d9');
   } else {
     drawCenteredText(g, 'CLICK / SPACE TO RETRY', CONFIG.height * 0.74 - 20, 10, '#b4c0d9');
-    // Shop button (Level >= 2)
+    // Shop buttons (Level >= 2)
     const lvl = getLevelByExp(exp);
     if (lvl >= 2) {
-      const bw = 86, bh = 44;
-      const bx = (CONFIG.width - bw) / 2;
+      const bw = 100, bh = 36;
+      const spacing = 10;
+      const totalWidth = bw * 2 + spacing;
+      const startX = (CONFIG.width - totalWidth) / 2;
       const by = CONFIG.height * 0.80;
+      
+      // ITEMS button
+      const itemsBx = startX;
       g.fillStyle = '#22334a';
       g.strokeStyle = '#b4c0d9';
       g.lineWidth = 2;
-      g.fillRect(bx, by, bw, bh);
-      g.strokeRect(bx, by, bw, bh);
+      g.fillRect(itemsBx, by, bw, bh);
+      g.strokeRect(itemsBx, by, bw, bh);
       g.fillStyle = '#ffffff';
       g.textAlign = 'center';
       g.textBaseline = 'middle';
-      g.font = `10px "Press Start 2P", monospace`;
-      g.fillText('SHOP', bx + bw/2, by + bh/2 + 1);
+      g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+      g.fillText('ITEMS', itemsBx + bw/2, by + bh/2 + 1);
+      
+      // CHARS button
+      const charsBx = startX + bw + spacing;
+      g.fillStyle = '#22334a';
+      g.fillRect(charsBx, by, bw, bh);
+      g.strokeStyle = '#b4c0d9';
+      g.strokeRect(charsBx, by, bw, bh);
+      g.fillStyle = '#ffffff';
+      g.fillText('CHARS', charsBx + bw/2, by + bh/2 + 1);
 
       // Fast mode toggle (Level >= 8)
       if (lvl >= 8) {
@@ -1838,6 +2453,12 @@ async function start() {
       localStorage.setItem(EXP_KEY, String(exp));
     }
     const demoDone = localStorage.getItem(DEMO_DONE_KEY) === '1';
+    
+    // Load selected character
+    const savedChar = localStorage.getItem('webswing_selected_char_v1');
+    if (savedChar && PIXEL_CHARACTERS[savedChar]) {
+      selectedCharacter = savedChar;
+    }
     if (!demoDone) {
       demoActive = true;
       if (savings < 100) {
@@ -1857,7 +2478,7 @@ async function start() {
       }
     } catch(_){}
     // Equip Glow, +Jump, Fly during demo
-    shopInv.glow = true;
+    shopInv.glowLevel = 1;
     shopInv.plusJump = true;
     shopInv.fly = true;
     saveShopInv();
@@ -1881,6 +2502,15 @@ function tick(now) {
     else if (State.current === 'shop') updateShop(dt);
     acc -= dt;
     Input.endFrame();
+    
+    // UI는 한 프레임 동안만 유지되어야 하므로 업데이트 후 리셋
+    if (UI.clicked || UI.justReleased) {
+      // 다음 프레임을 위해 리셋 (하지만 현재 프레임에서는 유지)
+      setTimeout(() => {
+        UI.clicked = false;
+        UI.justReleased = false;
+      }, 0);
+    }
   }
   webRopeJustCreated = false;
     // Render
@@ -1892,30 +2522,48 @@ function tick(now) {
   requestAnimationFrame(tick);
 }
 
-start();
-
 // Notes for next steps:
 // - Add Rope class (anchor, L, A, omega, phase) and single-rope attach/detach.
 // - Then implement multi-rope spawner with reachability guarantee.
 // Shop item definitions
 const SHOP_ITEMS = [
-  { id: 'glow', name: 'Glow', type: 'single', price: 20, minLevel: 2 },
+  { id: 'glow', name: 'Glow', type: 'level', maxLevel: 3, price: 20, minLevel: 2 },
   { id: 'buds', name: 'Buds', type: 'level', maxLevel: 5, price: 10, minLevel: 2 },
   { id: 'plusjump', name: '+Jump', type: 'single', price: 100, minLevel: 2 },
-  { id: 'fly', name: 'Fly', type: 'single', price: 200, minLevel: 2 },
+  { id: 'fly', name: 'Fly', type: 'single', price: 100, minLevel: 2 },
   { id: 'big', name: 'Big', type: 'level', price: 20, minLevel: 5 },
   { id: 'gamble', name: 'Gamble', type: 'single', price: 10, minLevel: 1 },
   { id: 'web', name: 'Web', type: 'single', price: 3, minLevel: 1 },
+  { id: 'magnet', name: 'Magnet', type: 'level', maxLevel: 5, price: 30, minLevel: 3 },
+  { id: 'shield', name: 'Shield', type: 'single', price: 100, minLevel: 4 },
+  { id: 'combo', name: 'Combo+', type: 'level', maxLevel: 3, price: 80, minLevel: 6 },
+  { id: 'slow', name: 'Slow', type: 'single', price: 100, minLevel: 3 },
+  { id: 'double', name: 'Double', type: 'single', price: 100, minLevel: 8 },
+  { id: 'lucky', name: 'Lucky', type: 'level', maxLevel: 5, price: 40, minLevel: 2 },
+  { id: 'revival', name: 'Revival', type: 'single', price: 100, minLevel: 10 },
+  { id: 'rainbow', name: 'Rainbow', type: 'single', price: 30, minLevel: 3 },
+  { id: 'fever', name: 'Fever+', type: 'level', maxLevel: 3, price: 60, minLevel: 5 },
+  { id: 'bank', name: 'Bank', type: 'level', maxLevel: 5, price: 100, minLevel: 1 },
 ];
 
 function getItemLevel(it) {
   if (it.id === 'buds') return shopInv.budsLevel || 0;
-  if (it.id === 'glow') return shopInv.glow ? 1 : 0;
+  if (it.id === 'glow') return shopInv.glowLevel || 0;
   if (it.id === 'plusjump') return shopInv.plusJump ? 1 : 0;
   if (it.id === 'fly') return shopInv.fly ? 1 : 0;
   if (it.id === 'big') return shopInv.bigLevel || 0;
   if (it.id === 'gamble') return shopInv.gambleActive ? 1 : 0;
   if (it.id === 'web') return shopInv.webActive ? 1 : 0;
+  if (it.id === 'magnet') return shopInv.magnetLevel || 0;
+  if (it.id === 'shield') return shopInv.shield ? 1 : 0;
+  if (it.id === 'combo') return shopInv.comboLevel || 0;
+  if (it.id === 'slow') return shopInv.slow ? 1 : 0;
+  if (it.id === 'double') return shopInv.double ? 1 : 0;
+  if (it.id === 'lucky') return shopInv.luckyLevel || 0;
+  if (it.id === 'revival') return shopInv.revival ? 1 : 0;
+  if (it.id === 'rainbow') return shopInv.rainbow ? 1 : 0;
+  if (it.id === 'fever') return shopInv.feverLevel || 0;
+  if (it.id === 'bank') return shopInv.bankLevel || 0;
   return 0;
 }
 function currentBodySides() {
@@ -1953,42 +2601,386 @@ function shopGrid() {
   const cellH = 64;
   const marginX = Math.floor((CONFIG.width - cols * cellW) / 2);
   const top = Math.floor(CONFIG.height * 0.20);
-  return { cols, cellW, cellH, marginX, top };
+  const paddingTop = 20; // Add top padding
+  const paddingBottom = 20; // Add bottom padding
+  return { cols, cellW, cellH, marginX, top, paddingTop, paddingBottom };
 }
 
 function shopHelpRect() { return lastShopHelpRect; }
 
 function itemDescription(id) {
-  if (id === 'Fly') return 'You can fly.';
-  if (id === 'fly') return 'You can fly.';
-  if (id === 'plusjump' || id === '+Jump') return 'You can jump more.';
-  if (id === 'glow' || id === 'Glow') return 'Emits a soft glow.';
-  if (id === 'buds' || id === 'Buds') return 'Adds small trailing shapes.';
-  if (id === 'big' || id === 'Big') return 'Grows by 5% per level.';
-  if (id === 'gamble' || id === 'Gamble') return 'Next run earns 1.5x money.';
-  if (id === 'web' || id === 'Web') return 'Last resort safety web.';
+  if (id === 'fly') return 'Hold to fly upward once per run.';
+  if (id === 'plusjump') return 'Extra air jump during free fall.';
+  if (id === 'glow') return 'Glow effect and +5% catch range per level (max 3).';
+  if (id === 'buds') return 'Adds trailing orbs to vertices (max = sides).';
+  if (id === 'big') return 'Grows by 2.5% per level (max = player level).';
+  if (id === 'gamble') return 'Next run earns 1.5x money (one-time use).';
+  if (id === 'web') return 'Emergency web when falling (one-time use).';
+  if (id === 'magnet') return 'Auto-collect items +30px range per level (max 5).';
+  if (id === 'shield') return 'Blocks rope snap once per run.';
+  if (id === 'combo') return 'Combo score +0.5x per level (max 3).';
+  if (id === 'slow') return 'Auto slow-mo when falling (3 times per run).';
+  if (id === 'double') return 'Jump boost 1.3x stronger from ropes.';
+  if (id === 'lucky') return 'Item spawn chance +5% per level (max 5).';
+  if (id === 'revival') return 'Revive once when falling to ground.';
+  if (id === 'rainbow') return 'Rainbow color animation effect.';
+  if (id === 'fever') return 'Star mode duration +2 sec per level (max 3).';
+  if (id === 'bank') return 'Earnings +10% interest per level (max 5).';
   return 'No description.';
+}
+
+function renderCharacterShop(g) {
+  // Character shop UI
+  const titleY = CONFIG.height * 0.12;
+  drawCenteredText(g, 'CHARACTERS', titleY, 14);
+  
+  // Show SAV at top-right
+  g.fillStyle = '#ffffff';
+  g.textAlign = 'right';
+  g.textBaseline = 'top';
+  g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+  g.fillText(`SAV: $${savings}`, CONFIG.width - 12, titleY + 24);
+  
+  // Help button '?' for character shop
+  {
+    g.font = `14px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+    const tw = g.measureText('CHARACTERS').width;
+    const cx = CONFIG.width / 2;
+    const left = cx - tw / 2;
+    const w = 20, h = 20;
+    const x = Math.floor(left + tw + 20);
+    const y = Math.floor(titleY - h / 2);
+    lastShopHelpRect = { x, y, w, h };
+    g.fillStyle = '#22334a';
+    g.strokeStyle = '#b4c0d9';
+    g.lineWidth = 2;
+    g.fillRect(x, y, w, h);
+    g.strokeRect(x, y, w, h);
+    g.fillStyle = '#ffffff';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+    g.fillText('?', x + w/2, y + h/2 + 1);
+  }
+  
+  // Get purchased characters from inventory
+  const charInv = shopInv.characters || [];
+  
+  // Character grid
+  const chars = Object.entries(PIXEL_CHARACTERS);
+  const cols = 2;
+  const cellW = CONFIG.width / cols;
+  const cellH = 100;
+  const marginX = 20;
+  const top = titleY + 50;
+  const gap = 10;
+  
+  // Calculate content height and max scroll
+  const rows = Math.ceil(chars.length / cols);
+  const contentH = rows * (cellH + gap) - gap;
+  const viewportH = CONFIG.height - top - 100; // Leave space for buttons
+  const maxScroll = Math.max(0, contentH - viewportH);
+  shopScroll = Math.max(0, Math.min(maxScroll, shopScroll));
+  
+  // Clip to viewport
+  g.save();
+  g.beginPath();
+  g.rect(0, top, CONFIG.width, viewportH);
+  g.clip();
+  
+  // Draw character cards
+  chars.forEach(([id, char], i) => {
+    const r = Math.floor(i / cols);
+    const c = i % cols;
+    const x = marginX + c * cellW;
+    const y = top + r * (cellH + 10) - shopScroll;
+    
+    // Card background
+    g.fillStyle = '#0f1a2a';
+    g.strokeStyle = '#b4c0d9';
+    g.lineWidth = 2;
+    g.fillRect(x + 6, y, cellW - 40, cellH);
+    g.strokeRect(x + 6, y, cellW - 40, cellH);
+    
+    // Character preview
+    const px = x + 20;
+    const py = y + 15;
+    
+    if (id === 'default') {
+      // Draw current polygon shape for Polygon character
+      const sides = currentBodySides();
+      const radius = 12;
+      const centerX = px + 8;
+      const centerY = py + 8;
+      
+      if (sides === 0) {
+        // Circle for level 1
+        g.fillStyle = '#ffffff';
+        g.beginPath();
+        g.arc(centerX, centerY, radius, 0, Math.PI * 2);
+        g.fill();
+      } else {
+        // Polygon for level 2+
+        g.fillStyle = '#ffffff';
+        g.beginPath();
+        for (let i = 0; i <= sides; i++) {
+          const angle = (i / sides) * Math.PI * 2 - Math.PI / 2;
+          const vx = centerX + Math.cos(angle) * radius;
+          const vy = centerY + Math.sin(angle) * radius;
+          if (i === 0) g.moveTo(vx, vy);
+          else g.lineTo(vx, vy);
+        }
+        g.closePath();
+        g.fill();
+      }
+    } else {
+      // Pixel art for other characters
+      const pixScale = 2;
+      char.pixels.forEach((row, ry) => {
+        row.forEach((pixel, rx) => {
+          if (pixel) {
+            g.fillStyle = char.colors[pixel - 1] || '#ffffff';
+            g.fillRect(px + rx * pixScale, py + ry * pixScale, pixScale, pixScale);
+          }
+        });
+      });
+    }
+    
+    // Character name
+    g.fillStyle = '#ffffff';
+    g.textAlign = 'left';
+    g.textBaseline = 'top';
+    g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+    g.fillText(char.name, x + 14, y + 50);
+    
+    // Price or status
+    const isPurchased = charInv.includes(id) || id === 'default';
+    const isSelected = selectedCharacter === id;
+    
+    g.textAlign = 'center';
+    g.textBaseline = 'top';
+    if (isPurchased) {
+      if (isSelected) {
+        g.fillStyle = '#ffff88';
+        g.fillText('SELECTED', x + cellW/2 - 20, y + 70);
+      } else {
+        g.fillStyle = '#88ff88';
+        g.fillText('OWNED', x + cellW/2 - 20, y + 70);
+      }
+    } else {
+      g.fillStyle = '#ffffff';
+      g.fillText(`$${char.price}`, x + cellW/2 - 20, y + 70);
+    }
+  });
+  
+  g.restore(); // End clip
+  
+  // Buttons at bottom
+  const bw = 100, bh = 36;
+  const spacing = 10;
+  const totalWidth = bw * 2 + spacing;
+  const startX = (CONFIG.width - totalWidth) / 2;
+  const by = CONFIG.height - 60;
+  
+  // BACK button
+  g.fillStyle = '#22334a';
+  g.strokeStyle = '#b4c0d9';
+  g.lineWidth = 2;
+  g.fillRect(startX, by, bw, bh);
+  g.strokeRect(startX, by, bw, bh);
+  g.fillStyle = '#ffffff';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+  g.fillText('BACK', startX + bw/2, by + bh/2 + 1);
+  
+  // ITEMS button  
+  const itemsX = startX + bw + spacing;
+  g.fillStyle = '#22334a';
+  g.fillRect(itemsX, by, bw, bh);
+  g.strokeStyle = '#b4c0d9';
+  g.strokeRect(itemsX, by, bw, bh);
+  g.fillStyle = '#ffffff';
+  g.fillText('ITEMS', itemsX + bw/2, by + bh/2 + 1);
+  
+  // Character purchase/selection confirmation
+  if (shopConfirm && shopConfirm.type === 'character') {
+    g.fillStyle = 'rgba(0,0,0,0.55)';
+    g.fillRect(0, 0, CONFIG.width, CONFIG.height);
+    const pw = CONFIG.width * 0.88, ph = 112;
+    const px = (CONFIG.width - pw)/2, py = CONFIG.height * 0.40;
+    g.fillStyle = '#0f1a2a';
+    g.strokeStyle = '#b4c0d9';
+    g.lineWidth = 2;
+    g.fillRect(px, py, pw, ph);
+    g.strokeRect(px, py, pw, ph);
+    
+    const char = PIXEL_CHARACTERS[shopConfirm.id];
+    if (!char) {
+      shopConfirm = null;
+      return;
+    }
+    const charInv = shopInv.characters || [];
+    const isPurchased = charInv.includes(shopConfirm.id) || shopConfirm.id === 'default';
+    
+    g.fillStyle = '#ffffff';
+    g.textAlign = 'center';
+    g.textBaseline = 'top';
+    g.font = `12px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+    
+    if (isPurchased) {
+      g.fillText(`Select ${char.name}?`, px + pw/2, py + 20);
+    } else {
+      g.fillText(`Buy ${char.name} for $${char.price}?`, px + pw/2, py + 10);
+      g.font = `8px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+      g.fillText(`SAV: $${savings}`, px + pw/2, py + 38);
+    }
+    
+    // YES/NO buttons
+    const bw2 = 78, bh2 = 26;
+    const gapB = 12;
+    const by2 = py + ph - 36;
+    const bx2 = px + pw/2 - bw2 - gapB;
+    const bx3 = px + pw/2 + gapB;
+    
+    g.fillStyle = '#22334a';
+    g.fillRect(bx2, by2, bw2, bh2);
+    g.strokeRect(bx2, by2, bw2, bh2);
+    g.fillRect(bx3, by2, bw2, bh2);
+    g.strokeRect(bx3, by2, bw2, bh2);
+    
+    g.fillStyle = '#ffffff';
+    g.textBaseline = 'middle';
+    g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+    g.fillText('YES', bx2 + bw2/2, by2 + bh2/2);
+    g.fillText('NO', bx3 + bw2/2, by2 + bh2/2);
+  }
+  
+  // Help popup for character shop
+  if (shopHelp) {
+    g.fillStyle = 'rgba(0,0,0,0.55)';
+    g.fillRect(0, 0, CONFIG.width, CONFIG.height);
+    const pw = CONFIG.width * 0.86, ph = Math.min(320, CONFIG.height * 0.65);
+    const px = (CONFIG.width - pw)/2, py = CONFIG.height * 0.18;
+    g.fillStyle = '#0f1a2a';
+    g.strokeStyle = '#b4c0d9';
+    g.lineWidth = 2;
+    g.fillRect(px, py, pw, ph);
+    g.strokeRect(px, py, pw, ph);
+    
+    // Title
+    g.fillStyle = '#ffffff';
+    g.textAlign = 'center';
+    g.textBaseline = 'top';
+    g.font = `12px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+    g.fillText('CHARACTER INFO', px + pw/2, py + 10);
+    
+    // Content area with scroll
+    const contentY = py + 35;
+    const contentH = ph - 45;
+    
+    g.save();
+    g.beginPath();
+    g.rect(px, contentY, pw, contentH);
+    g.clip();
+    
+    // Character descriptions
+    const chars = Object.entries(PIXEL_CHARACTERS);
+    const lineHeight = 14;
+    const charHeight = 55; // Height per character entry (increased for 2-line descriptions)
+    let yPos = contentY + 5 - shopHelpScroll;
+    
+    g.textAlign = 'left';
+    g.textBaseline = 'top';
+    
+    chars.forEach(([id, char]) => {
+      // Character name
+      g.fillStyle = '#fffa75';
+      g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+      g.fillText(char.name.toUpperCase(), px + 10, yPos);
+      
+      // Price or status
+      if (id === 'default') {
+        g.fillStyle = '#88ff88';
+        g.fillText('[OWNED]', px + pw - 80, yPos);
+      } else {
+        const charInv = shopInv.characters || [];
+        if (charInv.includes(id)) {
+          g.fillStyle = '#88ff88';
+          g.fillText('[OWNED]', px + pw - 80, yPos);
+        } else {
+          g.fillStyle = '#ffffff';
+          g.fillText(`$${char.price}`, px + pw - 80, yPos);
+        }
+      }
+      
+      // Description
+      g.fillStyle = '#b4c0d9';
+      g.font = `8px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+      
+      let descLines = [];
+      if (id === 'default') {
+        descLines = ['Classic geometric shape that', 'evolves with level'];
+      } else if (id === 'robot') {
+        descLines = ['Mechanical precision with', 'enhanced durability'];
+      } else if (id === 'ninja') {
+        descLines = ['Swift and silent,', 'moves with grace'];
+      } else if (id === 'pirate') {
+        descLines = ['Arr! Collects 15% more', 'gold per run'];
+      } else if (id === 'wizard') {
+        descLines = ['Magical powers enhance', 'item effects'];
+      } else if (id === 'knight') {
+        descLines = ['Heavy armor provides', 'extra protection'];
+      }
+      
+      // Draw each line of description
+      descLines.forEach((line, lineIdx) => {
+        g.fillText(line, px + 10, yPos + lineHeight + (lineIdx * 10));
+      });
+      
+      yPos += charHeight; // Fixed height for consistent scrolling
+    });
+    
+    g.restore();
+    
+    // Scroll indicator if needed
+    const totalContentHeight = chars.length * charHeight;
+    if (totalContentHeight > contentH) {
+      const scrollBarHeight = 40;
+      const scrollBarY = contentY + (shopHelpScroll / (totalContentHeight - contentH)) * (contentH - scrollBarHeight);
+      g.fillStyle = '#b4c0d9';
+      g.fillRect(px + pw - 8, scrollBarY, 4, scrollBarHeight);
+    }
+  }
 }
 
 function renderShop(g) {
   // backdrop
   g.fillStyle = 'rgba(0,0,0,0.6)';
   g.fillRect(0, 0, CONFIG.width, CONFIG.height);
+  
+  // Render based on shop mode
+  if (shopMode === 'chars') {
+    renderCharacterShop(g);
+    return;
+  }
+  
+  // Original item shop
   const titleY = CONFIG.height * 0.12;
-  drawCenteredText(g, 'SHOP', titleY, 14);
+  drawCenteredText(g, 'ITEMS', titleY, 14);
   // Show SAV at top-right, two lines below the SHOP title
   {
     const headerY = CONFIG.height * 0.12;
     g.fillStyle = '#ffffff';
     g.textAlign = 'right';
     g.textBaseline = 'top';
-    g.font = `10px "Press Start 2P", monospace`;
+    g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
     g.fillText(`SAV: $${savings}`, CONFIG.width - 12, headerY + 24);
   }
   // Help button '?' positioned 20px to the right of the SHOP title
   {
     // measure SHOP text width to place the '?' with 20px gap
-    g.font = `14px "Press Start 2P", monospace`;
+    g.font = `14px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
     const tw = g.measureText('SHOP').width;
     const cx = CONFIG.width / 2;
     const left = cx - tw / 2;
@@ -2004,29 +2996,30 @@ function renderShop(g) {
     g.fillStyle = '#ffffff';
     g.textAlign = 'center';
     g.textBaseline = 'middle';
-    g.font = `10px "Press Start 2P", monospace`;
+    g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
     g.fillText('?', x + w/2, y + h/2 + 1);
   }
-  const { cols, cellW, cellH, marginX, top } = shopGrid();
+  const { cols, cellW, cellH, marginX, top, paddingTop, paddingBottom } = shopGrid();
   const gap = 8;
   // Filter items by level visibility
   const lvl = getLevelByExp(exp);
   const items = SHOP_ITEMS.filter(it => (it.minLevel || 1) <= lvl);
-  // content height
+  // content height with padding
   const rows = Math.ceil(items.length / cols) || 1;
-  const contentH = rows * (cellH + gap) - gap;
+  const contentH = paddingTop + rows * (cellH + gap) - gap + paddingBottom;
+  const viewportH = CONFIG.height - top - 90;
   // clamp scroll
-  shopScroll = Math.max(0, Math.min(Math.max(0, contentH - (CONFIG.height - top - 90)), shopScroll));
+  shopScroll = Math.max(0, Math.min(Math.max(0, contentH - viewportH), shopScroll));
   // draw items
   g.save();
   g.beginPath();
-  g.rect(0, top, CONFIG.width, CONFIG.height - top - 90);
+  g.rect(0, top, CONFIG.width, viewportH);
   g.clip();
   for (let i = 0; i < items.length; i++) {
     const r = Math.floor(i / cols);
     const c = i % cols;
     const x = marginX + c * cellW;
-    const y = top + r * (cellH + gap) - shopScroll;
+    const y = top + paddingTop + r * (cellH + gap) - shopScroll;
     // card
     g.fillStyle = '#0f1a2a';
     g.strokeStyle = '#b4c0d9';
@@ -2038,7 +3031,7 @@ function renderShop(g) {
     g.fillStyle = '#ffffff';
     g.textAlign = 'left';
     g.textBaseline = 'top';
-    g.font = `10px "Press Start 2P", monospace`;
+    g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
     g.fillText(items[i].name, x + 14, y + 6);
     // 2) Price (right aligned), dynamic for level-type
     g.textAlign = 'right';
@@ -2047,7 +3040,7 @@ function renderShop(g) {
     // 3) Icon (center)
     g.textAlign = 'center';
     g.textBaseline = 'middle';
-    g.font = `12px "Press Start 2P", monospace`;
+    g.font = `12px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
     let label;
     if (items[i].id === 'glow') label = '*';
     else if (items[i].id === 'buds') label = '+';
@@ -2055,12 +3048,23 @@ function renderShop(g) {
     else if (items[i].id === 'fly') label = '^';
     else if (items[i].id === 'gamble') label = '$';
     else if (items[i].id === 'web') label = 'W';
+    else if (items[i].id === 'big') label = 'B';
+    else if (items[i].id === 'magnet') label = 'M';
+    else if (items[i].id === 'shield') label = 'S';
+    else if (items[i].id === 'combo') label = 'C';
+    else if (items[i].id === 'slow') label = '~';
+    else if (items[i].id === 'double') label = '2';
+    else if (items[i].id === 'lucky') label = 'L';
+    else if (items[i].id === 'revival') label = 'R';
+    else if (items[i].id === 'rainbow') label = '=';
+    else if (items[i].id === 'fever') label = 'F';
+    else if (items[i].id === 'bank') label = '%';
     else label = '?';
     g.fillText(label, x + cellW/2, y + Math.floor(cellH * 0.60));
     // 4) Level line (no max display)
     g.textAlign = 'center';
     g.textBaseline = 'bottom';
-    g.font = `10px "Press Start 2P", monospace`;
+    g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
     const lvVal = getItemLevel(items[i]);
     g.fillText(`Lv. ${lvVal}`, x + cellW/2, y + cellH - 6);
     // sold out overlay
@@ -2068,7 +3072,7 @@ function renderShop(g) {
       g.fillStyle = 'rgba(0,0,0,0.5)';
       g.fillRect(x + 6, y, cellW - 12, cellH);
       g.textAlign = 'center';
-      g.font = `10px "Press Start 2P", monospace`;
+      g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
       if (items[i].type === 'single' || (items[i].id === 'gamble' || items[i].id === 'web')) {
         g.fillStyle = '#ff6666';
         g.fillText('SOLD OUT', x + cellW/2, y + cellH/2 + 2);
@@ -2079,20 +3083,33 @@ function renderShop(g) {
     }
   }
   g.restore();
-  // Start button
-  const bw = 110, bh = 48;
-  const bx = (CONFIG.width - bw) / 2;
-  const by = CONFIG.height - 72; // lift by ~30px
+  // Bottom buttons (START GAME and CHARS)
+  const bw = 100, bh = 36;
+  const spacing = 10;
+  const totalWidth = bw * 2 + spacing;
+  const startX = (CONFIG.width - totalWidth) / 2;
+  const by = CONFIG.height - 60;
+  
+  // BACK button
   g.fillStyle = '#22334a';
   g.strokeStyle = '#b4c0d9';
   g.lineWidth = 2;
-  g.fillRect(bx, by, bw, bh);
-  g.strokeRect(bx, by, bw, bh);
+  g.fillRect(startX, by, bw, bh);
+  g.strokeRect(startX, by, bw, bh);
   g.fillStyle = '#ffffff';
   g.textAlign = 'center';
   g.textBaseline = 'middle';
-  g.font = `10px "Press Start 2P", monospace`;
-  g.fillText('START GAME', bx + bw/2, by + bh/2 + 1);
+  g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+  g.fillText('BACK', startX + bw/2, by + bh/2 + 1);
+  
+  // CHARS button
+  const charsX = startX + bw + spacing;
+  g.fillStyle = '#22334a';
+  g.fillRect(charsX, by, bw, bh);
+  g.strokeStyle = '#b4c0d9';
+  g.strokeRect(charsX, by, bw, bh);
+  g.fillStyle = '#ffffff';
+  g.fillText('CHARS', charsX + bw/2, by + bh/2 + 1);
 
   // Confirm popup
   if (shopConfirm) {
@@ -2108,18 +3125,18 @@ function renderShop(g) {
     g.fillStyle = '#ffffff';
     g.textAlign = 'center';
     g.textBaseline = 'top';
-    g.font = `12px "Press Start 2P", monospace`;
+    g.font = `12px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
     const itName = (SHOP_ITEMS.find(x=>x.id===shopConfirm.id)?.name || shopConfirm.id).toString();
     g.fillText(`Buy ${itName} for $${shopConfirm.price}?`, px + pw/2, py + 10);
     // Current SAV centered two lines below, font 2px smaller
     g.textAlign = 'center';
-    g.font = `8px "Press Start 2P", monospace`;
+    g.font = `8px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
     g.fillText(`SAV: $${savings}`, px + pw/2, py + 38);
     // Message (e.g., insufficient funds)
     if (shopMsg && shopMsgTimer > 0) {
       g.textAlign = 'center';
       g.fillStyle = '#ff6666';
-      g.font = `10px "Press Start 2P", monospace`;
+      g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
       g.fillText(shopMsg, px + pw/2, py + 50);
       g.fillStyle = '#ffffff';
     }
@@ -2140,40 +3157,61 @@ function renderShop(g) {
     // button labels centered
     g.fillStyle = showingMsg ? '#8a98ad' : '#ffffff';
     g.textBaseline = 'middle';
-    g.font = `10px "Press Start 2P", monospace`;
+    g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
     g.fillText('YES', bx2 + bw2/2, by2 + bh2/2);
     g.fillStyle = '#ffffff';
     g.fillText('NO', bx3 + bw2/2, by2 + bh2/2);
   }
 
-  // Help popup (shows only visible items' descriptions)
+  // Help popup (shows all items' descriptions with scroll)
   if (shopHelp) {
     g.fillStyle = 'rgba(0,0,0,0.55)';
     g.fillRect(0, 0, CONFIG.width, CONFIG.height);
-    const pw = CONFIG.width * 0.86, ph = Math.min(220, CONFIG.height * 0.55);
-    const px = (CONFIG.width - pw)/2, py = CONFIG.height * 0.22;
+    const pw = CONFIG.width * 0.86, ph = Math.min(320, CONFIG.height * 0.65);
+    const px = (CONFIG.width - pw)/2, py = CONFIG.height * 0.18;
     g.fillStyle = '#0f1a2a';
     g.strokeStyle = '#b4c0d9';
     g.lineWidth = 2;
     g.fillRect(px, py, pw, ph);
     g.strokeRect(px, py, pw, ph);
+    
+    // Title
+    g.fillStyle = '#ffffff';
+    g.textAlign = 'center';
+    g.textBaseline = 'top';
+    g.font = `12px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+    g.fillText('ITEM DESCRIPTIONS', px + pw/2, py + 10);
+    
+    // Content area with scroll
+    const contentTop = py + 35;
+    const contentBottom = py + ph - 35; // Leave space for close instruction
+    const contentHeight = contentBottom - contentTop;
+    
+    g.save();
+    g.beginPath();
+    g.rect(px, contentTop, pw, contentHeight);
+    g.clip();
+    
     g.fillStyle = '#ffffff';
     g.textAlign = 'left';
     g.textBaseline = 'top';
-    g.font = `10px "Press Start 2P", monospace`;
-    const lvl = getLevelByExp(exp);
-    const items = SHOP_ITEMS.filter(it => (it.minLevel || 1) <= lvl);
-    // dynamic name column width based on visible names
-    const leftPad = 10, rightPad = 10, gap = 10;
+    g.font = `9px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+    
+    // Get all items (not just visible ones) for help
+    const allItems = SHOP_ITEMS;
+    
+    // Calculate content dimensions
+    const leftPad = 10, rightPad = 10, gap = 8;
     let nameColW = 0;
-    for (const it of items) {
+    for (const it of allItems) {
       const w = g.measureText(it.name || it.id).width;
       nameColW = Math.max(nameColW, w);
     }
-    nameColW = Math.max(40, Math.min(90, Math.floor(nameColW + 6)));
+    nameColW = Math.max(50, Math.min(100, Math.floor(nameColW + 6)));
     const nameRightX = px + leftPad + nameColW;
     const descX = nameRightX + gap;
     const descMaxW = px + pw - rightPad - descX;
+    
     function wrapText(ctx, text, maxW) {
       const words = String(text).split(' ');
       const lines = [];
@@ -2188,31 +3226,58 @@ function renderShop(g) {
       if (line) lines.push(line);
       return lines;
     }
-    let yy = py + 12;
-    for (const it of items) {
+    
+    // Calculate total content height
+    let totalContentH = 0;
+    const itemHeights = [];
+    for (const it of allItems) {
+      const desc = itemDescription(it.id);
+      const wrapped = wrapText(g, desc, descMaxW);
+      const h = Math.max(14, wrapped.length * 14) + 8;
+      itemHeights.push(h);
+      totalContentH += h;
+    }
+    
+    // Clamp scroll
+    const maxScroll = Math.max(0, totalContentH - contentHeight);
+    shopHelpScroll = Math.max(0, Math.min(maxScroll, shopHelpScroll));
+    
+    // Draw items
+    let yy = contentTop + 5 - shopHelpScroll;
+    for (let i = 0; i < allItems.length; i++) {
+      const it = allItems[i];
       const name = it.name || it.id;
-      const descLinesBase = (it.id === 'buds' || name === 'Buds')
-        ? ['Adds small trailing shapes.', 'Attached to vertices.']
-        : [itemDescription(it.id || name)];
-      const wrapped = [];
-      for (const line of descLinesBase) {
-        const ws = wrapText(g, line, descMaxW);
-        for (const l of ws) wrapped.push(l);
+      const desc = itemDescription(it.id);
+      const wrapped = wrapText(g, desc, descMaxW);
+      
+      // Skip if completely outside view
+      if (yy + itemHeights[i] < contentTop || yy > contentBottom) {
+        yy += itemHeights[i];
+        continue;
       }
-      // draw name (right aligned)
+      
+      // Draw name (right aligned)
       g.textAlign = 'right';
+      g.fillStyle = '#ffa24d';
       g.fillText(name, nameRightX, yy);
-      // draw description (wrapped)
+      
+      // Draw description (wrapped)
       g.textAlign = 'left';
+      g.fillStyle = '#ffffff';
       for (let j = 0; j < wrapped.length; j++) {
         g.fillText(wrapped[j], descX, yy + j * 14);
       }
-      yy += Math.max(14, wrapped.length * 14) + 6;
-      if (yy > py + ph - 26) break;
+      
+      yy += itemHeights[i];
     }
+    g.restore();
+    
+    // Bottom close instruction (outside clipping area)
     g.textAlign = 'center';
+    g.textBaseline = 'middle';
     g.fillStyle = '#b4c0d9';
-    g.fillText('Click anywhere to close', px + pw/2, py + ph - 18);
+    g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+    g.fillText('Click anywhere to close', px + pw/2, py + ph - 16);
   }
 }
 
@@ -2225,18 +3290,37 @@ function updateShop(dt) {
       shopConfirm = null;
     }
   }
-  // handle drag scroll
-  if (Input.down && !shopDrag.active && UI.clicked) {
-    shopDrag.active = true; shopDrag.y0 = UI.my; shopDrag.scroll0 = shopScroll;
+  // handle drag scroll start
+  if (Input.down && !shopDrag.active && !shopHelp && !shopConfirm) {
+    shopDrag.active = true; 
+    shopDrag.y0 = UI.my; 
+    shopDrag.scroll0 = shopScroll;
+    shopDrag.startX = UI.mx;
+    shopDrag.startY = UI.my;
+    shopDrag.hasMoved = false;
   }
-  if (!Input.down) shopDrag.active = false;
-  // We don't have continuous move tracking; simulate with clicks only for now
-  // Click handling
-  if (Input.anyPressed() && typeof UI !== 'undefined' && UI.clicked) {
+  
+  // Click handling - process on release instead of press
+  if (UI.justReleased && typeof UI !== 'undefined' && UI.clicked) {
+    UI.justReleased = false; // Reset the flag
     // Help popup toggle/close
     const hr = shopHelpRect();
     if (shopHelp) {
-      shopHelp = false; UI.reset(); return;
+      // Only close if not dragging
+      if (!helpDrag.hasMoved) {
+        shopHelp = false; 
+        shopHelpScroll = 0; // Reset scroll when closing
+        helpDrag.active = false;
+        helpDrag.hasMoved = false;
+        UI.reset(); 
+        return;
+      } else {
+        // Was dragging, don't close, just reset the flag
+        helpDrag.hasMoved = false;
+        helpDrag.active = false;
+        UI.reset();
+        return;
+      }
     }
     if (hr && UI.mx>=hr.x && UI.mx<=hr.x+hr.w && UI.my>=hr.y && UI.my<=hr.y+hr.h) {
       shopHelp = true; UI.reset(); return;
@@ -2260,23 +3344,97 @@ function updateShop(dt) {
       UI.reset();
       return;
     }
-    // Start button
-    const bw = 110, bh = 48; const bx = (CONFIG.width - bw)/2; const by = CONFIG.height - 72;
-    if (UI.mx>=bx && UI.mx<=bx+bw && UI.my>=by && UI.my<=by+bh) {
-      UI.reset();
-      resetRun();
-      return;
-    }
-    // Item cards
-    const { cols, cellW, cellH, marginX, top } = shopGrid();
-    const gap = 8;
-    const lvl = getLevelByExp(exp);
-    const items = SHOP_ITEMS.filter(it => (it.minLevel || 1) <= lvl);
-    for (let i = 0; i < items.length; i++) {
+    // Handle character shop mode
+    if (shopMode === 'chars') {
+      // Character cards
+      const chars = Object.entries(PIXEL_CHARACTERS);
+      const cols = 2;
+      const cellW = CONFIG.width / cols;
+      const cellH = 100;
+      const marginX = 20;
+      const top = CONFIG.height * 0.12 + 50;
+      
+      for (let i = 0; i < chars.length; i++) {
+        const [id, char] = chars[i];
+        const r = Math.floor(i / cols);
+        const c = i % cols;
+        const x = marginX + c * cellW + 6;
+        const y = top + r * (cellH + 10) - shopScroll;
+        const w = cellW - 40;
+        const h = cellH;
+        
+        if (UI.mx >= x && UI.mx <= x + w && UI.my >= y && UI.my <= y + h) {
+          const charInv = shopInv.characters || [];
+          const isPurchased = charInv.includes(id) || id === 'default';
+          
+          if (isPurchased) {
+            // Open selection confirm for all owned characters including default
+            shopConfirm = { id: id, price: 0, type: 'character' };
+          } else {
+            // Open purchase confirm
+            shopConfirm = { id: id, price: char.price, type: 'character' };
+          }
+          UI.reset();
+          return;
+        }
+      }
+      
+      // Bottom buttons for character shop
+      const bw = 86, bh = 26;
+      const spacing = 10;
+      const totalWidth = bw * 2 + spacing;
+      const startX = (CONFIG.width - totalWidth) / 2;
+      const by = CONFIG.height - 50;
+      
+      // BACK button
+      if (UI.mx >= startX && UI.mx <= startX + bw && UI.my >= by && UI.my <= by + bh) {
+        State.current = previousState; // 이전 상태로 돌아가기
+        UI.reset();
+        return;
+      }
+      
+      // ITEMS button
+      const itemsX = startX + bw + spacing;
+      if (UI.mx >= itemsX && UI.mx <= itemsX + bw && UI.my >= by && UI.my <= by + bh) {
+        shopMode = 'items';
+        shopScroll = 0;
+        UI.reset();
+        return;
+      }
+    } else {
+      // Item shop mode - handle bottom buttons
+      const bw = 100, bh = 36;
+      const spacing = 10;
+      const totalWidth = bw * 2 + spacing;
+      const startX = (CONFIG.width - totalWidth) / 2;
+      const by = CONFIG.height - 60;
+      
+      // BACK button
+      if (UI.mx >= startX && UI.mx <= startX + bw && UI.my >= by && UI.my <= by + bh) {
+        State.current = previousState; // 이전 상태로 돌아가기
+        UI.reset();
+        return;
+      }
+      
+      // CHARS button
+      const charsX = startX + bw + spacing;
+      if (UI.mx >= charsX && UI.mx <= charsX + bw && UI.my >= by && UI.my <= by + bh) {
+        shopMode = 'chars';
+        shopScroll = 0;
+        UI.reset();
+        return;
+      }
+      
+      // Item cards (only in items mode)
+      const { cols, cellW, cellH, marginX, top, paddingTop } = shopGrid();
+      const gap = 8;
+      const lvl = getLevelByExp(exp);
+      const items = SHOP_ITEMS.filter(it => (it.minLevel || 1) <= lvl);
+      for (let i = 0; i < items.length; i++) {
       const r = Math.floor(i / cols);
       const c = i % cols;
       const x = marginX + c * cellW + 6;
-      const y = top + r * (cellH + gap) - shopScroll;
+      const y = top + paddingTop + r * (cellH + gap) - shopScroll;
       const w = cellW - 12; const h = cellH;
       if (UI.mx>=x && UI.mx<=x+w && UI.my>=y && UI.my<=y+h) {
         // open confirm if purchasable
@@ -2292,6 +3450,49 @@ function updateShop(dt) {
 }
 
 function tryPurchase(id) {
+  // Check if it's a character purchase or selection
+  if (shopConfirm && shopConfirm.type === 'character') {
+    const char = PIXEL_CHARACTERS[id];
+    if (!char) return;
+    
+    const charInv = shopInv.characters || [];
+    const isPurchased = charInv.includes(id) || id === 'default';
+    
+    if (isPurchased) {
+      // Just selecting an owned character
+      selectedCharacter = id;
+      localStorage.setItem('webswing_selected_char_v1', id);
+      shopConfirm = null;
+      return;
+    }
+    
+    // Purchasing a new character
+    const price = char.price;
+    if (savings < price) {
+      shopMsg = 'Insufficient funds';
+      shopMsgTimer = 2.0;
+      shopConfirm = null;
+      return;
+    }
+    
+    // Purchase character
+    savings -= price;
+    localStorage.setItem(SAVINGS_KEY, savings); // Save the deducted amount
+    if (!charInv.includes(id)) {
+      charInv.push(id);
+      shopInv.characters = charInv;
+      saveShopInv();
+    }
+    
+    // Auto-select the purchased character
+    selectedCharacter = id;
+    localStorage.setItem('webswing_selected_char_v1', id);
+    
+    shopConfirm = null;
+    return;
+  }
+  
+  // Original item purchase logic
   const it = SHOP_ITEMS.find(x => x.id === id);
   if (!it) return;
   let price = nextPriceForItem(it);
@@ -2303,7 +3504,9 @@ function tryPurchase(id) {
   }
   if (isItemSoldOut(it)) { shopConfirm = null; return; }
   if (id === 'glow') {
-    savings -= price; shopInv.glow = true; saveShopInv();
+    const current = shopInv.glowLevel || 0;
+    if (current >= 3) { shopConfirm = null; return; }
+    savings -= price; shopInv.glowLevel = current + 1; saveShopInv();
   } else if (id === 'buds') {
     const maxLv = currentBodySides();
     savings -= price; shopInv.budsLevel = Math.min(maxLv, (shopInv.budsLevel || 0) + 1); saveShopInv();
@@ -2323,7 +3526,41 @@ function tryPurchase(id) {
     savings -= price; shopInv.gambleActive = true; saveShopInv();
   } else if (id === 'web') {
     savings -= price; shopInv.webActive = true; saveShopInv();
+  } else if (id === 'magnet') {
+    const current = shopInv.magnetLevel || 0;
+    if (current >= 5) { shopConfirm = null; return; }
+    savings -= price; shopInv.magnetLevel = current + 1; saveShopInv();
+  } else if (id === 'shield') {
+    savings -= price; shopInv.shield = true; saveShopInv();
+  } else if (id === 'combo') {
+    const current = shopInv.comboLevel || 0;
+    if (current >= 3) { shopConfirm = null; return; }
+    savings -= price; shopInv.comboLevel = current + 1; saveShopInv();
+  } else if (id === 'slow') {
+    savings -= price; shopInv.slow = true; saveShopInv();
+  } else if (id === 'double') {
+    savings -= price; shopInv.double = true; saveShopInv();
+  } else if (id === 'lucky') {
+    const current = shopInv.luckyLevel || 0;
+    if (current >= 5) { shopConfirm = null; return; }
+    savings -= price; shopInv.luckyLevel = current + 1; saveShopInv();
+  } else if (id === 'revival') {
+    savings -= price; shopInv.revival = true; saveShopInv();
+  } else if (id === 'rainbow') {
+    savings -= price; shopInv.rainbow = true; saveShopInv();
+  } else if (id === 'fever') {
+    const current = shopInv.feverLevel || 0;
+    if (current >= 3) { shopConfirm = null; return; }
+    savings -= price; shopInv.feverLevel = current + 1; saveShopInv();
+  } else if (id === 'bank') {
+    const current = shopInv.bankLevel || 0;
+    if (current >= 5) { shopConfirm = null; return; }
+    savings -= price; shopInv.bankLevel = current + 1; saveShopInv();
   }
   try { localStorage.setItem(SAVINGS_KEY, String(savings)); } catch(_){}
   shopConfirm = null;
 }
+}
+
+// Start the game
+start();

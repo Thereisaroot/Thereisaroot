@@ -14,7 +14,8 @@ body {
   margin: 0;
   background: linear-gradient(180deg, var(--bg-top), var(--bg-bottom));
   color: var(--text);
-  font-family: 'Press Start 2P', system-ui, -apple-system, sans-serif;
+  /* Use unified family: Latin=Press Start 2P, Hangul=Dalmoori */
+  font-family: 'GameFont', 'Press Start 2P', 'Dalmoori', system-ui, -apple-system, sans-serif;
   display: grid;
   place-items: center;
 }
