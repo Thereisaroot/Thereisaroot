@@ -67,6 +67,8 @@ class CrashEngine {
     this.time = 0;
     this.duration = 6; // seconds to reach crashAt visually
     this.k = Math.log(Math.max(1.01, this.crashAt));
+    this.progress = 0; // normalized 0..1 progress with variable speed
+    this._segments = null; // [{tEnd: 0..1, speed: number}] over normalized time
   }
   setClientSeed(seed) { this.clientSeed = seed || ''; }
   startRound({ base = 6 } = {}) {
@@ -79,9 +81,65 @@ class CrashEngine {
     // Heavy-tail crash distribution; P(M > x) ~= (1 - houseEdge)/x
     this.crashAt = crashFromUniform(r, this.houseEdge, 2);
     // Visual pacing ~ proportional to ln(crashAt)
-    const scale = Math.min(12, Math.max(3, Math.log(Math.max(1.01, this.crashAt)) * base));
-    this.duration = scale;
+    const durScale = Math.min(12, Math.max(3, Math.log(Math.max(1.01, this.crashAt)) * base));
+    this.duration = durScale;
     this.k = Math.log(Math.max(1.01, this.crashAt));
+    // Build piecewise-constant speed segments over normalized time with abrupt changes
+    // 3~5 segments, lengths add to 1. Speeds chosen from {0.5x, 0.75x, 1x, 1.5x, 2x, 3x} with bias.
+    const segCount = 3 + Math.floor(next() * 3); // 3..5
+    const rawLens = [];
+    for (let i = 0; i < segCount; i++) rawLens.push(0.15 + next() * 0.30); // 0.15..0.45
+    let sumLen = rawLens.reduce((a,b)=>a+b,0);
+    const lens = rawLens.map(v => v / sumLen);
+    // piecewise speed with stronger contrast; include 0.25x and 4.0x options
+    function pickSpeed(prev) {
+      const r2 = next();
+      // bias by previous: if prev<1, push high; if prev>1, push low
+      if (prev !== undefined) {
+        if (prev < 1.0) {
+          if (r2 < 0.30) return 1.5;
+          if (r2 < 0.60) return 2.0;
+          if (r2 < 0.85) return 3.0;
+          return 4.0;
+        } else if (prev > 1.0) {
+          if (r2 < 0.25) return 0.25;
+          if (r2 < 0.60) return 0.5;
+          if (r2 < 0.85) return 0.75;
+          return 1.0;
+        }
+      }
+      // neutral pick skewed to extremes more often
+      if (r2 < 0.10) return 0.25;
+      if (r2 < 0.25) return 0.5;
+      if (r2 < 0.35) return 0.75;
+      if (r2 < 0.50) return 1.0;
+      if (r2 < 0.65) return 1.5;
+      if (r2 < 0.80) return 2.0;
+      if (r2 < 0.92) return 3.0;
+      return 4.0;
+    }
+    const speeds = new Array(segCount);
+    speeds[0] = 1.0; // start steady
+    for (let i = 1; i < segCount; i++) {
+      speeds[i] = pickSpeed(speeds[i - 1]);
+      if (speeds[i] === speeds[i - 1]) {
+        // force contrast by flipping side
+        speeds[i] = (speeds[i - 1] > 1.0) ? 0.5 : 2.0;
+      }
+    }
+    // Normalize speeds so that integral over time equals 1 (finish exactly at duration)
+    let integral = 0;
+    for (let i = 0; i < segCount; i++) integral += lens[i] * speeds[i];
+    const speedNorm = integral > 1e-6 ? (1 / integral) : 1.0;
+    const segments = [];
+    let acc = 0;
+    for (let i = 0; i < segCount; i++) {
+      acc += lens[i];
+      segments.push({ tEnd: Math.min(1, acc), speed: speeds[i] * speedNorm });
+    }
+    segments[segments.length - 1].tEnd = 1; // ensure exact end
+    this._segments = segments;
+    this.progress = 0;
     this.events.emit('round_start', this.snapshot());
   }
   cashOutAt(threshold) {
@@ -96,11 +154,14 @@ class CrashEngine {
   tick(dt) {
     if (this.state !== 'running') return;
     this.time += dt;
-    const t01 = Math.min(1, this.time / this.duration);
-    const m = Math.exp(this.k * t01);
+    // Integrate variable speed over normalized time
+    const dtN = dt / this.duration;
+    const s = this._segSpeedAt(this.time / this.duration);
+    this.progress = Math.min(1, this.progress + dtN * s);
+    const m = Math.exp(this.k * this.progress);
     this.currentMultiplier = Math.min(m, this.crashAt + 0.0001);
     this.events.emit('tick', this.snapshot());
-    if (t01 >= 1 - 1e-6) {
+    if (this.progress >= 1 - 1e-6) {
       this.state = 'crashed';
       this.events.emit('crash', this.snapshot());
       this.serverSeed = this._randomSeed();
@@ -109,6 +170,14 @@ class CrashEngine {
   }
   snapshot() {
     return { state: this.state, multiplier: this.currentMultiplier, crashAt: this.crashAt, serverSeedHash: this.serverSeedHash, nonce: this.nonce, duration: this.duration, time: this.time };
+  }
+  _segSpeedAt(tNorm) {
+    if (!this._segments || this._segments.length === 0) return 1.0;
+    const segs = this._segments;
+    for (let i = 0; i < segs.length; i++) {
+      if (tNorm <= segs[i].tEnd + 1e-9) return segs[i].speed;
+    }
+    return segs[segs.length - 1].speed;
   }
   _randomSeed() {
     try {
