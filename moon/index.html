@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Moon (Crash) - WebGL Solo</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <h1>Moon (Crash) • Solo</h1>
+    </header>
+
+    <main class="container">
+      <section class="left">
+        <div class="graph-wrap">
+          <canvas id="glcanvas"></canvas>
+          <div id="tipLabel" class="tip-label">1.00x</div>
+        </div>
+        <div class="hud">
+          <div>현재 배율: <span id="multiplier">1.00x</span></div>
+          <div>라운드: <span id="round">-</span></div>
+          <div>상태: <span id="status">대기</span></div>
+        </div>
+      </section>
+      <section class="right">
+        <div class="panel">
+          <h2>베팅</h2>
+          <label>
+            베팅 금액
+            <input id="betAmount" type="number" min="1" step="1" value="100" />
+          </label>
+          <label>
+            오토 캐시아웃(x)
+            <input id="autoCashout" type="number" min="1.01" step="0.01" value="1.50" />
+          </label>
+          <div class="buttons">
+            <button id="placeBet">베팅 시작</button>
+            <button id="cashOut" disabled>캐시아웃</button>
+            <button id="restart">게임 재시작</button>
+          </div>
+          <div class="balance">
+            잔액: <span id="balance">10000</span>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>Provably Fair (데모)</h2>
+          <label>
+            Client Seed
+            <input id="clientSeed" type="text" placeholder="원하면 입력" />
+          </label>
+          <div class="pf-row">Server Seed Hash: <span id="serverSeedHash">-</span></div>
+          <div class="pf-row">Nonce: <span id="nonce">0</span></div>
+          <p class="muted">참고: 데모에서는 단순 해시/PRNG를 사용합니다. 실서비스 시 HMAC-SHA256 기반으로 교체하세요.</p>
+        </div>
+      </section>
+    </main>
+
+    <script src="app.js?v=1757564580"></script>
+  </body>
+  </html>
