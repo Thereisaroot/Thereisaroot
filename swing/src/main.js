@@ -261,14 +261,7 @@ function onPress(e) {
     if (DEBUG && isTouch) console.log(`Touch start at: ${UI.mx.toFixed(0)}, ${UI.my.toFixed(0)} State: ${State.current}`);
     // Don't set UI.clicked on mousedown, wait for mouseup
     
-    // Start help popup drag if clicking in help area
-    if (State.current === 'shop' && shopHelp) {
-      helpDrag.active = true;
-      helpDrag.y0 = cy;
-      helpDrag.startY = cy;
-      helpDrag.scroll0 = shopHelpScroll;
-      helpDrag.hasMoved = false;
-    }
+    // Help popup drag disabled (no scroll)
   }
   if (!Input.down) {
     Input.down = true;
@@ -370,61 +363,8 @@ window.addEventListener('touchend', (e) => {
 window.addEventListener('wheel', (e) => {
   if (State.current === 'shop') {
     e.preventDefault();
-    
-    if (shopHelp) {
-      // Scroll help popup
-      shopHelpScroll += e.deltaY * 0.5;
-      
-      // Calculate max scroll based on shop mode
-      let maxHelpScroll = 0;
-      if (shopMode === 'chars') {
-        // Character shop help - 5 characters at 45px each
-        const chars = Object.entries(PIXEL_CHARACTERS);
-        const charHeight = 55; // Updated for 2-line descriptions
-        const totalContentHeight = chars.length * charHeight;
-        const viewportHeight = 230; // contentH from renderCharacterShop
-        maxHelpScroll = Math.max(0, totalContentHeight - viewportHeight);
-      } else {
-        // Item shop help - calculate based on descriptions
-        const lvl = getLevelByExp(exp);
-        const visibleItems = SHOP_ITEMS.filter(it => (it.minLevel || 1) <= lvl);
-        const itemHeight = 36; // name + desc + price + spacing
-        const totalContentHeight = visibleItems.length * itemHeight;
-        const viewportHeight = 230;
-        maxHelpScroll = Math.max(0, totalContentHeight - viewportHeight);
-      }
-      
-      shopHelpScroll = Math.max(0, Math.min(maxHelpScroll, shopHelpScroll));
-    } else if (!shopConfirm) {
-      // Scroll shop items/characters
-      shopScroll += e.deltaY * 0.5;
-      
-      if (shopMode === 'chars') {
-        // Character shop scroll limits
-        const chars = Object.entries(PIXEL_CHARACTERS);
-        const cols = 2;
-        const cellH = 100;
-        const gap = 10;
-        const titleY = CONFIG.height * 0.12;
-        const top = titleY + 50;
-        const rows = Math.ceil(chars.length / cols);
-        const contentH = rows * (cellH + gap) - gap;
-        const viewportH = CONFIG.height - top - 100;
-        const maxScroll = Math.max(0, contentH - viewportH);
-        shopScroll = Math.max(0, Math.min(maxScroll, shopScroll));
-      } else {
-        // Item shop scroll limits
-        const { cols, cellW, cellH, marginX, top, paddingTop, paddingBottom } = shopGrid();
-        const gap = 8;
-        const lvl = getLevelByExp(exp);
-        const items = SHOP_ITEMS.filter(it => (it.minLevel || 1) <= lvl);
-        const rows = Math.ceil(items.length / cols) || 1;
-        const contentH = paddingTop + rows * (cellH + gap) - gap + paddingBottom;
-        const viewportH = CONFIG.height - top - 90;
-        const maxScroll = Math.max(0, contentH - viewportH);
-        shopScroll = Math.max(0, Math.min(maxScroll, shopScroll));
-      }
-    }
+    // Disable all scrolling in shop (items and chars)
+    return;
   }
 }, { passive: false });
 
@@ -436,8 +376,8 @@ window.addEventListener('mousemove', (e) => {
   UI.my = e.clientY;
   lastMouseY = e.clientY;
   
-  // Handle help popup drag
-  if (State.current === 'shop' && shopHelp && helpDrag.active) {
+  // Help popup drag disabled (no scroll)
+  if (false) {
     const moveDistance = Math.abs(e.clientY - helpDrag.startY);
     if (moveDistance > 15) {  // Increased from 5 to 15 pixels
       helpDrag.hasMoved = true;
@@ -467,8 +407,8 @@ window.addEventListener('mousemove', (e) => {
     
     shopHelpScroll = Math.max(0, Math.min(maxHelpScroll, newScroll));
   }
-  // Handle shop items drag
-  else if (State.current === 'shop' && shopDrag.active && !shopHelp && !shopConfirm) {
+  // Handle shop items drag (only in character shop)
+  else if (State.current === 'shop' && shopDrag.active && !shopHelp && !shopConfirm && shopMode === 'chars') {
     // Check if mouse moved enough to be considered a drag (threshold: 5px)
     const moveDistance = Math.abs(e.clientY - shopDrag.y0) + Math.abs(e.clientX - shopDrag.startX);
     if (moveDistance > 15) {  // Increased from 5 to 15 pixels
@@ -508,7 +448,7 @@ window.addEventListener('mousemove', (e) => {
 
 // Touch move for mobile drag scroll
 window.addEventListener('touchmove', (e) => {
-  if (State.current === 'shop' && shopDrag.active && !shopHelp && !shopConfirm) {
+  if (State.current === 'shop' && shopDrag.active && !shopHelp && !shopConfirm && shopMode === 'chars') {
     const touch = e.touches[0];
     // Check if touch moved enough to be considered a drag
     const moveDistance = Math.abs(touch.clientY - shopDrag.y0) + Math.abs(touch.clientX - shopDrag.startX);
@@ -996,8 +936,15 @@ let levelUpPopupTimer = 0;
 
 // Shop state
 let shopMode = 'items'; // 'items' or 'chars'
-let shopScroll = 0;
+let shopScroll = 0; // used only for character shop scrolling now
 let shopDrag = { active: false, y0: 0, scroll0: 0 };
+// Pagination states
+let shopItemPage = 0;        // current page for item shop
+let shopItemTotalPages = 1;  // total pages for item shop
+let shopCharPage = 0;        // current page for character shop
+let shopCharTotalPages = 1;  // total pages for character shop
+let helpPage = 0;            // current page for item descriptions popup
+let helpTotalPages = 1;      // total pages for item descriptions popup
 
 // Global button system for all UI elements
 let uiButtons = {
@@ -1099,19 +1046,21 @@ function buildIntroButtons() {
     const by = CONFIG.height * 0.65;
     
     // ITEMS button
-    uiButtons.intro.push(new UIButton(startX, by, bw, bh, 'ITEMS', () => {
+  uiButtons.intro.push(new UIButton(startX, by, bw, bh, 'ITEMS', () => {
       previousState = State.current;
       State.current = 'shop';
       shopMode = 'items';
       shopScroll = 0;
+      shopItemPage = 0;
     }, 'intro'));
     
     // CHARS button
-    uiButtons.intro.push(new UIButton(startX + bw + spacing, by, bw, bh, 'CHARS', () => {
+  uiButtons.intro.push(new UIButton(startX + bw + spacing, by, bw, bh, 'CHARS', () => {
       previousState = State.current;
       State.current = 'shop';
       shopMode = 'chars';
       shopScroll = 0;
+      shopCharPage = 0;
     }, 'intro'));
   }
 }
@@ -1129,21 +1078,23 @@ function buildGameOverButtons() {
     const by = CONFIG.height * 0.80;
     
     // ITEMS button
-    uiButtons.gameover.push(new UIButton(startX, by, bw, bh, 'ITEMS', () => {
+  uiButtons.gameover.push(new UIButton(startX, by, bw, bh, 'ITEMS', () => {
       previousState = 'gameover';
       State.current = 'shop';
       shopMode = 'items';
       shopScroll = 0;
+      shopItemPage = 0;
       uiButtons.gameover = []; // Clear gameover buttons
       buildShopCards(); // Build shop cards
     }, 'gameover'));
     
     // CHARS button
-    uiButtons.gameover.push(new UIButton(startX + bw + spacing, by, bw, bh, 'CHARS', () => {
+  uiButtons.gameover.push(new UIButton(startX + bw + spacing, by, bw, bh, 'CHARS', () => {
       previousState = 'gameover';
       State.current = 'shop';
       shopMode = 'chars';
       shopScroll = 0;
+      shopCharPage = 0;
       uiButtons.gameover = []; // Clear gameover buttons
       buildShopCards(); // Build shop cards
     }, 'gameover'));
@@ -2813,7 +2764,7 @@ function renderCharacterShop(g) {
   // Get purchased characters from inventory
   const charInv = shopInv.characters || [];
   
-  // Character grid
+  // Character grid (pagination)
   const chars = Object.entries(PIXEL_CHARACTERS);
   const cols = 2;
   const cellW = CONFIG.width / cols;
@@ -2821,106 +2772,116 @@ function renderCharacterShop(g) {
   const marginX = 20;
   const top = titleY + 50;
   const gap = 10;
-  
-  // Calculate content height and max scroll
-  const rows = Math.ceil(chars.length / cols);
-  const contentH = rows * (cellH + gap) - gap;
-  const viewportH = CONFIG.height - top - 100; // Leave space for buttons
-  const maxScroll = Math.max(0, contentH - viewportH);
-  shopScroll = Math.max(0, Math.min(maxScroll, shopScroll));
-  
-  // Clip to viewport
-  g.save();
-  g.beginPath();
-  g.rect(0, top, CONFIG.width, viewportH);
-  g.clip();
-  
-  // Draw character cards
-  chars.forEach(([id, char], i) => {
+  const rowsPerPage = 2;
+  const itemsPerPage = cols * rowsPerPage;
+  shopCharTotalPages = Math.max(1, Math.ceil(chars.length / itemsPerPage));
+  if (shopCharPage >= shopCharTotalPages) shopCharPage = shopCharTotalPages - 1;
+  if (shopCharPage < 0) shopCharPage = 0;
+  const startIdx = shopCharPage * itemsPerPage;
+  const endIdx = Math.min(chars.length, startIdx + itemsPerPage);
+
+  // Draw character cards for current page
+  for (let i = startIdx; i < endIdx; i++) {
+    const [id, char] = chars[i];
     const r = Math.floor(i / cols);
     const c = i % cols;
     const x = marginX + c * cellW;
-    const y = top + r * (cellH + 10) - shopScroll;
+    const local = i - startIdx;
+    const lr = Math.floor(local / cols);
+    const y = top + lr * (cellH + 10);
     
-    // Card background
+    // Card background with thick pixel dotted border
+    const cardX = x + 6;
+    const cardW = cellW - 40;
+    const cardY = y;
+    const cardH = cellH;
     g.fillStyle = '#0f1a2a';
+    g.fillRect(cardX, cardY, cardW, cardH);
+    g.save();
     g.strokeStyle = '#b4c0d9';
-    g.lineWidth = 2;
-    g.fillRect(x + 6, y, cellW - 40, cellH);
-    g.strokeRect(x + 6, y, cellW - 40, cellH);
-    
-    // Character preview
-    const px = x + 20;
-    const py = y + 15;
-    
+    g.lineWidth = 4;
+    if (g.setLineDash) g.setLineDash([4, 4]);
+    g.lineCap = 'butt';
+    g.strokeRect(cardX, cardY, cardW, cardH);
+    if (g.setLineDash) g.setLineDash([]);
+    g.restore();
+
+    // Centered layout: 1) Name, 2) Pixel art, 3) Text
+    const centerX = cardX + cardW / 2;
+    // 1) Name top-centered
+    g.fillStyle = '#ffffff';
+    g.textAlign = 'center';
+    g.textBaseline = 'top';
+    g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+    g.fillText(char.name, centerX, y + 6);
+
+    // 2) Pixel art centered
+    const artTop = y + 20;
     if (id === 'default') {
-      // Draw current polygon shape for Polygon character
       const sides = currentBodySides();
       const radius = 12;
-      const centerX = px + 8;
-      const centerY = py + 8;
-      
-      if (sides === 0) {
-        // Circle for level 1
-        g.fillStyle = '#ffffff';
+      const centerY = artTop + 18;
+      g.fillStyle = '#ffffff';
+      if (sides === 0) { g.beginPath(); g.arc(centerX, centerY, radius, 0, Math.PI * 2); g.fill(); }
+      else {
         g.beginPath();
-        g.arc(centerX, centerY, radius, 0, Math.PI * 2);
-        g.fill();
-      } else {
-        // Polygon for level 2+
-        g.fillStyle = '#ffffff';
-        g.beginPath();
-        for (let i = 0; i <= sides; i++) {
-          const angle = (i / sides) * Math.PI * 2 - Math.PI / 2;
+        for (let k = 0; k <= sides; k++) {
+          const angle = (k / sides) * Math.PI * 2 - Math.PI / 2;
           const vx = centerX + Math.cos(angle) * radius;
           const vy = centerY + Math.sin(angle) * radius;
-          if (i === 0) g.moveTo(vx, vy);
-          else g.lineTo(vx, vy);
+          if (k === 0) g.moveTo(vx, vy); else g.lineTo(vx, vy);
         }
-        g.closePath();
-        g.fill();
+        g.closePath(); g.fill();
       }
     } else {
-      // Pixel art for other characters
       const pixScale = 2;
+      const artW = (char.pixels[0]?.length || 8) * pixScale;
+      const artH = (char.pixels.length || 8) * pixScale;
+      const ox = Math.floor(centerX - artW / 2);
+      const oy = Math.floor(artTop);
       char.pixels.forEach((row, ry) => {
         row.forEach((pixel, rx) => {
           if (pixel) {
             g.fillStyle = char.colors[pixel - 1] || '#ffffff';
-            g.fillRect(px + rx * pixScale, py + ry * pixScale, pixScale, pixScale);
+            g.fillRect(ox + rx * pixScale, oy + ry * pixScale, pixScale, pixScale);
           }
         });
       });
     }
-    
-    // Character name
-    g.fillStyle = '#ffffff';
-    g.textAlign = 'left';
-    g.textBaseline = 'top';
-    g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-    g.fillText(char.name, x + 14, y + 50);
-    
-    // Price or status
+
+    // 3) Text bottom-centered (price/owned/selected)
     const isPurchased = charInv.includes(id) || id === 'default';
     const isSelected = selectedCharacter === id;
-    
     g.textAlign = 'center';
-    g.textBaseline = 'top';
+    g.textBaseline = 'bottom';
+    g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
     if (isPurchased) {
-      if (isSelected) {
-        g.fillStyle = '#ffff88';
-        g.fillText('SELECTED', x + cellW/2 - 20, y + 70);
-      } else {
-        g.fillStyle = '#88ff88';
-        g.fillText('OWNED', x + cellW/2 - 20, y + 70);
-      }
+      if (isSelected) { g.fillStyle = '#ffff88'; g.fillText('SELECTED', centerX, y + cardH - 6); }
+      else { g.fillStyle = '#88ff88'; g.fillText('OWNED', centerX, y + cardH - 6); }
     } else {
-      g.fillStyle = '#ffffff';
-      g.fillText(`$${char.price}`, x + cellW/2 - 20, y + 70);
+      g.fillStyle = '#ffffff'; g.fillText(`$${char.price}`, centerX, y + cardH - 6);
     }
-  });
-  
-  g.restore(); // End clip
+  }
+
+  // Pagination UI for character shop
+  const byPag = CONFIG.height - 60 - 18 - 30;
+  const indicator = `${shopCharPage + 1}/${shopCharTotalPages}`;
+  g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#ffffff';
+  g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+  g.fillText(indicator, CONFIG.width/2, byPag);
+  const btnW = 40, btnH = 40; const offset = 60;
+  const leftX = Math.floor(CONFIG.width/2 - offset - btnW/2);
+  const rightX = Math.floor(CONFIG.width/2 + offset - btnW/2);
+  if (shopCharPage > 0) {
+    g.fillStyle = '#22334a'; g.strokeStyle = '#b4c0d9'; g.lineWidth = 2;
+    g.fillRect(leftX, byPag - btnH/2, btnW, btnH); g.strokeRect(leftX, byPag - btnH/2, btnW, btnH);
+    g.fillStyle = '#ffffff'; g.fillText('<', leftX + btnW/2, byPag);
+  }
+  if (shopCharPage < shopCharTotalPages - 1) {
+    g.fillStyle = '#22334a'; g.strokeStyle = '#b4c0d9'; g.lineWidth = 2;
+    g.fillRect(rightX, byPag - btnH/2, btnW, btnH); g.strokeRect(rightX, byPag - btnH/2, btnW, btnH);
+    g.fillStyle = '#ffffff'; g.fillText('>', rightX + btnW/2, byPag);
+  }
   
   // Buttons at bottom
   const bw = 100, bh = 36;
@@ -3003,11 +2964,13 @@ function renderCharacterShop(g) {
     g.fillText('NO', bx3 + bw2/2, by2 + bh2/2);
   }
   
-  // Help popup for character shop
+  // Help popup for character shop (pagination, no scroll)
   if (shopHelp) {
     g.fillStyle = 'rgba(0,0,0,0.55)';
     g.fillRect(0, 0, CONFIG.width, CONFIG.height);
-    const pw = CONFIG.width * 0.86, ph = Math.min(320, CONFIG.height * 0.65);
+    const pw = CONFIG.width * 0.86;
+    const phBase = Math.min(320, CONFIG.height * 0.65);
+    const ph = Math.min(phBase + 50, CONFIG.height - 20); // 50px taller, with safety clamp
     const px = (CONFIG.width - pw)/2, py = CONFIG.height * 0.18;
     g.fillStyle = '#0f1a2a';
     g.strokeStyle = '#b4c0d9';
@@ -3021,83 +2984,68 @@ function renderCharacterShop(g) {
     g.textBaseline = 'top';
     g.font = `12px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
     g.fillText('CHARACTER INFO', px + pw/2, py + 10);
-    
-    // Content area with scroll
+    // Content area (no scroll)
     const contentY = py + 35;
-    const contentH = ph - 45;
-    
-    g.save();
-    g.beginPath();
-    g.rect(px, contentY, pw, contentH);
-    g.clip();
-    
-    // Character descriptions
+    const contentH = ph - 55; // leave space for pagination
     const chars = Object.entries(PIXEL_CHARACTERS);
+    const entriesPerPage = 5;
+    const totalPages = Math.max(1, Math.ceil(chars.length / entriesPerPage));
+    // reuse helpPage/helpTotalPages for consistency when switching menus
+    helpTotalPages = totalPages;
+    if (helpPage >= helpTotalPages) helpPage = helpTotalPages - 1;
+    if (helpPage < 0) helpPage = 0;
+    const start = helpPage * entriesPerPage;
+    const end = Math.min(chars.length, start + entriesPerPage);
     const lineHeight = 14;
-    const charHeight = 55; // Height per character entry (increased for 2-line descriptions)
-    let yPos = contentY + 5 - shopHelpScroll;
-    
+    const entryH = 50;
+    let yPos = contentY + 5;
     g.textAlign = 'left';
     g.textBaseline = 'top';
-    
-    chars.forEach(([id, char]) => {
-      // Character name
+    for (let i = start; i < end; i++) {
+      const [id, char] = chars[i];
+      // Name
       g.fillStyle = '#fffa75';
       g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
       g.fillText(char.name.toUpperCase(), px + 10, yPos);
-      
-      // Price or status
-      if (id === 'default') {
+      // Price/owned
+      if (id === 'default' || (shopInv.characters||[]).includes(id)) {
         g.fillStyle = '#88ff88';
         g.fillText('[OWNED]', px + pw - 80, yPos);
       } else {
-        const charInv = shopInv.characters || [];
-        if (charInv.includes(id)) {
-          g.fillStyle = '#88ff88';
-          g.fillText('[OWNED]', px + pw - 80, yPos);
-        } else {
-          g.fillStyle = '#ffffff';
-          g.fillText(`$${char.price}`, px + pw - 80, yPos);
-        }
+        g.fillStyle = '#ffffff';
+        g.fillText(`$${char.price}`, px + pw - 80, yPos);
       }
-      
-      // Description
+      // Desc lines (two-line summary)
       g.fillStyle = '#b4c0d9';
       g.font = `8px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-      
-      let descLines = [];
-      if (id === 'default') {
-        descLines = ['Classic geometric shape that', 'evolves with level'];
-      } else if (id === 'robot') {
-        descLines = ['Mechanical precision with', 'enhanced durability'];
-      } else if (id === 'ninja') {
-        descLines = ['Swift and silent,', 'moves with grace'];
-      } else if (id === 'pirate') {
-        descLines = ['Arr! Collects 15% more', 'gold per run'];
-      } else if (id === 'wizard') {
-        descLines = ['Magical powers enhance', 'item effects'];
-      } else if (id === 'knight') {
-        descLines = ['Heavy armor provides', 'extra protection'];
-      }
-      
-      // Draw each line of description
-      descLines.forEach((line, lineIdx) => {
-        g.fillText(line, px + 10, yPos + lineHeight + (lineIdx * 10));
-      });
-      
-      yPos += charHeight; // Fixed height for consistent scrolling
-    });
-    
-    g.restore();
-    
-    // Scroll indicator if needed
-    const totalContentHeight = chars.length * charHeight;
-    if (totalContentHeight > contentH) {
-      const scrollBarHeight = 40;
-      const scrollBarY = contentY + (shopHelpScroll / (totalContentHeight - contentH)) * (contentH - scrollBarHeight);
-      g.fillStyle = '#b4c0d9';
-      g.fillRect(px + pw - 8, scrollBarY, 4, scrollBarHeight);
+      const summaries = {
+        default: ['Classic geometric shape that', 'evolves with level'],
+        robot:   ['Mechanical precision with', 'enhanced durability'],
+        ninja:   ['Swift and silent,', 'moves with grace'],
+        pirate:  ['Arr! Collects 15% more', 'gold per run'],
+        wizard:  ['Magical powers enhance', 'item effects'],
+        knight:  ['Heavy armor provides', 'extra protection'],
+      };
+      const descLines = summaries[id] || [''];
+      descLines.forEach((line, li) => g.fillText(line, px + 10, yPos + lineHeight + li * 10));
+      yPos += entryH;
+      if (yPos > contentY + contentH - 10) break;
     }
+    // Pagination controls for char help
+    const byH = py + ph - 22;
+    const indicatorH = `${helpPage + 1}/${helpTotalPages}`;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillStyle = '#ffffff';
+    g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+    g.fillText(indicatorH, px + pw/2, byH);
+    const btnW = 18, btnH = 18;
+    const tw2 = g.measureText(indicatorH).width;
+    const gapBtn2 = 8;
+    const leftHX = Math.floor(px + pw/2 - tw2/2 - gapBtn2 - btnW);
+    const rightHX = Math.floor(px + pw/2 + tw2/2 + gapBtn2);
+    if (helpPage > 0) { g.fillStyle = '#22334a'; g.strokeStyle = '#b4c0d9'; g.lineWidth = 2; g.fillRect(leftHX, byH - btnH/2, btnW, btnH); g.strokeRect(leftHX, byH - btnH/2, btnW, btnH); g.fillStyle = '#ffffff'; g.fillText('<', leftHX + btnW/2, byH); }
+    if (helpPage < helpTotalPages - 1) { g.fillStyle = '#22334a'; g.strokeStyle = '#b4c0d9'; g.lineWidth = 2; g.fillRect(rightHX, byH - btnH/2, btnW, btnH); g.strokeRect(rightHX, byH - btnH/2, btnW, btnH); g.fillStyle = '#ffffff'; g.fillText('>', rightHX + btnW/2, byH); }
   }
 }
 
@@ -3150,77 +3098,80 @@ function renderShop(g) {
   const gap = 8;
   // Filter items by level visibility
   const lvl = getLevelByExp(exp);
-  const items = SHOP_ITEMS.filter(it => (it.minLevel || 1) <= lvl);
-  // content height with padding
-  const rows = Math.ceil(items.length / cols) || 1;
-  const contentH = paddingTop + rows * (cellH + gap) - gap + paddingBottom;
-  const viewportH = CONFIG.height - top - 90;
-  // clamp scroll
-  shopScroll = Math.max(0, Math.min(Math.max(0, contentH - viewportH), shopScroll));
-  // draw items
-  g.save();
-  g.beginPath();
-  g.rect(0, top, CONFIG.width, viewportH);
-  g.clip();
-  for (let i = 0; i < items.length; i++) {
-    const r = Math.floor(i / cols);
-    const c = i % cols;
+  const allItems = SHOP_ITEMS.filter(it => (it.minLevel || 1) <= lvl);
+  const rowsPerPage = 4; // 1페이지 4줄
+  const itemsPerPage = cols * rowsPerPage;
+  shopItemTotalPages = Math.max(1, Math.ceil(allItems.length / itemsPerPage));
+  if (shopItemPage >= shopItemTotalPages) shopItemPage = shopItemTotalPages - 1;
+  if (shopItemPage < 0) shopItemPage = 0;
+  const startIdx = shopItemPage * itemsPerPage;
+  const endIdx = Math.min(allItems.length, startIdx + itemsPerPage);
+  for (let i = startIdx; i < endIdx; i++) {
+    const local = i - startIdx;
+    const r = Math.floor(local / cols);
+    const c = local % cols;
     const x = marginX + c * cellW;
-    const y = top + paddingTop + r * (cellH + gap) - shopScroll;
-    // card
+    const y = top + paddingTop + r * (cellH + gap);
+    // card with 2px inner margin and thick pixel dotted border
+    const m2 = 2;
     g.fillStyle = '#0f1a2a';
+    g.fillRect(x + 6 + m2, y + m2, (cellW - 12) - m2 * 2, cellH - m2 * 2);
+    g.save();
     g.strokeStyle = '#b4c0d9';
-    g.lineWidth = 2;
-    g.fillRect(x + 6, y, cellW - 12, cellH);
-    g.strokeRect(x + 6, y, cellW - 12, cellH);
+    g.lineWidth = 4;
+    if (g.setLineDash) g.setLineDash([4, 4]);
+    g.lineCap = 'butt';
+    g.strokeRect(x + 6 + m2, y + m2, (cellW - 12) - m2 * 2, cellH - m2 * 2);
+    if (g.setLineDash) g.setLineDash([]);
+    g.restore();
     // content
     // 1) Name
     g.fillStyle = '#ffffff';
     g.textAlign = 'left';
     g.textBaseline = 'top';
     g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-    g.fillText(items[i].name, x + 14, y + 6);
+    g.fillText(allItems[i].name, x + 14, y + 6);
     // 2) Price (right aligned), dynamic for level-type
     g.textAlign = 'right';
-    const ptext = `$${nextPriceForItem(items[i])}`;
+    const ptext = `$${nextPriceForItem(allItems[i])}`;
     g.fillText(ptext, x + cellW - 14, y + 20);
     // 3) Icon (center)
     g.textAlign = 'center';
     g.textBaseline = 'middle';
     g.font = `12px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
     let label;
-    if (items[i].id === 'glow') label = '*';
-    else if (items[i].id === 'buds') label = '+';
-    else if (items[i].id === 'plusjump') label = 'J';
-    else if (items[i].id === 'fly') label = '^';
-    else if (items[i].id === 'gamble') label = '$';
-    else if (items[i].id === 'web') label = 'W';
-    else if (items[i].id === 'big') label = 'B';
-    else if (items[i].id === 'magnet') label = 'M';
-    else if (items[i].id === 'shield') label = 'S';
-    else if (items[i].id === 'combo') label = 'C';
-    else if (items[i].id === 'slow') label = '~';
-    else if (items[i].id === 'double') label = '2';
-    else if (items[i].id === 'lucky') label = 'L';
-    else if (items[i].id === 'revival') label = 'R';
-    else if (items[i].id === 'rainbow') label = '=';
-    else if (items[i].id === 'fever') label = 'F';
-    else if (items[i].id === 'bank') label = '%';
+    if (allItems[i].id === 'glow') label = '*';
+    else if (allItems[i].id === 'buds') label = '+';
+    else if (allItems[i].id === 'plusjump') label = 'J';
+    else if (allItems[i].id === 'fly') label = '^';
+    else if (allItems[i].id === 'gamble') label = '$';
+    else if (allItems[i].id === 'web') label = 'W';
+    else if (allItems[i].id === 'big') label = 'B';
+    else if (allItems[i].id === 'magnet') label = 'M';
+    else if (allItems[i].id === 'shield') label = 'S';
+    else if (allItems[i].id === 'combo') label = 'C';
+    else if (allItems[i].id === 'slow') label = '~';
+    else if (allItems[i].id === 'double') label = '2';
+    else if (allItems[i].id === 'lucky') label = 'L';
+    else if (allItems[i].id === 'revival') label = 'R';
+    else if (allItems[i].id === 'rainbow') label = '=';
+    else if (allItems[i].id === 'fever') label = 'F';
+    else if (allItems[i].id === 'bank') label = '%';
     else label = '?';
     g.fillText(label, x + cellW/2, y + Math.floor(cellH * 0.60));
     // 4) Level line (no max display)
     g.textAlign = 'center';
     g.textBaseline = 'bottom';
     g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-    const lvVal = getItemLevel(items[i]);
+    const lvVal = getItemLevel(allItems[i]);
     g.fillText(`Lv. ${lvVal}`, x + cellW/2, y + cellH - 6);
     // sold out overlay
-    if (isItemSoldOut(items[i])) {
+    if (isItemSoldOut(allItems[i])) {
       g.fillStyle = 'rgba(0,0,0,0.5)';
-      g.fillRect(x + 6, y, cellW - 12, cellH);
+      g.fillRect(x + 6 + m2, y + m2, (cellW - 12) - m2 * 2, cellH - m2 * 2);
       g.textAlign = 'center';
       g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-      if (items[i].type === 'single' || (items[i].id === 'gamble' || items[i].id === 'web')) {
+      if (allItems[i].type === 'single' || (allItems[i].id === 'gamble' || allItems[i].id === 'web')) {
         g.fillStyle = '#ff6666';
         g.fillText('SOLD OUT', x + cellW/2, y + cellH/2 + 2);
       } else {
@@ -3229,7 +3180,37 @@ function renderShop(g) {
       }
     }
   }
-  g.restore();
+  // Pagination UI: < 1/N > (move 30px up and double button size)
+  const byPag = CONFIG.height - 60 - 18 - 30;
+  const indicator = `${shopItemPage + 1}/${shopItemTotalPages}`;
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillStyle = '#ffffff';
+  g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+  g.fillText(indicator, CONFIG.width/2, byPag);
+  const btnW = 40, btnH = 40;
+  const offset = 60;
+  const leftX = Math.floor(CONFIG.width/2 - offset - btnW/2);
+  const rightX = Math.floor(CONFIG.width/2 + offset - btnW/2);
+  // Draw buttons only when applicable (click areas were registered in buildShopCards)
+  if (shopItemPage > 0) {
+    g.fillStyle = '#22334a';
+    g.strokeStyle = '#b4c0d9';
+    g.lineWidth = 2;
+    g.fillRect(leftX, byPag - btnH/2, btnW, btnH);
+    g.strokeRect(leftX, byPag - btnH/2, btnW, btnH);
+    g.fillStyle = '#ffffff';
+    g.fillText('<', leftX + btnW/2, byPag);
+  }
+  if (shopItemPage < shopItemTotalPages - 1) {
+    g.fillStyle = '#22334a';
+    g.strokeStyle = '#b4c0d9';
+    g.lineWidth = 2;
+    g.fillRect(rightX, byPag - btnH/2, btnW, btnH);
+    g.strokeRect(rightX, byPag - btnH/2, btnW, btnH);
+    g.fillStyle = '#ffffff';
+    g.fillText('>', rightX + btnW/2, byPag);
+  }
   // Bottom buttons (START GAME and CHARS)
   const bw = 100, bh = 36;
   const spacing = 10;
@@ -3310,7 +3291,7 @@ function renderShop(g) {
     g.fillText('NO', bx3 + bw2/2, by2 + bh2/2);
   }
 
-  // Help popup (shows all items' descriptions with scroll)
+  // Help popup (items) with pagination instead of scroll
   if (shopHelp) {
     g.fillStyle = 'rgba(0,0,0,0.55)';
     g.fillRect(0, 0, CONFIG.width, CONFIG.height);
@@ -3329,25 +3310,16 @@ function renderShop(g) {
     g.font = `12px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
     g.fillText('ITEM DESCRIPTIONS', px + pw/2, py + 10);
     
-    // Content area with scroll
+    // Content area (no scroll)
     const contentTop = py + 35;
     const contentBottom = py + ph - 35; // Leave space for close instruction
     const contentHeight = contentBottom - contentTop;
-    
-    g.save();
-    g.beginPath();
-    g.rect(px, contentTop, pw, contentHeight);
-    g.clip();
     
     g.fillStyle = '#ffffff';
     g.textAlign = 'left';
     g.textBaseline = 'top';
     g.font = `9px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-    
-    // Get all items (not just visible ones) for help
-    const allItems = SHOP_ITEMS;
-    
-    // Calculate content dimensions
+    const allItems = SHOP_ITEMS; // 모든 아이템 설명
     const leftPad = 10, rightPad = 10, gap = 8;
     let nameColW = 0;
     for (const it of allItems) {
@@ -3358,7 +3330,6 @@ function renderShop(g) {
     const nameRightX = px + leftPad + nameColW;
     const descX = nameRightX + gap;
     const descMaxW = px + pw - rightPad - descX;
-    
     function wrapText(ctx, text, maxW) {
       const words = String(text).split(' ');
       const lines = [];
@@ -3373,58 +3344,62 @@ function renderShop(g) {
       if (line) lines.push(line);
       return lines;
     }
-    
-    // Calculate total content height
-    let totalContentH = 0;
-    const itemHeights = [];
-    for (const it of allItems) {
-      const desc = itemDescription(it.id);
-      const wrapped = wrapText(g, desc, descMaxW);
-      const h = Math.max(14, wrapped.length * 14) + 8;
-      itemHeights.push(h);
-      totalContentH += h;
-    }
-    
-    // Clamp scroll
-    const maxScroll = Math.max(0, totalContentH - contentHeight);
-    shopHelpScroll = Math.max(0, Math.min(maxScroll, shopHelpScroll));
-    
-    // Draw items
-    let yy = contentTop + 5 - shopHelpScroll;
-    for (let i = 0; i < allItems.length; i++) {
+    // Fixed items per page for help
+    const helpItemsPerPage = 6;
+    helpTotalPages = Math.max(1, Math.ceil(allItems.length / helpItemsPerPage));
+    if (helpPage >= helpTotalPages) helpPage = helpTotalPages - 1;
+    if (helpPage < 0) helpPage = 0;
+    const hs = helpPage * helpItemsPerPage;
+    const he = Math.min(allItems.length, hs + helpItemsPerPage);
+    let yy = contentTop + 5;
+    for (let i = hs; i < he; i++) {
       const it = allItems[i];
       const name = it.name || it.id;
       const desc = itemDescription(it.id);
       const wrapped = wrapText(g, desc, descMaxW);
-      
-      // Skip if completely outside view
-      if (yy + itemHeights[i] < contentTop || yy > contentBottom) {
-        yy += itemHeights[i];
-        continue;
-      }
-      
-      // Draw name (right aligned)
+      // Name
       g.textAlign = 'right';
       g.fillStyle = '#ffa24d';
       g.fillText(name, nameRightX, yy);
-      
-      // Draw description (wrapped)
+      // Desc
       g.textAlign = 'left';
       g.fillStyle = '#ffffff';
       for (let j = 0; j < wrapped.length; j++) {
         g.fillText(wrapped[j], descX, yy + j * 14);
       }
-      
-      yy += itemHeights[i];
+      yy += Math.max(14, wrapped.length * 14) + 8;
+      if (yy > contentBottom - 14) break;
     }
-    g.restore();
+    // Pagination controls for help
+    const byHelp = contentBottom - 12 + 30; // move buttons 30px lower
+    const indicatorH = `${helpPage + 1}/${helpTotalPages}`;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillStyle = '#ffffff';
+    g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+    g.fillText(indicatorH, px + pw/2, byHelp);
+    const btnW = 18, btnH = 18;
+    const tw2 = g.measureText(indicatorH).width;
+    const gapBtn2 = 8;
+    const leftHX = Math.floor(px + pw/2 - tw2/2 - gapBtn2 - btnW);
+    const rightHX = Math.floor(px + pw/2 + tw2/2 + gapBtn2);
+    if (helpPage > 0) {
+      g.fillStyle = '#22334a'; g.strokeStyle = '#b4c0d9'; g.lineWidth = 2;
+      g.fillRect(leftHX, byHelp - btnH/2, btnW, btnH); g.strokeRect(leftHX, byHelp - btnH/2, btnW, btnH);
+      g.fillStyle = '#ffffff'; g.fillText('<', leftHX + btnW/2, byHelp);
+    }
+    if (helpPage < helpTotalPages - 1) {
+      g.fillStyle = '#22334a'; g.strokeStyle = '#b4c0d9'; g.lineWidth = 2;
+      g.fillRect(rightHX, byHelp - btnH/2, btnW, btnH); g.strokeRect(rightHX, byHelp - btnH/2, btnW, btnH);
+      g.fillStyle = '#ffffff'; g.fillText('>', rightHX + btnW/2, byHelp);
+    }
     
     // Bottom close instruction (outside clipping area)
     g.textAlign = 'center';
     g.textBaseline = 'middle';
     g.fillStyle = '#b4c0d9';
     g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-    g.fillText('Click anywhere to close', px + pw/2, py + ph - 16);
+    g.fillText('Click outside to close', px + pw/2, py + ph - 16);
   }
 }
 
@@ -3433,79 +3408,116 @@ function buildShopCards() {
   uiButtons.shop.buttons = [];
   
   if (shopMode === 'chars') {
-    // Character cards
+    // Character cards (pagination)
     const chars = Object.entries(PIXEL_CHARACTERS);
     const cols = 2;
     const cellW = CONFIG.width / cols;
     const cellH = 100;
     const marginX = 20;
     const top = CONFIG.height * 0.12 + 50;
-    
-    for (let i = 0; i < chars.length; i++) {
+    const rowsPerPage = 2;
+    const itemsPerPage = cols * rowsPerPage;
+    shopCharTotalPages = Math.max(1, Math.ceil(chars.length / itemsPerPage));
+    if (shopCharPage >= shopCharTotalPages) shopCharPage = shopCharTotalPages - 1;
+    if (shopCharPage < 0) shopCharPage = 0;
+    const startIdx = shopCharPage * itemsPerPage;
+    const endIdx = Math.min(chars.length, startIdx + itemsPerPage);
+    for (let i = startIdx; i < endIdx; i++) {
       const [id, char] = chars[i];
-      const r = Math.floor(i / cols);
-      const c = i % cols;
+      const local = i - startIdx;
+      const r = Math.floor(local / cols);
+      const c = local % cols;
       const x = marginX + c * cellW + 6;
-      const baseY = top + r * (cellH + 10); // 기본 Y 위치 (스크롤 없음)
+      const baseY = top + r * (cellH + 10);
       const w = cellW - 40;
       const h = cellH;
-      
       const card = new ShopCard(x, baseY, w, h, id, i, 'char');
-      card.updateScroll(shopScroll); // 현재 스큪c롤 반영
+      card.updateScroll(0);
       uiButtons.shop.cards.push(card);
     }
-    
-    // Character shop buttons
+    // Pagination controls first
+    const py = CONFIG.height - 60 - 18 - 30;
+    const btnW = 40, btnH = 40; const cx = CONFIG.width / 2; const offset = 60;
+    const leftX = Math.floor(cx - offset - btnW/2);
+    const rightX = Math.floor(cx + offset - btnW/2);
+    if (shopCharPage > 0) uiButtons.shop.buttons.push(new UIButton(leftX, py - btnH/2, btnW, btnH, 'CHAR_PAGE_PREV', () => { shopCharPage = Math.max(0, shopCharPage - 1); buildShopCards(); }, 'shop'));
+    if (shopCharPage < shopCharTotalPages - 1) uiButtons.shop.buttons.push(new UIButton(rightX, py - btnH/2, btnW, btnH, 'CHAR_PAGE_NEXT', () => { shopCharPage = Math.min(shopCharTotalPages - 1, shopCharPage + 1); buildShopCards(); }, 'shop'));
+
+    // Character shop nav buttons after pagination
     const bw = 86, bh = 26;
     const spacing = 10;
     const totalWidth = bw * 2 + spacing;
     const startX = (CONFIG.width - totalWidth) / 2;
     const by = CONFIG.height - 50;
-    
-    uiButtons.shop.buttons.push(new UIButton(startX, by, bw, bh, 'BACK', () => {
-      State.current = previousState;
-    }, 'shop'));
-    
-    uiButtons.shop.buttons.push(new UIButton(startX + bw + spacing, by, bw, bh, 'ITEMS', () => {
-      shopMode = 'items';
-      shopScroll = 0;
-      buildShopCards();
-    }, 'shop'));
+    uiButtons.shop.buttons.push(new UIButton(startX, by, bw, bh, 'BACK', () => { State.current = previousState; }, 'shop'));
+    uiButtons.shop.buttons.push(new UIButton(startX + bw + spacing, by, bw, bh, 'ITEMS', () => { shopMode = 'items'; shopScroll = 0; shopItemPage = 0; buildShopCards(); }, 'shop'));
   } else {
-    // Item cards
+    // Item cards (pagination)
     const { cols, cellW, cellH, marginX, top, paddingTop } = shopGrid();
     const gap = 8;
+    const rowsPerPage = 4; // 1페이지에 4줄
     const lvl = getLevelByExp(exp);
-    const items = SHOP_ITEMS.filter(it => (it.minLevel || 1) <= lvl);
-    
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
-      const r = Math.floor(i / cols);
-      const c = i % cols;
-      const x = marginX + c * cellW + 6;
-      const baseY = top + paddingTop + r * (cellH + gap); // 기본 Y 위치 (스크롤 없음)
-      const w = cellW - 12;
-      const h = cellH;
-      
+    const allItems = SHOP_ITEMS.filter(it => (it.minLevel || 1) <= lvl);
+    const itemsPerPage = cols * rowsPerPage;
+    shopItemTotalPages = Math.max(1, Math.ceil(allItems.length / itemsPerPage));
+    if (shopItemPage >= shopItemTotalPages) shopItemPage = shopItemTotalPages - 1;
+    if (shopItemPage < 0) shopItemPage = 0;
+    const startIdx = shopItemPage * itemsPerPage;
+    const endIdx = Math.min(allItems.length, startIdx + itemsPerPage);
+    for (let i = startIdx; i < endIdx; i++) {
+      const item = allItems[i];
+      const local = i - startIdx;
+      const r = Math.floor(local / cols);
+      const c = local % cols;
+      const borderMargin = 2;
+      const x = marginX + c * cellW + 6 + borderMargin;
+      const baseY = top + paddingTop + r * (cellH + gap) + borderMargin; // 스크롤 제거
+      const w = (cellW - 12) - borderMargin * 2;
+      const h = cellH - borderMargin * 2;
       const card = new ShopCard(x, baseY, w, h, item, i, 'item');
-      card.updateScroll(shopScroll); // 현재 스크롤 반영
+      card.updateScroll(0);
       uiButtons.shop.cards.push(card);
     }
-    
-    // Item shop buttons
+
+    // Item shop buttons (+ pagination)
     const bw = 100, bh = 36;
     const spacing = 10;
     const totalWidth = bw * 2 + spacing;
     const startX = (CONFIG.width - totalWidth) / 2;
     const by = CONFIG.height - 60;
-    
+
+    // Pagination controls first (so they win in overlap)
+    const py = by - 18 - 30; // move 30px up
+    const indicator = `${shopItemPage + 1}/${shopItemTotalPages}`;
+    // Compute indicator width roughly (12px font per char)
+    const cx = CONFIG.width / 2;
+    const btnW = 40, btnH = 40; // double size
+    const offset = 60; // fixed horizontal offset from center
+    const leftX = Math.floor(cx - offset - btnW / 2);
+    const rightX = Math.floor(cx + offset - btnW / 2);
+    // Left button only if not first page
+    if (shopItemPage > 0) {
+      uiButtons.shop.buttons.push(new UIButton(leftX, py - btnH / 2, btnW, btnH, 'PAGE_PREV', () => {
+        shopItemPage = Math.max(0, shopItemPage - 1);
+        buildShopCards();
+      }, 'shop'));
+    }
+    // Right button only if not last page
+    if (shopItemPage < shopItemTotalPages - 1) {
+      uiButtons.shop.buttons.push(new UIButton(rightX, py - btnH / 2, btnW, btnH, 'PAGE_NEXT', () => {
+        shopItemPage = Math.min(shopItemTotalPages - 1, shopItemPage + 1);
+        buildShopCards();
+      }, 'shop'));
+    }
+
+    // Navigation buttons after pagination
     uiButtons.shop.buttons.push(new UIButton(startX, by, bw, bh, 'BACK', () => {
       State.current = previousState;
     }, 'shop'));
-    
     uiButtons.shop.buttons.push(new UIButton(startX + bw + spacing, by, bw, bh, 'CHARS', () => {
       shopMode = 'chars';
       shopScroll = 0;
+      shopCharPage = 0;
       buildShopCards();
     }, 'shop'));
   }
@@ -3530,15 +3542,7 @@ function updateShop(dt) {
     buildShopCards();
   }
   
-  // handle drag scroll start
-  if (Input.down && !shopDrag.active && !shopHelp && !shopConfirm) {
-    shopDrag.active = true; 
-    shopDrag.y0 = UI.my; 
-    shopDrag.scroll0 = shopScroll;
-    shopDrag.startX = UI.mx;
-    shopDrag.startY = UI.my;
-    shopDrag.hasMoved = false;
-  }
+  // drag scroll disabled for all shops
   
   // Click handling - process on release instead of press
   // 터치 이벤트와 마우스 이벤트 모두 처리
@@ -3548,24 +3552,50 @@ function updateShop(dt) {
       // Help popup toggle/close
     const hr = shopHelpRect();
     if (shopHelp) {
-      // Only close if not dragging
-      if (!helpDrag.hasMoved) {
-        shopHelp = false; 
-        shopHelpScroll = 0; // Reset scroll when closing
-        helpDrag.active = false;
-        helpDrag.hasMoved = false;
-        UI.reset(); 
-        return;
-      } else {
-        // Was dragging, don't close, just reset the flag
-        helpDrag.hasMoved = false;
-        helpDrag.active = false;
+      // When help popup is open, handle pagination or close
+      const pw = CONFIG.width * 0.86; const phBase = Math.min(320, CONFIG.height * 0.65);
+      const ph = (shopMode === 'items') ? Math.min(phBase + 50, CONFIG.height - 20) : phBase;
+      const px = (CONFIG.width - pw)/2, py = CONFIG.height * 0.18;
+      const contentTop = py + 35;
+      const contentBottom = py + ph - 35;
+      const byHelp = (shopMode === 'items') ? (contentBottom - 12 + 30) : (py + ph - 22);
+      const indicatorH = `${helpPage + 1}/${helpTotalPages}`;
+      // Buttons rects
+      // approximate width based on indicator length
+      const ctxW = 8 * indicatorH.length;
+      const btnW = 18, btnH = 18;
+      const gapBtn2 = 8;
+      const leftHX = Math.floor(px + pw/2 - ctxW/2 - gapBtn2 - btnW);
+      const rightHX = Math.floor(px + pw/2 + ctxW/2 + gapBtn2);
+      const mx = UI.mx, my = UI.my;
+      const insidePopup = (mx >= px && mx <= px + pw && my >= py && my <= py + ph);
+      // Prev/Next inside popup
+      if (insidePopup) {
+        // Prev
+        if (helpPage > 0 && mx >= leftHX && mx <= leftHX + btnW && my >= byHelp - btnH/2 && my <= byHelp + btnH/2) {
+          helpPage = Math.max(0, helpPage - 1);
+          UI.reset();
+          return;
+        }
+        // Next
+        if (helpPage < helpTotalPages - 1 && mx >= rightHX && mx <= rightHX + btnW && my >= byHelp - btnH/2 && my <= byHelp + btnH/2) {
+          helpPage = Math.min(helpTotalPages - 1, helpPage + 1);
+          UI.reset();
+          return;
+        }
+        // Click inside popup area but not on buttons: ignore (do not close)
         UI.reset();
         return;
       }
+      // Click outside popup closes it
+      shopHelp = false;
+      shopHelpScroll = 0;
+      helpPage = 0;
+      UI.reset();
+      return;
     }
     if (hr && UI.mx>=hr.x && UI.mx<=hr.x+hr.w && UI.my>=hr.y && UI.my<=hr.y+hr.h) {
-      shopHelp = true; UI.reset(); return;
+      shopHelp = true; helpPage = 0; UI.reset(); return;
     }
     // If confirm open, handle YES/NO
     if (shopConfirm) {
