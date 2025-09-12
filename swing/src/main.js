@@ -2611,8 +2611,9 @@ function isItemSoldOut(it) {
 function nextPriceForItem(it) {
   if (it.type !== 'level') return it.price;
   const lvl = getItemLevel(it);
-  // Big: 20$, 30$, 40$... per purchase; Buds: flat per level
+  // Big: 20$, 30$, 40$... per purchase
   if (it.id === 'big') return 20 + 10 * lvl;
+  // Glow, Magnet, Combo+, Slow, Lucky, Fever+: flat price per level
   return it.price;
 }
 
@@ -3328,7 +3329,7 @@ function updateShop(dt) {
     
     // 드래그 중이 아닐 때만 클릭으로 처리
     if (!shopDrag.hasMoved) {
-    // Help popup toggle/close
+      // Help popup toggle/close
     const hr = shopHelpRect();
     if (shopHelp) {
       // Only close if not dragging
@@ -3436,34 +3437,38 @@ function updateShop(dt) {
       }
     } else {
       // Item shop mode - handle item card clicks first
-      const items = getVisibleShopItems();
-      const cols = 2;
-      const cellW = CONFIG.width / cols;
-      const cellH = 120;
-      const marginX = 20;
-      const top = CONFIG.height * 0.12 + 50;
+      const { cols, cellW, cellH, marginX, top, paddingTop } = shopGrid();
+      const gap = 8;
+      const lvl = getLevelByExp(exp);
+      const items = SHOP_ITEMS.filter(it => (it.minLevel || 1) <= lvl);
+      const viewportH = CONFIG.height - top - 90;
       
       for (let i = 0; i < items.length; i++) {
         const item = items[i];
         const r = Math.floor(i / cols);
         const c = i % cols;
-        const x = marginX + c * cellW + 6;
-        const y = top + r * (cellH + 10) - shopScroll;
-        const w = cellW - 40;
+        // 렌더링과 똑같이 좌표 계산
+        const x = marginX + c * cellW + 6;  // 카드 x 좌표 (렌더링과 동일)
+        const y = top + paddingTop + r * (cellH + gap) - shopScroll;
+        const w = cellW - 12;
         const h = cellH;
         
-        // 아이템 카드 클릭 검사
-        if (UI.mx >= x && UI.mx <= x + w && UI.my >= y && UI.my <= y + h) {
-          if (DEBUG) console.log(`Item card clicked: ${item.id}`);
-          const si = SHOP_ITEMS.find(s => s.id === item.id);
-          if (si) {
-            if (item.soldOut) {
-              shopMsg = 'Already purchased';
-              shopMsgTimer = 1.5;
-            } else {
-              shopConfirm = { id: item.id, price: item.price };
-            }
+        // 클릭 검사 - 뷰포트 내에 보이는 카드만 클릭 가능
+        if (UI.mx >= x && UI.mx <= x + w && 
+            UI.my >= y && UI.my <= y + h && 
+            y >= top && y + h <= top + viewportH) {
+          console.log(`Item card clicked: ${item.id} at index ${i}`);
+          
+          if (isItemSoldOut(item)) {
+            shopMsg = 'Already purchased';
+            shopMsgTimer = 1.5;
+            UI.reset();
+            return;
           }
+          
+          const price = nextPriceForItem(item);
+          shopConfirm = { id: item.id, price: price };
+          console.log(`Opening confirm for ${item.id} with price ${price}`);
           UI.reset();
           return;
         }
