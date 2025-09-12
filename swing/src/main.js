@@ -3338,8 +3338,10 @@ function updateShop(dt) {
   }
   
   // Click handling - process on release instead of press
-  if (UI.justReleased && typeof UI !== 'undefined' && UI.clicked) {
-    UI.justReleased = false; // Reset the flag
+  // 터치 이벤트와 마우스 이벤트 모두 처리
+  if ((UI.justReleased || UI.clicked) && !shopDrag.hasMoved) {
+    // 디버깅용 로그
+    if (DEBUG) console.log(`Shop click detected at: ${UI.mx?.toFixed(0)}, ${UI.my?.toFixed(0)} Mode: ${shopMode}`);
     // Help popup toggle/close
     const hr = shopHelpRect();
     if (shopHelp) {
@@ -3381,6 +3383,13 @@ function updateShop(dt) {
       UI.reset();
       return;
     }
+    
+    // Only process card/button clicks if not dragging
+    if (shopDrag.hasMoved) {
+      UI.reset();
+      return;
+    }
+    
     // Handle character shop mode
     if (shopMode === 'chars') {
       // Character cards
@@ -3425,6 +3434,7 @@ function updateShop(dt) {
       
       // BACK button
       if (UI.mx >= startX && UI.mx <= startX + bw && UI.my >= by && UI.my <= by + bh) {
+        if (DEBUG) console.log('BACK button clicked');
         State.current = previousState; // 이전 상태로 돌아가기
         UI.reset();
         return;
@@ -3439,6 +3449,40 @@ function updateShop(dt) {
         return;
       }
     } else {
+      // Item shop mode - handle item card clicks first
+      const items = getVisibleShopItems();
+      const cols = 2;
+      const cellW = CONFIG.width / cols;
+      const cellH = 120;
+      const marginX = 20;
+      const top = CONFIG.height * 0.12 + 50;
+      
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const r = Math.floor(i / cols);
+        const c = i % cols;
+        const x = marginX + c * cellW + 6;
+        const y = top + r * (cellH + 10) - shopScroll;
+        const w = cellW - 40;
+        const h = cellH;
+        
+        // 아이템 카드 클릭 검사
+        if (UI.mx >= x && UI.mx <= x + w && UI.my >= y && UI.my <= y + h) {
+          if (DEBUG) console.log(`Item card clicked: ${item.id}`);
+          const si = SHOP_ITEMS.find(s => s.id === item.id);
+          if (si) {
+            if (item.soldOut) {
+              shopMsg = 'Already purchased';
+              shopMsgTimer = 1.5;
+            } else {
+              shopConfirm = { id: item.id, price: item.price };
+            }
+          }
+          UI.reset();
+          return;
+        }
+      }
+      
       // Item shop mode - handle bottom buttons
       const bw = 100, bh = 36;
       const spacing = 10;
@@ -3448,6 +3492,7 @@ function updateShop(dt) {
       
       // BACK button
       if (UI.mx >= startX && UI.mx <= startX + bw && UI.my >= by && UI.my <= by + bh) {
+        if (DEBUG) console.log('BACK button clicked');
         State.current = previousState; // 이전 상태로 돌아가기
         UI.reset();
         return;
@@ -3462,27 +3507,7 @@ function updateShop(dt) {
         return;
       }
       
-      // Item cards (only in items mode)
-      const { cols, cellW, cellH, marginX, top, paddingTop } = shopGrid();
-      const gap = 8;
-      const lvl = getLevelByExp(exp);
-      const items = SHOP_ITEMS.filter(it => (it.minLevel || 1) <= lvl);
-      for (let i = 0; i < items.length; i++) {
-      const r = Math.floor(i / cols);
-      const c = i % cols;
-      const x = marginX + c * cellW + 6;
-      const y = top + paddingTop + r * (cellH + gap) - shopScroll;
-      const w = cellW - 12; const h = cellH;
-      if (UI.mx>=x && UI.mx<=x+w && UI.my>=y && UI.my<=y+h) {
-        // open confirm if purchasable
-    const it = items[i];
-        if (isItemSoldOut(it)) { UI.reset(); return; }
-        const price = nextPriceForItem(it);
-        shopConfirm = { id: it.id, price };
-        UI.reset();
-        return;
-      }
-    }
+      // 아이템 카드 클릭은 위에서 이미 처리함
   }
 }
 
