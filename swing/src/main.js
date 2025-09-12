@@ -293,7 +293,7 @@ function onRelease(e) {
       UI.mx = (touch.clientX - rect.left) * (CONFIG.width / rect.width);
       UI.my = (touch.clientY - rect.top) * (CONFIG.height / rect.height);
       // 터치 이벤트 디버깅
-      if (DEBUG) console.log(`Touch release at: ${UI.mx.toFixed(0)}, ${UI.my.toFixed(0)} State: ${State.current}`);
+      console.log(`Touch release at: ${UI.mx.toFixed(0)}, ${UI.my.toFixed(0)} State: ${State.current}`);
     }
     
     // Handle click on release for all states
@@ -303,20 +303,16 @@ function onRelease(e) {
       if (!shopDrag.hasMoved || shopConfirm) {
         UI.clicked = true;
         UI.justReleased = true;
-        // 터치 이벤트의 경우 즉시 처리를 위해 frameEndReset 사용
-        if (isTouch) frameEndReset = true;
+        console.log('Shop click triggered');
       } else if (shopHelp && !helpDrag.hasMoved) {
         // For help popup, only trigger click if not dragging
         UI.clicked = true;
         UI.justReleased = true;
-        if (isTouch) frameEndReset = true;
       }
     } else {
       // For other states, always set clicked on release
       UI.clicked = true;
       UI.justReleased = true;
-      // 터치 이벤트의 경우 프레임 끝에서 리셋
-      if (isTouch) frameEndReset = true;
     }
   } else {
     // 이벤트 정보가 없는 경우도 클릭 설정 (키보드 스페이스 등)
@@ -1596,7 +1592,6 @@ function drawCenteredText(g, text, y, size = 18, color = '#fff') {
 }
 
 let showGuide = false;
-let frameEndReset = false; // UI 클릭 상태 프레임 끝에서 리셋
 function guideButtonRect() {
   const w = 92, h = 24;
   const x = (CONFIG.width - w) / 2;
@@ -2537,17 +2532,6 @@ function tick(now) {
     else if (State.current === 'shop') updateShop(dt);
     acc -= dt;
     Input.endFrame();
-    
-    // UI 클릭 상태를 프레임 끝에서 리셋
-    // setTimeout 대신 프레임 끝에서 처리하여 안정성 향상
-    if (frameEndReset) {
-      UI.clicked = false;
-      UI.justReleased = false;
-      frameEndReset = false;
-    }
-    if (UI.clicked || UI.justReleased) {
-      frameEndReset = true;
-    }
   }
   webRopeJustCreated = false;
     // Render
@@ -3339,9 +3323,11 @@ function updateShop(dt) {
   
   // Click handling - process on release instead of press
   // 터치 이벤트와 마우스 이벤트 모두 처리
-  if ((UI.justReleased || UI.clicked) && !shopDrag.hasMoved) {
-    // 디버깅용 로그
-    if (DEBUG) console.log(`Shop click detected at: ${UI.mx?.toFixed(0)}, ${UI.my?.toFixed(0)} Mode: ${shopMode}`);
+  if (UI.clicked) {
+    console.log(`Shop click processing at: ${UI.mx?.toFixed(0)}, ${UI.my?.toFixed(0)} Mode: ${shopMode}, hasMoved: ${shopDrag.hasMoved}`);
+    
+    // 드래그 중이 아닐 때만 클릭으로 처리
+    if (!shopDrag.hasMoved) {
     // Help popup toggle/close
     const hr = shopHelpRect();
     if (shopHelp) {
@@ -3508,6 +3494,11 @@ function updateShop(dt) {
       }
       
       // 아이템 카드 클릭은 위에서 이미 처리함
+    }
+    
+    // 클릭 처리 후 플래그 리셋
+    UI.clicked = false;
+    UI.justReleased = false;
   }
 }
 
