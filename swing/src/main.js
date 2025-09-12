@@ -303,7 +303,6 @@ function onRelease(e) {
       if (!shopDrag.hasMoved || shopConfirm) {
         UI.clicked = true;
         UI.justReleased = true;
-        console.log('Shop click triggered');
       } else if (shopHelp && !helpDrag.hasMoved) {
         // For help popup, only trigger click if not dragging
         UI.clicked = true;
@@ -440,9 +439,8 @@ window.addEventListener('mousemove', (e) => {
   // Handle help popup drag
   if (State.current === 'shop' && shopHelp && helpDrag.active) {
     const moveDistance = Math.abs(e.clientY - helpDrag.startY);
-    if (moveDistance > 5) {
+    if (moveDistance > 15) {  // Increased from 5 to 15 pixels
       helpDrag.hasMoved = true;
-      console.log('Help drag detected:', moveDistance);
     }
     const delta = helpDrag.y0 - e.clientY;
     const newScroll = helpDrag.scroll0 + delta;
@@ -473,7 +471,7 @@ window.addEventListener('mousemove', (e) => {
   else if (State.current === 'shop' && shopDrag.active && !shopHelp && !shopConfirm) {
     // Check if mouse moved enough to be considered a drag (threshold: 5px)
     const moveDistance = Math.abs(e.clientY - shopDrag.y0) + Math.abs(e.clientX - shopDrag.startX);
-    if (moveDistance > 5) {
+    if (moveDistance > 15) {  // Increased from 5 to 15 pixels
       shopDrag.hasMoved = true;
     }
     
@@ -514,7 +512,7 @@ window.addEventListener('touchmove', (e) => {
     const touch = e.touches[0];
     // Check if touch moved enough to be considered a drag
     const moveDistance = Math.abs(touch.clientY - shopDrag.y0) + Math.abs(touch.clientX - shopDrag.startX);
-    if (moveDistance > 5) {
+    if (moveDistance > 15) {  // Increased from 5 to 15 pixels
       shopDrag.hasMoved = true;
     }
     
@@ -1132,18 +1130,22 @@ function buildGameOverButtons() {
     
     // ITEMS button
     uiButtons.gameover.push(new UIButton(startX, by, bw, bh, 'ITEMS', () => {
-      previousState = State.current;
+      previousState = 'gameover';
       State.current = 'shop';
       shopMode = 'items';
       shopScroll = 0;
+      uiButtons.gameover = []; // Clear gameover buttons
+      buildShopCards(); // Build shop cards
     }, 'gameover'));
     
     // CHARS button
     uiButtons.gameover.push(new UIButton(startX + bw + spacing, by, bw, bh, 'CHARS', () => {
-      previousState = State.current;
+      previousState = 'gameover';
       State.current = 'shop';
       shopMode = 'chars';
       shopScroll = 0;
+      uiButtons.gameover = []; // Clear gameover buttons
+      buildShopCards(); // Build shop cards
     }, 'gameover'));
   }
   
@@ -1699,6 +1701,11 @@ function cleanupRopes() {
 }
 
 function resetRun() {
+  // Clear all UI buttons when resetting
+  uiButtons.gameover = [];
+  uiButtons.shop.cards = [];
+  uiButtons.shop.buttons = [];
+  
   player.reset();
   score = 0;
   comboCount = 0;
@@ -2426,7 +2433,7 @@ function updateGameOver(dt) {
   }
   
   // Check button clicks
-  if (UI.clicked) {
+  if (UI.clicked && State.current === 'gameover') {
     for (const button of uiButtons.gameover) {
       if (button.isClicked(UI.mx, UI.my)) {
         button.onClick();
@@ -3505,6 +3512,9 @@ function buildShopCards() {
 }
 
 function updateShop(dt) {
+  // Only process if in shop state
+  if (State.current !== 'shop') return;
+  
   // auto-dismiss message after timer
   if (shopMsgTimer > 0) {
     shopMsgTimer = Math.max(0, shopMsgTimer - dt);
