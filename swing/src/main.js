@@ -1000,6 +1000,166 @@ let levelUpPopupTimer = 0;
 let shopMode = 'items'; // 'items' or 'chars'
 let shopScroll = 0;
 let shopDrag = { active: false, y0: 0, scroll0: 0 };
+
+// Global button system for all UI elements
+let uiButtons = {
+  intro: [],
+  gameover: [],
+  shop: { cards: [], buttons: [] }
+};
+
+class UIButton {
+  constructor(x, y, w, h, label, action, state) {
+    this.x = x;
+    this.y = y;
+    this.w = w;
+    this.h = h;
+    this.label = label;
+    this.action = action;
+    this.state = state; // Which state this button belongs to
+  }
+  
+  isClicked(mx, my) {
+    return mx >= this.x && mx <= this.x + this.w && 
+           my >= this.y && my <= this.y + this.h;
+  }
+  
+  onClick() {
+    console.log(`Button clicked: ${this.label} in ${this.state}`);
+    this.action();
+  }
+}
+
+class ShopCard {
+  constructor(x, y, w, h, item, index, type) {
+    this.x = x;
+    this.baseY = y; // 기본 Y 위치 (스크롤 없을 때)
+    this.y = y; // 실제 Y 위치 (스크롤 반영)
+    this.w = w;
+    this.h = h;
+    this.item = item;
+    this.index = index;
+    this.type = type; // 'item' or 'char'
+  }
+  
+  updateScroll(scrollY) {
+    this.y = this.baseY - scrollY;
+  }
+  
+  isClicked(mx, my) {
+    return mx >= this.x && mx <= this.x + this.w && 
+           my >= this.y && my <= this.y + this.h;
+  }
+  
+  onClick() {
+    // 타입에 따라 다른 처리
+    if (this.type === 'char') {
+      // 캐릭터 구매/선택 처리
+      const charId = typeof this.item === 'string' ? this.item : this.item.id;
+      const char = PIXEL_CHARACTERS[charId];
+      if (!char) return;
+      
+      const charInv = shopInv.characters || [];
+      const isOwned = charInv.includes(charId) || charId === 'default';
+      
+      shopConfirm = {
+        id: charId,
+        type: 'character',
+        isOwned: isOwned,
+        price: isOwned ? 0 : char.price
+      };
+    } else {
+      // 일반 아이템 구매 처리
+      if (isItemSoldOut(this.item)) {
+        shopMsg = 'Already purchased';
+        shopMsgTimer = 1.5;
+      } else {
+        const price = nextPriceForItem(this.item);
+        shopConfirm = { id: this.item.id, price: price };
+      }
+    }
+  }
+}
+
+// Build intro buttons
+function buildIntroButtons() {
+  uiButtons.intro = [];
+  const lvl = getLevelByExp(exp);
+  
+  // Guide button
+  const btn = guideButtonRect();
+  uiButtons.intro.push(new UIButton(btn.x, btn.y, btn.w, btn.h, 'GUIDE', () => {
+    showGuide = true;
+  }, 'intro'));
+  
+  // Shop buttons (if level >= 2)
+  if (lvl >= 2) {
+    const bw = 100, bh = 36;
+    const spacing = 10;
+    const totalWidth = bw * 2 + spacing;
+    const startX = (CONFIG.width - totalWidth) / 2;
+    const by = CONFIG.height * 0.65;
+    
+    // ITEMS button
+    uiButtons.intro.push(new UIButton(startX, by, bw, bh, 'ITEMS', () => {
+      previousState = State.current;
+      State.current = 'shop';
+      shopMode = 'items';
+      shopScroll = 0;
+    }, 'intro'));
+    
+    // CHARS button
+    uiButtons.intro.push(new UIButton(startX + bw + spacing, by, bw, bh, 'CHARS', () => {
+      previousState = State.current;
+      State.current = 'shop';
+      shopMode = 'chars';
+      shopScroll = 0;
+    }, 'intro'));
+  }
+}
+
+// Build game over buttons
+function buildGameOverButtons() {
+  uiButtons.gameover = [];
+  const lvl = getLevelByExp(exp);
+  
+  if (lvl >= 2) {
+    const bw = 100, bh = 36;
+    const spacing = 10;
+    const totalWidth = bw * 2 + spacing;
+    const startX = (CONFIG.width - totalWidth) / 2;
+    const by = CONFIG.height * 0.80;
+    
+    // ITEMS button
+    uiButtons.gameover.push(new UIButton(startX, by, bw, bh, 'ITEMS', () => {
+      previousState = State.current;
+      State.current = 'shop';
+      shopMode = 'items';
+      shopScroll = 0;
+    }, 'gameover'));
+    
+    // CHARS button
+    uiButtons.gameover.push(new UIButton(startX + bw + spacing, by, bw, bh, 'CHARS', () => {
+      previousState = State.current;
+      State.current = 'shop';
+      shopMode = 'chars';
+      shopScroll = 0;
+    }, 'gameover'));
+  }
+  
+  // Fast mode toggle (if level >= 8)
+  if (lvl >= 8) {
+    const fw = 140, fh = 24;
+    const fx = (CONFIG.width - fw) / 2;
+    const fy = CONFIG.height * 0.80 + 80;
+    
+    uiButtons.gameover.push(new UIButton(fx, fy, fw, fh, fastModeEnabled ? 'FAST: ON' : 'FAST: OFF', () => {
+      fastModeEnabled = !fastModeEnabled;
+      localStorage.setItem('webswing_fastmode_v1', fastModeEnabled ? '1' : '0');
+      buildGameOverButtons(); // Rebuild to update label
+    }, 'gameover'));
+  }
+}
 let previousState = 'intro'; // 상점 진입 전 상태 저장
 let shopConfirm = null; // { id, price }
 let selectedCharacter = 'default'; // Currently selected character
@@ -1603,7 +1763,12 @@ function pointInRect(px, py, r) { return px >= r.x && px <= r.x + r.w && py >= r
 function updateIntro(dt) {
   // Debounce to ensure we show intro at least a moment after transitions
   if (simTime < inputLockUntil) { UI.reset && UI.reset(); return; }
-  const btn = guideButtonRect();
+  
+  // Build buttons if not exist
+  if (uiButtons.intro.length === 0) {
+    buildIntroButtons();
+  }
+  
   if (showGuide) {
     if (UI.clicked || UI.keyPressed === 'Escape' || UI.keyPressed === 'Space') {
       showGuide = false;
@@ -1611,45 +1776,25 @@ function updateIntro(dt) {
     }
     return;
   }
-  if (UI.clicked && pointInRect(UI.mx, UI.my, btn)) {
-    showGuide = true;
+  
+  // Check button clicks
+  if (UI.clicked) {
+    for (const button of uiButtons.intro) {
+      if (button.isClicked(UI.mx, UI.my)) {
+        button.onClick();
+        UI.reset();
+        return;
+      }
+    }
+    
+    // If no button clicked, start game
     UI.reset();
+    resetRun();
     return;
   }
   
-  // Check for shop button clicks (if level >= 2)
-  const lvl = getLevelByExp(exp);
-  if (lvl >= 2 && UI.clicked) {
-    const bw = 100, bh = 36;
-    const spacing = 10;
-    const totalWidth = bw * 2 + spacing;
-    const startX = (CONFIG.width - totalWidth) / 2;
-    const by = CONFIG.height * 0.65;
-    
-    // ITEMS button
-    if (UI.mx >= startX && UI.mx <= startX + bw && UI.my >= by && UI.my <= by + bh) {
-      previousState = State.current; // 이전 상태 저장
-      State.current = 'shop';
-      shopMode = 'items';
-      shopScroll = 0;
-      UI.reset();
-      return;
-    }
-    
-    // CHARS button
-    const charsX = startX + bw + spacing;
-    if (UI.mx >= charsX && UI.mx <= charsX + bw && UI.my >= by && UI.my <= by + bh) {
-      previousState = State.current; // 이전 상태 저장
-      State.current = 'shop';
-      shopMode = 'chars';
-      shopScroll = 0;
-      UI.reset();
-      return;
-    }
-  }
-  
-  // Start game on space or click outside buttons
-  if (UI.keyPressed === 'Space' || UI.clicked) {
+  // Start game on space
+  if (UI.keyPressed === 'Space') {
     UI.reset();
     resetRun();
     return;
@@ -2268,66 +2413,39 @@ function updateGameOver(dt) {
   gameOverTimer += dt;
   levelUpPopupTimer += dt;
   const wait = CONFIG.gameOverWait || 5.0;
-  // 잠금 기간 동안 입력을 소비/지우기 (나중에 자동 트리거되지 않도록)
+  // 잠금 기간 동안 입력을 소비/지우기
   if (gameOverTimer < wait) {
     if (typeof UI !== 'undefined') UI.reset();
     Input.down = false; Input.justPressed = false;
-    return; // 타이머가 준비되지 않았으면 여기서 종료
+    return;
   }
   
-  // 타이머가 준비되면 버튼 클릭 확인
-  const lvl = getLevelByExp(exp);
-  
-  // 우선순위 1: ITEMS 또는 CHARS 버튼 클릭 확인 (레벨>=2)
-  if (typeof UI !== 'undefined' && (UI.clicked || UI.justReleased) && lvl >= 2) {
-    const bw = 100, bh = 36;
-    const spacing = 10;
-    const totalWidth = bw * 2 + spacing;
-    const startX = (CONFIG.width - totalWidth) / 2;
-    const by = CONFIG.height * 0.80;
-    
-    
-    // ITEMS 버튼 확인
-    const itemsBx = startX;
-    if (UI.mx >= itemsBx && UI.mx <= itemsBx + bw && UI.my >= by && UI.my <= by + bh) {
-      previousState = State.current; // 이전 상태 저장
-      State.current = 'shop';
-      shopMode = 'items'; // 아이템 상점 모드로 설정
-      shopScroll = 0; shopDrag.active = false; shopConfirm = null; shopHelp = false;
-      if (typeof UI !== 'undefined') UI.reset();
-      Input.down = false; Input.justPressed = false;
-      return;
-    }
-    
-    // CHARS 버튼 확인
-    const charsBx = startX + bw + spacing;
-    if (UI.mx >= charsBx && UI.mx <= charsBx + bw && UI.my >= by && UI.my <= by + bh) {
-      previousState = State.current; // 이전 상태 저장
-      State.current = 'shop'; 
-      shopMode = 'chars'; // 캐릭터 상점 모드로 설정
-      shopScroll = 0; shopDrag.active = false; shopConfirm = null; shopHelp = false;
-      if (typeof UI !== 'undefined') UI.reset();
-      Input.down = false; Input.justPressed = false;
-      return;
-    }
+  // Build buttons if not exist
+  if (uiButtons.gameover.length === 0) {
+    buildGameOverButtons();
   }
   
-  // 우선순위 2: 빠른 모드 토글 클릭 확인 (레벨>=8)
-  if (lvl >= 8 && typeof UI !== 'undefined' && (UI.clicked || UI.justReleased)) {
-    const bw = 140, bh = 24;
-    const bx = (CONFIG.width - bw) / 2;
-    const by = CONFIG.height * 0.80 + 80; // moved down by 30px
-    if (UI.mx >= bx && UI.mx <= bx + bw && UI.my >= by && UI.my <= by + bh) {
-      fastModeEnabled = !fastModeEnabled;
-      UI.reset();
-      return; // 이 클릭에서 다른 동작 방지
+  // Check button clicks
+  if (UI.clicked) {
+    for (const button of uiButtons.gameover) {
+      if (button.isClicked(UI.mx, UI.my)) {
+        button.onClick();
+        UI.reset();
+        Input.down = false; Input.justPressed = false;
+        return;
+      }
     }
+    
+    // If no button clicked, restart game
+    UI.reset();
+    Input.down = false; Input.justPressed = false;
+    resetRun();
+    return;
   }
   
-  // 우선순위 3: 다른 입력으로 직접 재시작 (버튼을 클릭하지 않은 경우에만)
-  // Input.anyPressed()를 제거하고 mouseup 이벤트(UI.clicked)만 사용
-  if (typeof UI !== 'undefined' && (UI.clicked || UI.keyPressed === 'Space' || UI.keyPressed === 'Escape')) {
-    if (typeof UI !== 'undefined') UI.reset();
+  // Restart on Space or Escape
+  if (UI.keyPressed === 'Space' || UI.keyPressed === 'Escape') {
+    UI.reset();
     Input.down = false; Input.justPressed = false;
     resetRun();
   }
@@ -3303,6 +3421,89 @@ function renderShop(g) {
   }
 }
 
+function buildShopCards() {
+  uiButtons.shop.cards = [];
+  uiButtons.shop.buttons = [];
+  
+  if (shopMode === 'chars') {
+    // Character cards
+    const chars = Object.entries(PIXEL_CHARACTERS);
+    const cols = 2;
+    const cellW = CONFIG.width / cols;
+    const cellH = 100;
+    const marginX = 20;
+    const top = CONFIG.height * 0.12 + 50;
+    
+    for (let i = 0; i < chars.length; i++) {
+      const [id, char] = chars[i];
+      const r = Math.floor(i / cols);
+      const c = i % cols;
+      const x = marginX + c * cellW + 6;
+      const baseY = top + r * (cellH + 10); // 기본 Y 위치 (스크롤 없음)
+      const w = cellW - 40;
+      const h = cellH;
+      
+      const card = new ShopCard(x, baseY, w, h, id, i, 'char');
+      card.updateScroll(shopScroll); // 현재 스큪c롤 반영
+      uiButtons.shop.cards.push(card);
+    }
+    
+    // Character shop buttons
+    const bw = 86, bh = 26;
+    const spacing = 10;
+    const totalWidth = bw * 2 + spacing;
+    const startX = (CONFIG.width - totalWidth) / 2;
+    const by = CONFIG.height - 50;
+    
+    uiButtons.shop.buttons.push(new UIButton(startX, by, bw, bh, 'BACK', () => {
+      State.current = previousState;
+    }, 'shop'));
+    
+    uiButtons.shop.buttons.push(new UIButton(startX + bw + spacing, by, bw, bh, 'ITEMS', () => {
+      shopMode = 'items';
+      shopScroll = 0;
+      buildShopCards();
+    }, 'shop'));
+  } else {
+    // Item cards
+    const { cols, cellW, cellH, marginX, top, paddingTop } = shopGrid();
+    const gap = 8;
+    const lvl = getLevelByExp(exp);
+    const items = SHOP_ITEMS.filter(it => (it.minLevel || 1) <= lvl);
+    
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      const r = Math.floor(i / cols);
+      const c = i % cols;
+      const x = marginX + c * cellW + 6;
+      const baseY = top + paddingTop + r * (cellH + gap); // 기본 Y 위치 (스크롤 없음)
+      const w = cellW - 12;
+      const h = cellH;
+      
+      const card = new ShopCard(x, baseY, w, h, item, i, 'item');
+      card.updateScroll(shopScroll); // 현재 스크롤 반영
+      uiButtons.shop.cards.push(card);
+    }
+    
+    // Item shop buttons
+    const bw = 100, bh = 36;
+    const spacing = 10;
+    const totalWidth = bw * 2 + spacing;
+    const startX = (CONFIG.width - totalWidth) / 2;
+    const by = CONFIG.height - 60;
+    
+    uiButtons.shop.buttons.push(new UIButton(startX, by, bw, bh, 'BACK', () => {
+      State.current = previousState;
+    }, 'shop'));
+    
+    uiButtons.shop.buttons.push(new UIButton(startX + bw + spacing, by, bw, bh, 'CHARS', () => {
+      shopMode = 'chars';
+      shopScroll = 0;
+      buildShopCards();
+    }, 'shop'));
+  }
+}
+
 function updateShop(dt) {
   // auto-dismiss message after timer
   if (shopMsgTimer > 0) {
@@ -3312,6 +3513,13 @@ function updateShop(dt) {
       shopConfirm = null;
     }
   }
+  
+  
+  // 초기화 또는 모드 변경 시 카드 생성
+  if (uiButtons.shop.cards.length === 0) {
+    buildShopCards();
+  }
+  
   // handle drag scroll start
   if (Input.down && !shopDrag.active && !shopHelp && !shopConfirm) {
     shopDrag.active = true; 
@@ -3325,8 +3533,6 @@ function updateShop(dt) {
   // Click handling - process on release instead of press
   // 터치 이벤트와 마우스 이벤트 모두 처리
   if (UI.clicked) {
-    console.log(`Shop click processing at: ${UI.mx?.toFixed(0)}, ${UI.my?.toFixed(0)} Mode: ${shopMode}, hasMoved: ${shopDrag.hasMoved}`);
-    
     // 드래그 중이 아닐 때만 클릭으로 처리
     if (!shopDrag.hasMoved) {
       // Help popup toggle/close
@@ -3377,133 +3583,71 @@ function updateShop(dt) {
       return;
     }
     
-    // Handle character shop mode
-    if (shopMode === 'chars') {
-      // Character cards
-      const chars = Object.entries(PIXEL_CHARACTERS);
-      const cols = 2;
-      const cellW = CONFIG.width / cols;
-      const cellH = 100;
-      const marginX = 20;
-      const top = CONFIG.height * 0.12 + 50;
+    // 객체 기반 클릭 처리
+    // 먼저 버튼 클릭 검사 (버튼은 스크롤되지 않음)
+    for (const button of uiButtons.shop.buttons) {
+      if (button.isClicked(UI.mx, UI.my)) {
+        button.onClick();
+        UI.reset();
+        return;
+      }
+    }
+    
+    // 현재 모드에 맞는 카드만 클릭 검사
+    const { top } = shopGrid();
+    const viewportBottom = CONFIG.height - 90;
+    
+    for (const card of uiButtons.shop.cards) {
+      // 현재 모드와 카드 타입이 일치하는지 확인
+      const correctType = (shopMode === 'items' && card.type === 'item') ||
+                         (shopMode === 'chars' && card.type === 'char');
       
-      for (let i = 0; i < chars.length; i++) {
-        const [id, char] = chars[i];
-        const r = Math.floor(i / cols);
-        const c = i % cols;
-        const x = marginX + c * cellW + 6;
-        const y = top + r * (cellH + 10) - shopScroll;
-        const w = cellW - 40;
-        const h = cellH;
-        
-        if (UI.mx >= x && UI.mx <= x + w && UI.my >= y && UI.my <= y + h) {
-          const charInv = shopInv.characters || [];
-          const isPurchased = charInv.includes(id) || id === 'default';
-          
-          if (isPurchased) {
-            // Open selection confirm for all owned characters including default
-            shopConfirm = { id: id, price: 0, type: 'character' };
-          } else {
-            // Open purchase confirm
-            shopConfirm = { id: id, price: char.price, type: 'character' };
-          }
+      if (!correctType) continue; // 타입이 맞지 않으면 건너뛰기
+      
+      // 뷰포트 내에 완전히 또는 부분적으로 보이는 카드만 클릭 가능
+      const cardTop = card.y;
+      const cardBottom = card.y + card.h;
+      
+      // 카드가 뷰포트 내에 있는지 확인
+      if (cardBottom >= top && cardTop <= viewportBottom) {
+        if (card.isClicked(UI.mx, UI.my)) {
+          card.onClick();
           UI.reset();
           return;
         }
       }
-      
-      // Bottom buttons for character shop
-      const bw = 86, bh = 26;
-      const spacing = 10;
-      const totalWidth = bw * 2 + spacing;
-      const startX = (CONFIG.width - totalWidth) / 2;
-      const by = CONFIG.height - 50;
-      
-      // BACK button
-      if (UI.mx >= startX && UI.mx <= startX + bw && UI.my >= by && UI.my <= by + bh) {
-        if (DEBUG) console.log('BACK button clicked');
-        State.current = previousState; // 이전 상태로 돌아가기
-        UI.reset();
-        return;
-      }
-      
-      // ITEMS button
-      const itemsX = startX + bw + spacing;
-      if (UI.mx >= itemsX && UI.mx <= itemsX + bw && UI.my >= by && UI.my <= by + bh) {
-        shopMode = 'items';
-        shopScroll = 0;
-        UI.reset();
-        return;
-      }
-    } else {
-      // Item shop mode - handle item card clicks first
-      const { cols, cellW, cellH, marginX, top, paddingTop } = shopGrid();
-      const gap = 8;
-      const lvl = getLevelByExp(exp);
-      const items = SHOP_ITEMS.filter(it => (it.minLevel || 1) <= lvl);
-      const viewportH = CONFIG.height - top - 90;
-      
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        const r = Math.floor(i / cols);
-        const c = i % cols;
-        // 렌더링과 똑같이 좌표 계산
-        const x = marginX + c * cellW + 6;  // 카드 x 좌표 (렌더링과 동일)
-        const y = top + paddingTop + r * (cellH + gap) - shopScroll;
-        const w = cellW - 12;
-        const h = cellH;
-        
-        // 클릭 검사 - 뷰포트 내에 보이는 카드만 클릭 가능
-        if (UI.mx >= x && UI.mx <= x + w && 
-            UI.my >= y && UI.my <= y + h && 
-            y >= top && y + h <= top + viewportH) {
-          console.log(`Item card clicked: ${item.id} at index ${i}`);
-          
-          if (isItemSoldOut(item)) {
-            shopMsg = 'Already purchased';
-            shopMsgTimer = 1.5;
-            UI.reset();
-            return;
-          }
-          
-          const price = nextPriceForItem(item);
-          shopConfirm = { id: item.id, price: price };
-          console.log(`Opening confirm for ${item.id} with price ${price}`);
-          UI.reset();
-          return;
-        }
-      }
-      
-      // Item shop mode - handle bottom buttons
-      const bw = 100, bh = 36;
-      const spacing = 10;
-      const totalWidth = bw * 2 + spacing;
-      const startX = (CONFIG.width - totalWidth) / 2;
-      const by = CONFIG.height - 60;
-      
-      // BACK button
-      if (UI.mx >= startX && UI.mx <= startX + bw && UI.my >= by && UI.my <= by + bh) {
-        if (DEBUG) console.log('BACK button clicked');
-        State.current = previousState; // 이전 상태로 돌아가기
-        UI.reset();
-        return;
-      }
-      
-      // CHARS button
-      const charsX = startX + bw + spacing;
-      if (UI.mx >= charsX && UI.mx <= charsX + bw && UI.my >= by && UI.my <= by + bh) {
-        shopMode = 'chars';
-        shopScroll = 0;
-        UI.reset();
-        return;
-      }
-      
-      // 아이템 카드 클릭은 위에서 이미 처리함
     }
     
     // 클릭 처리 후 플래그 리셋
-    UI.clicked = false;
-    UI.justReleased = false;
+    UI.reset();
+    }
+  }
+  
+  // 스크롤 변경 시 카드 위치 업데이트
+  if (shopDrag.active) {
+    const dy = UI.my - shopDrag.y0;
+    const newScroll = shopDrag.scroll0 - dy;
+    
+    // 스크롤 범위 계산
+    const { cols, cellH, paddingTop, paddingBottom } = shopGrid();
+    const gap = 8;
+    const lvl = getLevelByExp(exp);
+    const items = shopMode === 'items' ? 
+      SHOP_ITEMS.filter(it => (it.minLevel || 1) <= lvl) : 
+      Object.entries(PIXEL_CHARACTERS);
+    const rows = Math.ceil(items.length / cols) || 1;
+    const contentH = paddingTop + rows * (cellH + gap) - gap + paddingBottom;
+    const viewportH = CONFIG.height - (CONFIG.height * 0.12 + 50) - 90;
+    
+    const prevScroll = shopScroll;
+    shopScroll = Math.max(0, Math.min(Math.max(0, contentH - viewportH), newScroll));
+    
+    // 스크롤 변경 시 모든 카드의 Y 위치 업데이트
+    if (shopScroll !== prevScroll) {
+      for (const card of uiButtons.shop.cards) {
+        card.updateScroll(shopScroll);
+      }
+    }
   }
 }
 
@@ -3617,7 +3761,6 @@ function tryPurchase(id) {
   }
   try { localStorage.setItem(SAVINGS_KEY, String(savings)); } catch(_){}
   shopConfirm = null;
-}
 }
 
 // Start the game
