@@ -251,10 +251,14 @@ function onPress(e) {
   // record pointer position for UI (intro)
   if (e && (e.clientX !== undefined || (e.touches && e.touches.length))) {
     const rect = canvas.getBoundingClientRect();
+    const isTouch = e.touches && e.touches.length > 0;
     const cx = e.clientX !== undefined ? e.clientX : e.touches[0].clientX;
     const cy = e.clientY !== undefined ? e.clientY : e.touches[0].clientY;
     UI.mx = (cx - rect.left) * (CONFIG.width / rect.width);
     UI.my = (cy - rect.top) * (CONFIG.height / rect.height);
+    
+    // 터치 시작 위치 디버깅
+    if (DEBUG && isTouch) console.log(`Touch start at: ${UI.mx.toFixed(0)}, ${UI.my.toFixed(0)} State: ${State.current}`);
     // Don't set UI.clicked on mousedown, wait for mouseup
     
     // Start help popup drag if clicking in help area
@@ -274,33 +278,50 @@ function onPress(e) {
 function onRelease(e) {
   Input.down = false;
   
-  // Record position for all states
+  // 모든 상태에서 위치 기록
   if (e && (e.clientX !== undefined || (e.changedTouches && e.changedTouches.length > 0))) {
     const rect = canvas.getBoundingClientRect();
+    const isTouch = e.changedTouches && e.changedTouches.length > 0;
+    
     if (e.clientX !== undefined) {
+      // 마우스 이벤트
       UI.mx = (e.clientX - rect.left) * (CONFIG.width / rect.width);
       UI.my = (e.clientY - rect.top) * (CONFIG.height / rect.height);
-    } else if (e.changedTouches && e.changedTouches.length > 0) {
-      UI.mx = (e.changedTouches[0].clientX - rect.left) * (CONFIG.width / rect.width);
-      UI.my = (e.changedTouches[0].clientY - rect.top) * (CONFIG.height / rect.height);
+    } else if (isTouch) {
+      // 터치 이벤트
+      const touch = e.changedTouches[0];
+      UI.mx = (touch.clientX - rect.left) * (CONFIG.width / rect.width);
+      UI.my = (touch.clientY - rect.top) * (CONFIG.height / rect.height);
+      // 터치 이벤트 디버깅
+      if (DEBUG) console.log(`Touch release at: ${UI.mx.toFixed(0)}, ${UI.my.toFixed(0)} State: ${State.current}`);
     }
     
-    // Handle click on release for shop state
+    // Handle click on release for all states
+    // 모바일에서도 클릭 및 버튼 터치가 잘 동작하도록 개선
     if (State.current === 'shop') {
       // Only trigger click if not dragging
       if (!shopDrag.hasMoved || shopConfirm) {
         UI.clicked = true;
-        UI.justReleased = true; // New flag for mouseup
+        UI.justReleased = true;
+        // 터치 이벤트의 경우 즉시 처리를 위해 frameEndReset 사용
+        if (isTouch) frameEndReset = true;
       } else if (shopHelp && !helpDrag.hasMoved) {
         // For help popup, only trigger click if not dragging
         UI.clicked = true;
         UI.justReleased = true;
+        if (isTouch) frameEndReset = true;
       }
     } else {
       // For other states, always set clicked on release
       UI.clicked = true;
       UI.justReleased = true;
+      // 터치 이벤트의 경우 프레임 끝에서 리셋
+      if (isTouch) frameEndReset = true;
     }
+  } else {
+    // 이벤트 정보가 없는 경우도 클릭 설정 (키보드 스페이스 등)
+    UI.clicked = true;
+    UI.justReleased = true;
   }
   
   // Reset drag states
@@ -335,7 +356,20 @@ window.addEventListener('keyup', (e) => {
 window.addEventListener('mousedown', onPress);
 window.addEventListener('mouseup', (e) => onRelease(e));
 window.addEventListener('touchstart', onPress, { passive: false });
-window.addEventListener('touchend', (e) => onRelease(e));
+window.addEventListener('touchend', (e) => {
+  // 게임 캔버스에서만 preventDefault 호출
+  const rect = canvas.getBoundingClientRect();
+  if (e.changedTouches && e.changedTouches.length > 0) {
+    const touch = e.changedTouches[0];
+    const x = touch.clientX;
+    const y = touch.clientY;
+    // 캔버스 범위 내에서만 preventDefault
+    if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+      e.preventDefault();
+    }
+  }
+  onRelease(e);
+}, { passive: false });
 
 // Mouse wheel support for shop scrolling
 window.addEventListener('wheel', (e) => {
@@ -1562,6 +1596,7 @@ function drawCenteredText(g, text, y, size = 18, color = '#fff') {
 }
 
 let showGuide = false;
+let frameEndReset = false; // UI 클릭 상태 프레임 끝에서 리셋
 function guideButtonRect() {
   const w = 92, h = 24;
   const x = (CONFIG.width - w) / 2;
@@ -2503,13 +2538,15 @@ function tick(now) {
     acc -= dt;
     Input.endFrame();
     
-    // UI는 한 프레임 동안만 유지되어야 하므로 업데이트 후 리셋
+    // UI 클릭 상태를 프레임 끝에서 리셋
+    // setTimeout 대신 프레임 끝에서 처리하여 안정성 향상
+    if (frameEndReset) {
+      UI.clicked = false;
+      UI.justReleased = false;
+      frameEndReset = false;
+    }
     if (UI.clicked || UI.justReleased) {
-      // 다음 프레임을 위해 리셋 (하지만 현재 프레임에서는 유지)
-      setTimeout(() => {
-        UI.clicked = false;
-        UI.justReleased = false;
-      }, 0);
+      frameEndReset = true;
     }
   }
   webRopeJustCreated = false;
