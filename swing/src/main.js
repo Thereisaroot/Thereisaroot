@@ -60,6 +60,7 @@ const CONFIG = {
   wizardJumpImpulse: 500, // upward impulse for wizard detaches
   wizardGlideTargetSpeed: 150, // px/s target glide speed while float timer active
   wizardGlideAccel: 300, // px/s^2 acceleration toward glide speed
+  wizardSpinRevolutions: 5, // full rotations during float window
   // Buds sway (as percentage of body radius)
   budSwayMinPct: 0.08,
   budSwayMaxPct: 0.32,
@@ -550,7 +551,11 @@ class Player {
           this.rope.L = this.rope.webTargetL;
       }
     }
-      if (characterIs('wizard')) wizardFloatTimer = 0;
+      if (characterIs('wizard')) {
+        wizardFloatTimer = 0;
+        wizardSpinTimer = 0;
+        wizardSpinRate = 0;
+      }
       const tip = this.rope.tip(t);
       this.x = tip.x;
       this.y = tip.y;
@@ -564,11 +569,12 @@ class Player {
     } else {
       // Free flight (flappy-like): vertical physics only; horizontal is via camera
       const s = (CONFIG.jumpSpeedScale || 1);
-      const floatFactor = (characterIs('wizard') && wizardFloatTimer > 0) ? 0.3 : 1;
+      const wizardFloating = characterIs('wizard') && wizardFloatTimer > 0;
+      const floatFactor = wizardFloating ? 0.3 : 1;
       this.x += this.vx * dt;
       // horizontal damping scaled to preserve distance under time dilation
       this.vx += -this.vx * (CONFIG.airDragX * s * floatFactor) * dt;
-      if (characterIs('wizard') && wizardFloatTimer > 0) {
+      if (wizardFloating) {
         const target = Math.min(CONFIG.maxVx, Math.max(CONFIG.minVx, CONFIG.wizardGlideTargetSpeed || CONFIG.baseVx));
         const accel = Math.max(0, CONFIG.wizardGlideAccel || 0);
         if (this.vx < target) {
@@ -579,15 +585,25 @@ class Player {
       // gravity scaled by s^2 to preserve trajectory distance while slowing motion
       this.vy += (CONFIG.gravity * s * s * floatFactor) * dt;
       this.y += this.vy * dt;
-      const targetAngle = Math.atan2(this.vy, 260);
-      const maxTilt = Math.PI * 0.45;
-      const baseLerp = 12;
-      const spinBoost = characterIs('wizard') ? (Math.abs(this.vy) * 0.005 + Math.abs(this.vx) * 0.003) : 0;
-      const clamped = Math.max(-maxTilt, Math.min(maxTilt, targetAngle));
-      const lerpRate = Math.min(1, dt * (baseLerp + spinBoost));
-      this.angle += (clamped - this.angle) * lerpRate;
-      if (characterIs('wizard') && wizardFloatTimer > 0) {
+      const spinning = wizardFloating && wizardSpinRate > 0;
+      if (spinning) {
+        this.angle += wizardSpinRate * dt;
+      } else {
+        const targetAngle = Math.atan2(this.vy, 260);
+        const maxTilt = Math.PI * 0.45;
+        const baseLerp = 12;
+        const spinBoost = wizardFloating ? (Math.abs(this.vy) * 0.005 + Math.abs(this.vx) * 0.003) : 0;
+        const clamped = Math.max(-maxTilt, Math.min(maxTilt, targetAngle));
+        const lerpRate = Math.min(1, dt * (baseLerp + spinBoost));
+        this.angle += (clamped - this.angle) * lerpRate;
+      }
+      if (wizardFloating) {
         wizardFloatTimer = Math.max(0, wizardFloatTimer - dt);
+        wizardSpinTimer = Math.max(0, wizardSpinTimer - dt);
+        if (wizardFloatTimer <= 0 || wizardSpinTimer <= 0) {
+          wizardSpinTimer = 0;
+          wizardSpinRate = 0;
+        }
       }
     }
   }
@@ -947,7 +963,15 @@ let fastModeEnabled = false;
 let comboCount = 0;
 
 // Level system based on EXP thresholds
-const LEVEL_THRESHOLDS = [10, 50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000];
+const LEVEL_THRESHOLDS = (() => {
+  const arr = [];
+  let current = 10;
+  for (let lvl = 1; lvl < 99; lvl++) {
+    arr.push(current);
+    current += Math.floor(10 + lvl * 10);
+  }
+  return arr;
+})();
 function getLevelByExp(val) {
   let lvl = 1;
   for (let i = 0; i < LEVEL_THRESHOLDS.length; i++) {
@@ -1138,7 +1162,7 @@ function buildGameOverButtons() {
   
   // Fast mode toggle (if level >= 8)
   if (lvl >= 8) {
-    const fw = 140, fh = 24;
+    const fw = 160, fh = 24;
     const fx = (CONFIG.width - fw) / 2;
     const fy = CONFIG.height * 0.80 + 80;
     
@@ -1325,6 +1349,8 @@ let robotReviveUsed = false;
 let pirateBonusThisRun = 0;
 let baseScoreForRewards = 0;
 let wizardFloatTimer = 0;
+let wizardSpinTimer = 0;
+let wizardSpinRate = 0;
 // Web rope creation marker (explicitly declared to avoid implicit globals)
 let webRopeJustCreated = false;
 // Prevent double rope buffering within one update step
@@ -1798,6 +1824,8 @@ function resetRun() {
   pirateBonusThisRun = 0;
   baseScoreForRewards = 0;
   wizardFloatTimer = 0;
+  wizardSpinTimer = 0;
+  wizardSpinRate = 0;
 }
 
 function drawBackground(g) {
@@ -2091,8 +2119,13 @@ function updateRun(dt) {
         detVx = wizardSpeed * speedMultiplier;
         detVy = -wizardImpulse;
         wizardFloatTimer = 2.0;
+        wizardSpinTimer = wizardFloatTimer;
+        const spinRevs = CONFIG.wizardSpinRevolutions || 0;
+        wizardSpinRate = (spinRevs > 0 && wizardSpinTimer > 0) ? ((Math.PI * 2 * spinRevs) / wizardSpinTimer) : 0;
       } else {
         wizardFloatTimer = 0;
+        wizardSpinTimer = 0;
+        wizardSpinRate = 0;
       }
       player.vx = detVx;
       player.vy = detVy;
@@ -2289,6 +2322,8 @@ function updateRun(dt) {
         player.mode = 'attached';
         player.rope = rope;
         wizardFloatTimer = 0;
+        wizardSpinTimer = 0;
+        wizardSpinRate = 0;
         const baseGained = starModeActive ? 3 : ((usedAirJumps === 0) ? 3 : (usedAirJumps === 1) ? 2 : 1);
         baseScoreForRewards += baseGained;
         let scoreGain = baseGained;
@@ -2422,6 +2457,8 @@ function updateRun(dt) {
     pirateBonusThisRun = 0;
     baseScoreForRewards = 0;
     wizardFloatTimer = 0;
+    wizardSpinTimer = 0;
+    wizardSpinRate = 0;
     // Demo rule: if demo active and EXP exceeded 110P (>=111P), on game over you lose everything
     if (demoActive && exp > 110) {
       lastDemoLoss = true;
@@ -2697,7 +2734,7 @@ function renderGameOver(g) {
 
       // Fast mode toggle (Level >= 8)
       if (lvl >= 8) {
-        const bw = 140, bh = 24;
+        const bw = 160, bh = 24;
         const bx = (CONFIG.width - bw) / 2;
         const by = CONFIG.height * 0.80 + 80; // moved down by 30px
         g.fillStyle = fastModeEnabled ? '#4a6e33' : '#22334a';
