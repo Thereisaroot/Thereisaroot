@@ -42,7 +42,7 @@ const CONFIG = {
 
   // Gameplay probabilities
   ropeBreakProb: 0.10, // when attached (if enabled by gating below)
-  itemSpawnProb: 0.20,
+  itemSpawnProb: 0.50,
 
   // Camera follow smoothing (1/s)
   camFollowAttach: 6.0,
@@ -65,12 +65,13 @@ const CONFIG = {
   budSwayMinPct: 0.08,
   budSwayMaxPct: 0.32,
   // Star (fever) mode rope pattern
-  starDuration: 3.0,
+  starDuration: 4.0,
   starL: 160,           // fixed rope length
   starAdeg: 10,         // swing amplitude (degrees)
   starDmin: 70,         // dense spacing min
   starDmax: 110,        // dense spacing max
   starEdgeJitter: 10,   // smaller edge jitter for uniform look
+  rouletteSpinDuration: 2.4,
 };
 
 const canvas = document.getElementById('game');
@@ -846,82 +847,69 @@ class Player {
     }
 
     // Buds - works with both pixel and polygon characters
-    if (shopInv.budsLevel && shopInv.budsLevel > 0) {
+    const budsLevel = shopInv.budsLevel || 0;
+    if (budsLevel > 0) {
+      const budsCount = Math.min(6, budsLevel);
+      const spin = simTime * 0.8;
+      const budPalette = ['#e53d3d', '#6aa8ff', '#ffa24d'];
+
       if (isPixelChar) {
-        // For pixel characters, place buds at corners
         const charData = PIXEL_CHARACTERS[selectedCharacter];
         const bigScale = 1 + 0.025 * (shopInv.bigLevel || 0);
         const pixelSize = 3 * this.sizeScale * bigScale * levelScale;
-        const width = charData.pixels[0].length * pixelSize;
-        const height = charData.pixels.length * pixelSize;
-        const positions = [
-          {x: -width/2, y: -height/2}, // top-left
-          {x: width/2, y: -height/2},  // top-right
-          {x: width/2, y: height/2},   // bottom-right
-          {x: -width/2, y: height/2},  // bottom-left
-        ];
-        const maxBuds = Math.min(4, shopInv.budsLevel);
-        for (let i = 0; i < maxBuds; i++) {
-          const pos = positions[i];
-          const phase = simTime * 3 + i * (Math.PI * 0.5);
-          const swayX = Math.sin(phase) * 4;
-          const swayY = Math.cos(phase * 1.3) * 2;
+        const width = (charData.pixels[0].length || 8) * pixelSize;
+        const height = (charData.pixels.length || 8) * pixelSize;
+        const orbitR = Math.max(width, height) * 0.6 + 6;
+        const budRadius = 4.5;
+        for (let i = 0; i < budsCount; i++) {
+          const baseAngle = spin + i * (Math.PI * 2 / budsCount);
+          const wobble = Math.sin(simTime * 1.4 + i) * 0.2;
+          const angle = baseAngle + wobble;
+          const px = Math.cos(angle) * orbitR;
+          const py = Math.sin(angle) * orbitR * 0.9;
+          const pulse = 1 + Math.sin(simTime * 2.5 + i) * 0.1;
           g.save();
-          g.translate(pos.x + swayX, pos.y + swayY);
-          g.fillStyle = i < segCount ? segColors[i] : '#ffffff';
+          g.translate(px, py);
+          const paletteColor = budPalette[i % budPalette.length];
+          g.fillStyle = paletteColor;
           g.beginPath();
-          g.arc(0, 0, 4, 0, Math.PI * 2);
+          g.arc(0, 0, budRadius * pulse, 0, Math.PI * 2);
           g.fill();
-          g.strokeStyle = '#333333';
+          g.strokeStyle = '#2d2d2d';
           g.lineWidth = 1;
           g.stroke();
           g.restore();
         }
       } else if (level > 1) {
-      const groupIdx = Math.floor((level - 2) / 3);
-      const sides = 3 + Math.max(0, groupIdx);
-      const bigScale = 1 + 0.025 * (shopInv.bigLevel || 0);
-      const baseR = this.r * this.sizeScale * bigScale * ((level > 1) ? 1.3 : 1.0);
-      const childR = baseR * 0.40;
-      const rot2 = Math.PI / 10; // body polygon rotation offset
-      const maxBuds = Math.min(sides, shopInv.budsLevel);
-      const third = (baseR * 2) / 3; // for stripe color bands
-      const segColorsLocal = ['#e53d3d', '#6aa8ff', '#ffa24d'];
-      const segCountLocal = (level <= 1) ? 0 : (((level - 2) % 3) + 1);
-      // sway amplitude range (lerp across buds)
-      const minA = CONFIG.budSwayMinPct * baseR;
-      const maxA = CONFIG.budSwayMaxPct * baseR;
-      const velScale = 0.4 + Math.min(1.2, Math.abs(this.vy) / 260);
-      for (let i = 0; i < maxBuds; i++) {
-        const a = rot2 + i * (Math.PI * 2 / sides);
-        const nx = Math.cos(a), ny = Math.sin(a);
-        // base attach point just outside vertex
-        let px = nx * (baseR + childR * 0.86);
-        let py = ny * (baseR + childR * 0.86);
-        // add gentle sway along tangent and normal for life-like motion
-        const tnx = -ny, tny = nx; // tangent
-        const k = (maxBuds <= 1) ? 1 : (i / (maxBuds - 1));
-        const amp = (minA + (maxA - minA) * k) * velScale;
-        const w = 2.0 + 0.6 * i;
-        px += tnx * amp * Math.sin(simTime * w + i * 0.5) + nx * 0.3 * amp * Math.cos(simTime * (w*0.9) + i * 0.3);
-        py += tny * amp * Math.sin(simTime * (w*0.8) + i * 0.4) + ny * 0.3 * amp * Math.cos(simTime * (w*1.1) + i * 0.2);
-        // color pick based on local x band
-        let col = '#ffffff';
-        if (segCountLocal > 0) {
-          const idx = Math.max(0, Math.min(2, Math.floor((px + baseR) / third)));
-          if (idx < segCountLocal) col = segColorsLocal[idx];
+        const bigScale = 1 + 0.025 * (shopInv.bigLevel || 0);
+        const baseR = this.r * this.sizeScale * bigScale * ((level > 1) ? 1.3 : 1.0);
+        const childR = baseR * 0.32;
+        const orbitR = baseR + childR * 1.6;
+        const third = (baseR * 2) / 3;
+        const segColorsLocal = budPalette;
+        const segCountLocal = (level <= 1) ? 0 : (((level - 2) % 3) + 1);
+        for (let i = 0; i < budsCount; i++) {
+          const baseAngle = spin + i * (Math.PI * 2 / budsCount);
+          const wobble = Math.sin(simTime * 1.6 + i * 0.8) * 0.25;
+          const angle = baseAngle + wobble;
+          const px = Math.cos(angle) * orbitR;
+          const py = Math.sin(angle) * orbitR * 0.92;
+          let col = '#ffffff';
+          if (segCountLocal > 0) {
+            const idx = Math.max(0, Math.min(2, Math.floor((px + baseR) / third)));
+            if (idx < segCountLocal) col = segColorsLocal[idx];
+          }
+          g.save();
+          g.translate(px, py);
+          g.fillStyle = col;
+          g.strokeStyle = '#e53d3d';
+          g.lineWidth = 2;
+          g.beginPath();
+          g.arc(0, 0, childR, 0, Math.PI * 2);
+          g.fill();
+          g.stroke();
+          g.restore();
         }
-        g.save();
-        g.translate(px, py);
-        g.fillStyle = col;
-        g.strokeStyle = '#e53d3d';
-        g.lineWidth = 2;
-        g.beginPath();
-        g.arc(0, 0, childR, 0, Math.PI * 2);
-        g.fill();
-        g.stroke();
-        g.restore();
-      }
       }
     }
 
@@ -1183,119 +1171,8 @@ let shopHelpScroll = 0;  // scroll position for help popup
 let lastShopHelpRect = null; // cached '?' button rect computed during render
 
 
-// Pixel character definitions (8x8 grids)
-const PIXEL_CHARACTERS = {
-  default: {
-    name: 'Polygon',
-    price: 0,
-    minLevel: 1,
-    pixels: [], // Empty - uses the normal polygon rendering
-    colors: [],
-    description: 'Classic geometric shape that evolves with level'
-  },
-  robot: {
-    name: 'Robot',
-    price: 1000,
-    minLevel: 3,
-    pixels: [
-      [0,0,1,1,1,1,0,0],
-      [0,1,2,1,1,2,1,0],
-      [0,1,1,1,1,1,1,0],
-      [0,0,1,1,1,1,0,0],
-      [1,1,1,1,1,1,1,1],
-      [1,0,1,1,1,1,0,1],
-      [1,0,1,0,0,1,0,1],
-      [0,0,1,0,0,1,0,0]
-    ],
-    colors: ['#8B93AF', '#4A90E2', '#2E5266'], // 0: transparent, 1: body, 2: eyes
-    description: 'Emergency web revival once per run'
-  },
-  ninja: {
-    name: 'Ninja',
-    price: 1500,
-    minLevel: 5,
-    pixels: [
-      [0,0,1,1,1,1,0,0],
-      [0,1,1,1,1,1,1,0],
-      [0,1,2,1,1,2,1,0],
-      [0,1,1,1,1,1,1,0],
-      [0,0,1,1,1,1,0,0],
-      [0,1,1,1,1,1,1,0],
-      [0,1,0,1,1,0,1,0],
-      [1,0,0,0,0,0,0,1]
-    ],
-    colors: ['#1a1a1a', '#ffffff', '#ff0000'], // black body, white eyes, red band
-    description: 'Extra air jump for agile escapes'
-  },
-  pirate: {
-    name: 'Pirate',
-    price: 2000,
-    minLevel: 7,
-    pixels: [
-      [0,1,1,1,1,1,1,0],
-      [1,1,1,1,1,1,1,1],
-      [0,1,2,1,3,1,1,0],
-      [0,1,1,1,1,1,1,0],
-      [0,0,1,1,1,1,0,0],
-      [0,1,1,1,1,1,1,0],
-      [0,1,0,1,1,0,1,0],
-      [1,0,0,0,0,0,0,1]
-    ],
-    colors: ['#8B4513', '#ffffff', '#000000', '#FFD700'], // brown, white, black (eyepatch), gold
-    description: 'Combo catches grant +$2'
-  },
-  wizard: {
-    name: 'Wizard',
-    price: 2500,
-    minLevel: 10,
-    pixels: [
-      [0,0,0,1,0,0,0,0],
-      [0,0,1,1,1,0,0,0],
-      [0,1,1,1,1,1,0,0],
-      [0,1,2,1,2,1,0,0],
-      [0,1,1,1,1,1,0,0],
-      [0,1,3,3,3,1,0,0],
-      [0,1,1,1,1,1,0,0],
-      [0,1,0,0,0,1,0,0]
-    ],
-    colors: ['#4B0082', '#ffffff', '#FFD700', '#C0C0C0'], // purple, white, gold stars, silver beard
-    description: 'Floaty leaps and soft landings'
-  },
-  knight: {
-    name: 'Knight',
-    price: 3000,
-    minLevel: 12,
-    pixels: [
-      [0,1,1,1,1,1,1,0],
-      [0,1,1,2,2,1,1,0],
-      [0,1,1,1,1,1,1,0],
-      [0,1,3,1,1,3,1,0],
-      [0,1,1,1,1,1,1,0],
-      [0,1,1,1,1,1,1,0],
-      [0,1,0,1,1,0,1,0],
-      [1,0,0,0,0,0,0,1]
-    ],
-    colors: ['#C0C0C0', '#808080', '#FF0000', '#FFD700'], // silver, dark gray, red cross, gold
-    description: 'Double score & $ but -1 air jump'
-  },
-  bird: {
-    name: 'Bird',
-    price: 2800,
-    minLevel: 8,
-    pixels: [
-      [0,0,0,2,2,0,0,0],
-      [0,0,2,2,2,2,0,0],
-      [0,2,2,1,1,2,2,0],
-      [2,2,1,1,1,1,2,2],
-      [2,1,1,3,3,1,1,2],
-      [0,2,1,1,1,1,2,0],
-      [0,0,2,1,1,2,0,0],
-      [0,0,0,2,2,0,0,0]
-    ],
-    colors: ['#7dd3ff', '#2a9df4', '#ffd35a'], // sky body, darker edges, beak
-    description: 'Fly ability available any time'
-  }
-};
+// Pixel character definitions provided via external spec
+const PIXEL_CHARACTERS = (typeof window !== 'undefined' ? window.CHAR_SPECS : undefined) || {};
 
 function characterIs(id) {
   return selectedCharacter === id;
@@ -1317,16 +1194,101 @@ function characterAirJumpBonus() {
   return bonus;
 }
 
-// Shop inventory
-let shopInv = { glow: false, budsLevel: 0, plusJump: false, fly: false, bigLevel: 0, gambleActive: false, webActive: false, characters: [] };
+// Shop inventory defaults
+let rouletteState = null;
+let rouletteSummary = null;
+
+const SHOP_INV_DEFAULTS = {
+  glowLevel: 0,
+  budsLevel: 0,
+  plusJump: false,
+  fly: false,
+  bigLevel: 0,
+  gambleActive: false,
+  webActive: false,
+  magnetLevel: 0,
+  comboLevel: 0,
+  double: false,
+  luckyLevel: 0,
+  rainbow: false,
+  feverLevel: 0,
+  bankLevel: 0,
+  characters: [],
+  consumables: {},
+};
+let shopInv = { ...SHOP_INV_DEFAULTS };
 function loadShopInv() {
   try {
     const raw = localStorage.getItem(SHOP_INV_KEY);
     if (raw) shopInv = { ...shopInv, ...JSON.parse(raw) };
   } catch(_){}
+  shopInv = { ...SHOP_INV_DEFAULTS, ...shopInv };
+  shopInv.consumables = { ...(shopInv.consumables || {}) };
+  // Legacy migration: convert one-time booleans to consumable counts
+  let migrated = false;
+  if (shopInv.shield) {
+    shopInv.consumables.shield = Math.max(1, shopInv.consumables.shield || 0);
+    delete shopInv.shield;
+    migrated = true;
+  }
+  if (shopInv.slow) {
+    shopInv.consumables.slow = Math.max(1, shopInv.consumables.slow || 0);
+    delete shopInv.slow;
+    migrated = true;
+  }
+  if (shopInv.revival) {
+    shopInv.consumables.revival = Math.max(1, shopInv.consumables.revival || 0);
+    delete shopInv.revival;
+    migrated = true;
+  }
+  if (migrated) saveShopInv();
 }
 function saveShopInv() {
   try { localStorage.setItem(SHOP_INV_KEY, JSON.stringify(shopInv)); } catch(_){}
+}
+
+function applyRunConsumables() {
+  shopInv.consumables = { ...(shopInv.consumables || {}) };
+  const cons = shopInv.consumables;
+  let dirty = false;
+
+  // Reset runtime flags before applying
+  shopInv.gambleActive = false;
+  shopInv.webActive = false;
+  activeShieldCharges = 0;
+  activeSlowCharges = 0;
+  activeRevivalCharges = 0;
+
+  if ((cons.gamble || 0) > 0) {
+    shopInv.gambleActive = true;
+    cons.gamble = 0;
+    dirty = true;
+  }
+  if ((cons.web || 0) > 0) {
+    shopInv.webActive = true;
+    cons.web = 0;
+    dirty = true;
+  }
+  if ((cons.shield || 0) > 0) {
+    activeShieldCharges = cons.shield;
+    cons.shield = 0;
+    dirty = true;
+    // TODO: spend charges when rope snap occurs.
+  }
+  if ((cons.slow || 0) > 0) {
+    activeSlowCharges = cons.slow;
+    cons.slow = 0;
+    dirty = true;
+    // TODO: trigger auto slow-mo when falling while charges remain.
+  }
+  if ((cons.revival || 0) > 0) {
+    activeRevivalCharges = cons.revival;
+    cons.revival = 0;
+    dirty = true;
+    // TODO: consume charge to revive non-robot characters on ground impact.
+  }
+
+  if (dirty) saveShopInv();
 }
 
 // Ropes and spawning
@@ -1351,6 +1313,9 @@ let baseScoreForRewards = 0;
 let wizardFloatTimer = 0;
 let wizardSpinTimer = 0;
 let wizardSpinRate = 0;
+let activeShieldCharges = 0; // Consumable shield charges applied at run start (TODO: hook into rope snap)
+let activeSlowCharges = 0;   // Consumable slow-mo charges (TODO: apply on fall)
+let activeRevivalCharges = 0; // Consumable revival charges (TODO: trigger on ground impact)
 // Web rope creation marker (explicitly declared to avoid implicit globals)
 let webRopeJustCreated = false;
 // Prevent double rope buffering within one update step
@@ -1501,6 +1466,54 @@ function spawnEffect(kind, x, y, text = '') {
       color,
       type: 'burst',
     });
+  }
+}
+
+function pickRouletteOperator() {
+  const ops = ['+', '-', 'x'];
+  return ops[Math.floor(Math.random() * ops.length)];
+}
+
+function pickRouletteValue(op) {
+  if (op === 'x') {
+    const r = Math.random();
+    if (r < 0.03) return 3;
+    return (r < 0.515) ? 1 : 2;
+  }
+  return Math.floor(Math.random() * 10);
+}
+
+function finalizeRouletteSpin() {
+  if (!rouletteState || !rouletteState.active) return;
+  if (!rouletteState.finalOp) {
+    rouletteState.finalOp = pickRouletteOperator();
+    rouletteState.finalValue = pickRouletteValue(rouletteState.finalOp);
+  }
+  rouletteState.displayOp = rouletteState.finalOp;
+  rouletteState.displayValue = rouletteState.finalValue;
+  rouletteState.spinning = false;
+  if (!rouletteState.celebrated) {
+    spawnEffect('big', player.x, player.y - 30);
+    rouletteState.celebrated = true;
+  }
+}
+
+function updateRoulette(dt) {
+  if (!rouletteState || !rouletteState.active) return;
+  if (rouletteState.spinning) {
+    rouletteState.spinTimer += dt;
+    if (!rouletteState.nextShuffle || rouletteState.spinTimer >= rouletteState.nextShuffle) {
+      const op = pickRouletteOperator();
+      rouletteState.displayOp = op;
+      rouletteState.displayValue = (op === 'x') ? (1 + Math.floor(Math.random() * 3)) : Math.floor(Math.random() * 10);
+      rouletteState.nextShuffle = rouletteState.spinTimer + 0.06;
+    }
+    if (rouletteState.spinTimer >= rouletteState.spinDuration) {
+      finalizeRouletteSpin();
+    }
+  } else if (rouletteState.finalOp != null) {
+    rouletteState.displayOp = rouletteState.finalOp;
+    rouletteState.displayValue = rouletteState.finalValue;
   }
 }
 function updateParticles(dt) {
@@ -1763,9 +1776,17 @@ function ensureRopesBuffered() {
       const minY = CONFIG.ceilingY + 60;
       const maxY = Math.min(CONFIG.height * 0.38, (CONFIG.height - CONFIG.groundH) - 140);
       const by = randRange(minY, maxY);
-      const kinds = ['extraJump', 'wideCatch', 'bigSize'];
-      // Test: 50% chance to spawn a star box, else pick from normal kinds
-      const kind = (Math.random() < 0.5) ? 'star' : kinds[Math.floor(Math.random() * kinds.length)];
+      let kind;
+      if (Math.random() < 0.5) {
+        kind = 'star';
+      } else {
+        if (Math.random() < 0.5) {
+          kind = 'roulette';
+        } else {
+          const kinds = ['extraJump', 'wideCatch', 'bigSize'];
+          kind = kinds[Math.floor(Math.random() * kinds.length)];
+        }
+      }
       boxes.push({ x: midX, y: by, kind, active: true, phase: Math.random() * Math.PI * 2 });
     }
     spawnCount++;
@@ -1793,6 +1814,8 @@ function resetRun() {
   uiButtons.gameover = [];
   uiButtons.shop.cards = [];
   uiButtons.shop.buttons = [];
+  rouletteState = null;
+  rouletteSummary = null;
   
   player.reset();
   score = 0;
@@ -1805,6 +1828,7 @@ function resetRun() {
   // Ensure fever state is cleared on fresh run
   starModeActive = false;
   starModeEndTime = 0;
+  applyRunConsumables();
   spawnInitialRope();
   ensureRopesBuffered();
   airJumpsLeft = 0;
@@ -2190,51 +2214,116 @@ function updateRun(dt) {
   cleanupRopes();
 
   // Box pickup
+  const magnetLevel = shopInv.magnetLevel || 0;
+  const baseCatchR = CONFIG.catchBase;
+  const magnetPullR = baseCatchR + magnetLevel * 10;
+  const magnetPullSpeed = 140 + magnetLevel * 60; // px/s pull toward player when within magnet radius
+  const budHitZones = computeBudHitZones();
+
   for (const b of boxes) {
     if (!b.active) continue;
+    let dx = b.x - player.x;
+    let dy = b.y - player.y;
+    let dist = Math.hypot(dx, dy);
+
+    if (magnetLevel > 0 && dist > baseCatchR && dist <= magnetPullR) {
+      const pullStep = magnetPullSpeed * dt;
+      const nx = dx / (dist || 1);
+      const ny = dy / (dist || 1);
+      b.x -= nx * pullStep;
+      b.y -= ny * pullStep;
+      dx = b.x - player.x;
+      dy = b.y - player.y;
+      dist = Math.hypot(dx, dy);
+    }
+    let caught = dist <= baseCatchR;
+    if (!caught && budHitZones.length > 0) {
+      for (let i = 0; i < budHitZones.length; i++) {
+        const bud = budHitZones[i];
+        const bdx = b.x - bud.x;
+        const bdy = b.y - bud.y;
+        if (Math.hypot(bdx, bdy) <= bud.r) {
+          caught = true;
+          break;
+        }
+      }
+    }
+
+    if (!caught) continue;
+
+    b.active = false;
     const wobble = Math.sin(simTime * 3 + (b.phase || 0)) * 6;
-    const dx = b.x - player.x;
-    const dy = (b.y + wobble) - player.y;
-    if (Math.hypot(dx, dy) <= 22) {
-      // collect
-      b.active = false;
-      if (b.kind === 'star') {
-        // Activate fever and immediately attach a web rope like web item
-        starModeActive = true;
-        starModeEndTime = simTime + (CONFIG.starDuration || 3.0);
-        const webAnchorY = player.y - 400;
-        const newWebRope = new Rope({
-            anchorX: player.x,
-            anchorY: webAnchorY,
-            L: 400,
-            A: 0, omega: 0, phi: 0,
-            isWebRope: true,
-            // Do NOT retract for star-start attach (starts at same height)
-            webTargetL: null,
-            id: `r${nextRopeId++}`
-        });
-        // Reset ropes to only this web rope, clear boxes
-        ropes.length = 0;
-        ropes.push(newWebRope);
-        boxes.length = 0;
-        // Attach player
-        player.rope = newWebRope;
-        player.mode = 'attached';
-        lastDetachedRope = null;
-        catchLockUntil = simTime + 0.2;
-        webRopeJustCreated = true;
-        spawnEffect('big', b.x, b.y);
-      } else {
-          spawnEffect('burst', b.x, b.y);
-          if (b.kind === 'extraJump') pendingExtraJump = true;
-          else if (b.kind === 'wideCatch') pendingCatchR = 50;
-          else if (b.kind === 'bigSize') pendingSizeScale = 1.5;
+    const displayY = b.y + wobble;
+
+    if (b.kind === 'star') {
+      starModeActive = true;
+      starModeEndTime = simTime + (CONFIG.starDuration || 3.0);
+      const worldX = b.x;
+      const worldY = b.y;
+      const targetWorldX = worldX;
+      const targetWorldY = worldY;
+      const anchorX = worldX + 110;
+      const anchorY = CONFIG.ceilingY;
+      const dxTip = targetWorldX - anchorX;
+      const dyTip = targetWorldY - anchorY;
+      let ropeLength = Math.hypot(dxTip, dyTip);
+      let theta = Math.atan2(dxTip, dyTip);
+      if (Math.abs(theta) < 0.02) theta = theta >= 0 ? 0.02 : -0.02;
+      const A = Math.abs(theta);
+      const phi = theta >= 0 ? 0 : Math.PI;
+      const newWebRope = new Rope({
+        anchorX,
+        anchorY,
+        L: ropeLength,
+        A,
+        omega: 0,
+        phi,
+        createdAt: simTime,
+        isWebRope: true,
+        webTargetL: Math.max(60, ropeLength - 100),
+        retractSpeed: 240,
+        id: `r${nextRopeId++}`
+      });
+      ropes.length = 0;
+      ropes.push(newWebRope);
+      boxes.length = 0;
+      player.rope = newWebRope;
+      player.mode = 'attached';
+      player.x = targetWorldX - camera.x;
+      player.y = targetWorldY;
+      player.vx = 0;
+      player.vy = -140;
+      lastDetachedRope = null;
+      catchLockUntil = simTime + 0.2;
+      webRopeJustCreated = true;
+      spawnEffect('big', b.x, displayY);
+    } else {
+      spawnEffect('burst', b.x, displayY);
+      if (b.kind === 'extraJump') pendingExtraJump = true;
+      else if (b.kind === 'wideCatch') pendingCatchR = 50;
+      else if (b.kind === 'bigSize') pendingSizeScale = 1.5;
+      else if (b.kind === 'roulette') {
+        const spinDuration = CONFIG.rouletteSpinDuration || 2.4;
+        rouletteState = {
+          active: true,
+          spinning: true,
+          spinTimer: 0,
+          spinDuration,
+          displayOp: '?',
+          displayValue: null,
+          finalOp: null,
+          finalValue: null,
+          applied: false,
+          nextShuffle: 0,
+        };
+        rouletteSummary = null;
       }
     }
   }
 
   // Update player
   player.update(dt, simTime);
+  updateRoulette(dt);
   // Star trail particles while in fever mode
   if (starModeActive) {
     const px = player.x, py = player.y;
@@ -2432,6 +2521,24 @@ function updateRun(dt) {
       shopInv.gambleActive = false; // Consume gamble
       saveShopInv();
     }
+
+    if (rouletteState && rouletteState.active) {
+      finalizeRouletteSpin();
+      if (rouletteState.finalOp != null && !rouletteState.applied) {
+        const beforeMoney = earnedMoney;
+        let afterMoney = beforeMoney;
+        const op = rouletteState.finalOp;
+        const val = rouletteState.finalValue || 0;
+        if (op === '+') afterMoney = beforeMoney + val;
+        else if (op === '-') afterMoney = beforeMoney - val;
+        else if (op === 'x') afterMoney = beforeMoney * Math.max(1, val);
+        afterMoney = Math.max(0, Math.floor(afterMoney));
+        earnedMoney = afterMoney;
+        rouletteSummary = { before: beforeMoney, after: afterMoney, op, value: val };
+        rouletteState.applied = true;
+      }
+    }
+
     lastEarned = earnedMoney;
     lastExpEarned = earnedExp;
     // Compute potential level-up BEFORE applying demo resets (based on EXP)
@@ -2470,7 +2577,8 @@ function updateRun(dt) {
         // Reset EXP and clear all items when demo ends
         exp = 0;
         localStorage.setItem(EXP_KEY, '0');
-        shopInv = { glow: false, budsLevel: 0, plusJump: false, fly: false, bigLevel: 0, gambleActive: false, webActive: false };
+        shopInv = { ...SHOP_INV_DEFAULTS };
+        saveShopInv();
         saveShopInv();
       } catch(_){}
     }
@@ -2497,12 +2605,38 @@ function updateRun(dt) {
 
 function renderRun(g) {
   drawBackground(g);
-  // Fever overlay
-  if (starModeActive) {
+  const rouletteGlint = rouletteState && rouletteState.active && rouletteState.spinning;
+  // Fever overlay (star mode) or roulette glint
+  if (starModeActive || rouletteGlint) {
     g.save();
-    const pulse = 0.08 + 0.06 * (Math.sin(simTime * 6) * 0.5 + 0.5);
-    g.fillStyle = `rgba(255,217,102,${pulse.toFixed(3)})`;
-    g.fillRect(0, 0, CONFIG.width, CONFIG.height);
+    const time = simTime;
+    if (starModeActive) {
+      const pulse = 0.08 + 0.06 * (Math.sin(time * 6) * 0.5 + 0.5);
+      g.fillStyle = `rgba(255,217,102,${pulse.toFixed(3)})`;
+      g.fillRect(0, 0, CONFIG.width, CONFIG.height);
+    }
+    if (rouletteGlint) {
+      const colors = ['#ff6ec7', '#ffd966', '#7dd3ff', '#9cff9c'];
+      const segments = 9;
+      const alphaBase = 0.4;
+      const alphaPulse = 0.3;
+      for (let i = 0; i < segments; i++) {
+        const angle = (i / segments) * Math.PI * 2 + time * 3.8;
+        const grad = g.createLinearGradient(
+          CONFIG.width / 2,
+          CONFIG.height / 2,
+          CONFIG.width / 2 + Math.cos(angle) * CONFIG.width,
+          CONFIG.height / 2 + Math.sin(angle) * CONFIG.height
+        );
+        const color = colors[i % colors.length];
+        const alpha = alphaBase + alphaPulse * (Math.sin(time * 12 + i) * 0.5 + 0.5);
+        grad.addColorStop(0, color + '00');
+        grad.addColorStop(0.35, color + '55');
+        grad.addColorStop(1, color + Math.floor(alpha * 255).toString(16).padStart(2, '0'));
+        g.fillStyle = grad;
+        g.fillRect(0, 0, CONFIG.width, CONFIG.height);
+      }
+    }
     g.restore();
   }
   // Ropes behind player
@@ -2530,6 +2664,7 @@ function renderRun(g) {
                   : (b.kind === 'wideCatch') ? 'R'
                   : (b.kind === 'bigSize') ? 'S'
                   : (b.kind === 'star') ? '*'
+                  : (b.kind === 'roulette') ? '$$'
                   : '?';
     g.fillText(label, sx, sy + 1);
     g.restore();
@@ -2553,6 +2688,7 @@ function renderRun(g) {
   ctx.restore();
   // Draw catch effects on top
   drawParticles(g);
+  renderRouletteOverlay(g);
 
   // HUD
   g.fillStyle = '#ffffff';
@@ -2589,6 +2725,109 @@ function renderRun(g) {
   g.textAlign = 'left';
   g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
   g.fillText(`LV ${getLevelByExp(exp)}`, 12, 46);
+}
+
+function renderRouletteOverlay(g) {
+  if (!rouletteState || !rouletteState.active) return;
+  const rawOp = rouletteState.displayOp || '?';
+  const displayOp = rawOp === 'x' ? '×' : rawOp;
+  const displayValue = (rouletteState.displayValue !== null && rouletteState.displayValue !== undefined) ? rouletteState.displayValue : '?';
+  const groundY = CONFIG.height - CONFIG.groundH;
+  const boxW = 60;
+  const boxH = 42;
+  const gap = 16;
+  const centerX = CONFIG.width / 2;
+  const x1 = centerX - boxW - gap / 2;
+  const x2 = centerX + gap / 2;
+  const y = groundY + 8;
+
+  g.save();
+  g.textAlign = 'center';
+  g.textBaseline = 'top';
+  g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+  g.fillStyle = '#ffffff';
+  g.fillText('ROULETTE', centerX, y - 14);
+
+  function drawCell(x, label, highlight) {
+    g.fillStyle = highlight ? '#2f4763' : '#22334a';
+    g.strokeStyle = '#9fb5d8';
+    g.lineWidth = 2;
+    g.beginPath();
+    g.rect(x, y, boxW, boxH);
+    g.fill();
+    g.stroke();
+    g.fillStyle = '#ffffff';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.font = `20px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+    g.fillText(label, x + boxW / 2, y + boxH / 2 + 2);
+  }
+
+  const settled = !rouletteState.spinning && rouletteState.finalOp != null;
+  drawCell(x1, displayOp, settled);
+  drawCell(x2, String(displayValue), settled);
+
+  g.textAlign = 'center';
+  g.textBaseline = 'top';
+  g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+  if (rouletteState.spinning) {
+    g.fillText('Spinning...', centerX, y + boxH + 6);
+  } else if (rouletteSummary && rouletteState.applied) {
+    const opSymbol = rouletteSummary.op === 'x' ? '×' : rouletteSummary.op;
+    const formula = `${rouletteSummary.before} ${opSymbol} ${rouletteSummary.value} = ${rouletteSummary.after}`;
+    g.fillText(formula, centerX, y + boxH + 6);
+  } else if (settled) {
+    g.fillText('Result locked', centerX, y + boxH + 6);
+  }
+
+  g.restore();
+}
+
+function computeBudHitZones() {
+  const budsLevel = shopInv.budsLevel || 0;
+  if (!budsLevel) return [];
+  const budsCount = Math.min(6, budsLevel);
+  const zones = [];
+  const spin = simTime * 0.8;
+  const level = getLevelByExp(exp);
+  const levelScale = (level > 1) ? 1.3 : 1.0;
+  const bigScale = 1 + 0.025 * (shopInv.bigLevel || 0);
+  const baseX = player.x;
+  const baseY = player.y;
+  const isPixelChar = selectedCharacter !== 'default' && PIXEL_CHARACTERS[selectedCharacter];
+
+  if (isPixelChar) {
+    const charData = PIXEL_CHARACTERS[selectedCharacter];
+    const pixelSize = 3 * player.sizeScale * bigScale * levelScale;
+    const width = (charData.pixels[0]?.length || 8) * pixelSize;
+    const height = (charData.pixels.length || 8) * pixelSize;
+    const orbitR = Math.max(width, height) * 0.6 + 6;
+    const baseRadius = 5.5 * player.sizeScale;
+    for (let i = 0; i < budsCount; i++) {
+      const baseAngle = spin + i * (Math.PI * 2 / budsCount);
+      const wobble = Math.sin(simTime * 1.4 + i) * 0.2;
+      const angle = baseAngle + wobble;
+      const pulse = 1 + Math.sin(simTime * 2.5 + i) * 0.1;
+      const offsetX = Math.cos(angle) * orbitR;
+      const offsetY = Math.sin(angle) * orbitR * 0.9;
+      zones.push({ x: baseX + offsetX, y: baseY + offsetY, r: baseRadius * pulse });
+    }
+  } else {
+    const baseR = player.r * player.sizeScale * bigScale * levelScale;
+    const childR = baseR * 0.32;
+    const orbitR = baseR + childR * 1.6;
+    for (let i = 0; i < budsCount; i++) {
+      const baseAngle = spin + i * (Math.PI * 2 / budsCount);
+      const wobble = Math.sin(simTime * 1.6 + i * 0.8) * 0.25;
+      const angle = baseAngle + wobble;
+      const offsetX = Math.cos(angle) * orbitR;
+      const offsetY = Math.sin(angle) * orbitR * 0.92;
+      const radius = childR;
+      zones.push({ x: baseX + offsetX, y: baseY + offsetY, r: radius });
+    }
+  }
+
+  return zones;
 }
 
 function updateGameOver(dt) {
@@ -2667,7 +2906,12 @@ function renderGameOver(g) {
       nextText = 'Try to exceed 111P';
     } else {
       const next = nextLevelThreshold(exp);
-      nextText = next ? `Next Level: ${next}P` : 'Max level reached!';
+      if (next) {
+        const remaining = Math.max(0, next - exp);
+        nextText = `Next Level: ${remaining}P to go`;
+      } else {
+        nextText = 'Max level reached!';
+      }
     }
     const earnedText = (lastEarned > 0 || lastExpEarned > 0)
       ? `Gained: $${lastEarned} / +${lastExpEarned}P`
@@ -2681,6 +2925,14 @@ function renderGameOver(g) {
     g.fillText(`EXP: ${exp}P | $${savings}`, CONFIG.width / 2, y0 + 32);
     // Earn explanation three lines below
     g.fillText(earnedText, CONFIG.width / 2, y0 + 80);
+    if (rouletteSummary) {
+      const opSymbol = rouletteSummary.op === 'x' ? '×' : rouletteSummary.op;
+      const formula = `${rouletteSummary.before} ${opSymbol} ${rouletteSummary.value} = ${rouletteSummary.after}`;
+      g.fillText(`Roulette: ${formula}`, CONFIG.width / 2, y0 + 96);
+    } else if (rouletteState && rouletteState.active && rouletteState.finalOp != null) {
+      const opSymbol = rouletteState.finalOp === 'x' ? '×' : rouletteState.finalOp;
+      g.fillText(`Roulette: ${opSymbol} ${rouletteState.finalValue}`, CONFIG.width / 2, y0 + 96);
+    }
   }
 
   // Level-up popup when level increased this game over
@@ -2855,42 +3107,22 @@ function tick(now) {
 // Notes for next steps:
 // - Add Rope class (anchor, L, A, omega, phase) and single-rope attach/detach.
 // - Then implement multi-rope spawner with reachability guarantee.
-// Shop item definitions
-const SHOP_ITEMS = [
-  { id: 'glow', name: 'Glow', type: 'level', maxLevel: 3, price: 20, minLevel: 2 },
-  { id: 'buds', name: 'Buds', type: 'level', maxLevel: 5, price: 10, minLevel: 2 },
-  { id: 'plusjump', name: '+Jump', type: 'single', price: 100, minLevel: 2 },
-  { id: 'fly', name: 'Fly', type: 'single', price: 100, minLevel: 2 },
-  { id: 'big', name: 'Big', type: 'level', price: 20, minLevel: 5 },
-  { id: 'gamble', name: 'Gamble', type: 'single', price: 10, minLevel: 1 },
-  { id: 'web', name: 'Web', type: 'single', price: 3, minLevel: 1 },
-  { id: 'magnet', name: 'Magnet', type: 'level', maxLevel: 5, price: 30, minLevel: 3 },
-  { id: 'shield', name: 'Shield', type: 'single', price: 100, minLevel: 4 },
-  { id: 'combo', name: 'Combo+', type: 'level', maxLevel: 3, price: 80, minLevel: 6 },
-  { id: 'slow', name: 'Slow', type: 'single', price: 100, minLevel: 3 },
-  { id: 'double', name: 'Double', type: 'single', price: 100, minLevel: 8 },
-  { id: 'lucky', name: 'Lucky', type: 'level', maxLevel: 5, price: 40, minLevel: 2 },
-  { id: 'revival', name: 'Revival', type: 'single', price: 100, minLevel: 10 },
-  { id: 'rainbow', name: 'Rainbow', type: 'single', price: 30, minLevel: 3 },
-  { id: 'fever', name: 'Fever+', type: 'level', maxLevel: 3, price: 60, minLevel: 5 },
-  { id: 'bank', name: 'Bank', type: 'level', maxLevel: 5, price: 100, minLevel: 1 },
-];
+// Shop item definitions provided via external spec
+const SHOP_ITEMS = (typeof window !== 'undefined' ? window.ITEM_SPECS : undefined) || [];
 
 function getItemLevel(it) {
+  if (it.type === 'consumable') {
+    return (shopInv.consumables && shopInv.consumables[it.id]) || 0;
+  }
   if (it.id === 'buds') return shopInv.budsLevel || 0;
   if (it.id === 'glow') return shopInv.glowLevel || 0;
   if (it.id === 'plusjump') return shopInv.plusJump ? 1 : 0;
   if (it.id === 'fly') return shopInv.fly ? 1 : 0;
   if (it.id === 'big') return shopInv.bigLevel || 0;
-  if (it.id === 'gamble') return shopInv.gambleActive ? 1 : 0;
-  if (it.id === 'web') return shopInv.webActive ? 1 : 0;
   if (it.id === 'magnet') return shopInv.magnetLevel || 0;
-  if (it.id === 'shield') return shopInv.shield ? 1 : 0;
   if (it.id === 'combo') return shopInv.comboLevel || 0;
-  if (it.id === 'slow') return shopInv.slow ? 1 : 0;
   if (it.id === 'double') return shopInv.double ? 1 : 0;
   if (it.id === 'lucky') return shopInv.luckyLevel || 0;
-  if (it.id === 'revival') return shopInv.revival ? 1 : 0;
   if (it.id === 'rainbow') return shopInv.rainbow ? 1 : 0;
   if (it.id === 'fever') return shopInv.feverLevel || 0;
   if (it.id === 'bank') return shopInv.bankLevel || 0;
@@ -2903,8 +3135,10 @@ function currentBodySides() {
   return 3 + Math.max(0, groupIdx);
 }
 function isItemSoldOut(it) {
-  if (it.id === 'gamble') return !!shopInv.gambleActive;
-  if (it.id === 'web') return !!shopInv.webActive;
+  if (it.type === 'consumable') {
+    const count = (shopInv.consumables && shopInv.consumables[it.id]) || 0;
+    return count >= 1;
+  }
   if (it.type === 'single') return getItemLevel(it) >= 1;
   if (it.type === 'level') {
     // dynamic caps by item
@@ -2948,7 +3182,7 @@ function itemDescription(id) {
   if (id === 'big') return 'Grows by 2.5% per level (max = player level).';
   if (id === 'gamble') return 'Next run earns 1.5x money (one-time use).';
   if (id === 'web') return 'Emergency web when falling (one-time use).';
-  if (id === 'magnet') return 'Auto-collect items +30px range per level (max 5).';
+  if (id === 'magnet') return 'Magnet radius +10px per level and pulls boxes inward (max 5).';
   if (id === 'shield') return 'Blocks rope snap once per run.';
   if (id === 'combo') return 'Combo score +0.5x per level (max 3).';
   if (id === 'slow') return 'Auto slow-mo when falling (3 times per run).';
@@ -3408,7 +3642,7 @@ function renderShop(g) {
       g.fillRect(x + 6 + m2, y + m2, (cellW - 12) - m2 * 2, cellH - m2 * 2);
       g.textAlign = 'center';
       g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-      if (allItems[i].type === 'single' || (allItems[i].id === 'gamble' || allItems[i].id === 'web')) {
+      if (allItems[i].type === 'single' || allItems[i].type === 'consumable') {
         g.fillStyle = '#ff6666';
         g.fillText('SOLD OUT', x + cellW/2, y + cellH/2 + 2);
       } else {
@@ -3992,7 +4226,14 @@ function tryPurchase(id) {
     return;
   }
   if (isItemSoldOut(it)) { shopConfirm = null; return; }
-  if (id === 'glow') {
+  if (it.type === 'consumable') {
+    const current = (shopInv.consumables && shopInv.consumables[id]) || 0;
+    if (current >= 1) { shopConfirm = null; return; }
+    savings -= price;
+    if (!shopInv.consumables) shopInv.consumables = {};
+    shopInv.consumables[id] = current + 1;
+    saveShopInv();
+  } else if (id === 'glow') {
     const current = shopInv.glowLevel || 0;
     if (current >= 3) { shopConfirm = null; return; }
     savings -= price; shopInv.glowLevel = current + 1; saveShopInv();
@@ -4011,30 +4252,20 @@ function tryPurchase(id) {
     savings -= dynPrice;
     shopInv.bigLevel = Math.min(maxLv, current + 1);
     saveShopInv();
-  } else if (id === 'gamble') {
-    savings -= price; shopInv.gambleActive = true; saveShopInv();
-  } else if (id === 'web') {
-    savings -= price; shopInv.webActive = true; saveShopInv();
   } else if (id === 'magnet') {
     const current = shopInv.magnetLevel || 0;
     if (current >= 5) { shopConfirm = null; return; }
     savings -= price; shopInv.magnetLevel = current + 1; saveShopInv();
-  } else if (id === 'shield') {
-    savings -= price; shopInv.shield = true; saveShopInv();
   } else if (id === 'combo') {
     const current = shopInv.comboLevel || 0;
     if (current >= 3) { shopConfirm = null; return; }
     savings -= price; shopInv.comboLevel = current + 1; saveShopInv();
-  } else if (id === 'slow') {
-    savings -= price; shopInv.slow = true; saveShopInv();
   } else if (id === 'double') {
     savings -= price; shopInv.double = true; saveShopInv();
   } else if (id === 'lucky') {
     const current = shopInv.luckyLevel || 0;
     if (current >= 5) { shopConfirm = null; return; }
     savings -= price; shopInv.luckyLevel = current + 1; saveShopInv();
-  } else if (id === 'revival') {
-    savings -= price; shopInv.revival = true; saveShopInv();
   } else if (id === 'rainbow') {
     savings -= price; shopInv.rainbow = true; saveShopInv();
   } else if (id === 'fever') {

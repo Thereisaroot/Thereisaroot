@@ -48,9 +48,19 @@
         window.setupStorageBridge("webswing")
           .catch(e => console.error("Storage bridge init failed", e))
           .finally(function(){
-            var s=document.createElement("script");
-            s.src="./src/main.js?v=1758019767";
-            document.body.appendChild(s);
+            function loadScript(path) {
+              return new Promise(function(resolve, reject){
+                var s=document.createElement("script");
+                s.src=path;
+                s.onload=resolve;
+                s.onerror=reject;
+                document.body.appendChild(s);
+              });
+            }
+            loadScript("./src/items.js")
+              .then(function(){ return loadScript("./src/chars.js"); })
+              .then(function(){ return loadScript("./src/main.js"); })
+              .catch(function(err){ console.error('Script load failed', err); });
           });
       })();
     </script>
