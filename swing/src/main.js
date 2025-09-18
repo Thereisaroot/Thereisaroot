@@ -35,6 +35,11 @@ const CONFIG = {
   shortLFactor: 0.70, // shorten to 70% (30% shorter)
   longLChance: 0.00, // 0% chance to extend rope
   longLFactor: 1.20, // extend to 120%
+  lowRopeChance: 0.30, // chance to drop anchor lower
+  lowRopeAnchorDropMinPx: 50, // fixed drop range (px)
+  lowRopeAnchorDropMaxPx: 100,
+  lowRopeFloorClearance: 100, // keep rope tip 100px above ground
+  stageRopesPerStage: 5, // ropes per stage transition (test friendly)
 
   // Extra randomization knobs
   spacingJitterMin: 0.90, // D *= randRange(min,max)
@@ -1386,6 +1391,8 @@ const STAGE_COLORS = [
   '#2b2234',
 ];
 const STAGE_BANNER_DURATION = 1.5;
+const STAGE_GATE_BONUS_SCORE = 5;
+const STAGE_GATE_BONUS_CASH = 5;
 
 let slowMoTimer = 0;
 let slowMoCooldown = 0;
@@ -1401,6 +1408,13 @@ let stageBannerStage = 1;
 let transitionAnchorX = 0;
 let transitionStartX = 0;
 let transitionEndX = 0;
+let pendingStageGate = null;
+
+function getRopesPerStage() {
+  const raw = Number(CONFIG.stageRopesPerStage);
+  if (!Number.isFinite(raw) || raw <= 0) return 10;
+  return Math.max(1, Math.floor(raw));
+}
 
 function getStageColor(index) {
   const count = STAGE_COLORS.length;
@@ -1421,6 +1435,7 @@ function resetStageState() {
   transitionAnchorX = 0;
   transitionStartX = 0;
   transitionEndX = 0;
+  pendingStageGate = null;
 }
 
 function startStageTransition(newStageIndex) {
@@ -1434,24 +1449,36 @@ function startStageTransition(newStageIndex) {
 }
 
 function registerMainRopeSpawn(anchorX, prevAnchorX) {
-  const prevStage = Math.floor(Math.max(totalMainRopesSpawned - 1, 0) / 10);
+  const ropesPerStage = getRopesPerStage();
+  const prevStage = Math.floor(Math.max(totalMainRopesSpawned - 1, 0) / ropesPerStage);
   totalMainRopesSpawned++;
-  const newStage = Math.floor(Math.max(totalMainRopesSpawned - 1, 0) / 10);
+  const newStage = Math.floor(Math.max(totalMainRopesSpawned - 1, 0) / ropesPerStage);
   if (newStage > prevStage) {
     transitionStartX = (typeof prevAnchorX === 'number') ? prevAnchorX : anchorX;
     transitionEndX = anchorX;
     transitionAnchorX = anchorX;
     startStageTransition(newStage);
+    const gateRope = ropes.length > 0 ? ropes[ropes.length - 1] : null;
+    if (gateRope) {
+      gateRope.stageGateStage = newStage;
+      gateRope.stageGateRewarded = false;
+    }
+    pendingStageGate = {
+      stage: newStage,
+      anchorX,
+      ropeId: gateRope ? gateRope.id : null,
+      rewarded: false,
+    };
   }
 }
 
 function updateStageTransition(dt) {
   if (stageTransitionActive) {
     const span = Math.max(1, transitionEndX - transitionStartX);
-    const playerWorldX = (typeof player !== 'undefined' && player) ? player.x : transitionAnchorX;
-    const delta = playerWorldX - transitionStartX;
-    stageTransitionProgress = Math.max(0, Math.min(1, delta / span));
-    if (stageTransitionProgress >= 1) {
+    const camDelta = camera.x - transitionStartX;
+    stageTransitionProgress = Math.max(0, Math.min(1, camDelta / span));
+    const boundaryScreen = transitionAnchorX - camera.x;
+    if (boundaryScreen <= 0) {
       stageTransitionActive = false;
       stageColorPrev = stageColorNext;
       stageTransitionProgress = 0;
@@ -1460,6 +1487,34 @@ function updateStageTransition(dt) {
   if (stageBannerTimer > 0) {
     stageBannerTimer = Math.max(0, stageBannerTimer - dt);
   }
+  if (pendingStageGate && !pendingStageGate.rewarded) {
+    const playerPassed = (typeof player !== 'undefined' && player) ? (player.x >= pendingStageGate.anchorX) : false;
+    const cameraPassed = camera.x >= pendingStageGate.anchorX;
+    if (playerPassed || cameraPassed) {
+      let gateRope = null;
+      if (pendingStageGate.ropeId) {
+        gateRope = ropes.find((r) => r.id === pendingStageGate.ropeId) || null;
+      }
+      grantStageGateReward(gateRope);
+    }
+  }
+}
+
+function grantStageGateReward(triggerRope) {
+  const hasStageRope = triggerRope && triggerRope.stageGateStage != null;
+  if (triggerRope && triggerRope.stageGateRewarded) return;
+  if (!pendingStageGate && !hasStageRope) return;
+  if (pendingStageGate && pendingStageGate.rewarded) {
+    if (triggerRope) triggerRope.stageGateRewarded = true;
+    return;
+  }
+  if (triggerRope) triggerRope.stageGateRewarded = true;
+  if (pendingStageGate) pendingStageGate.rewarded = true;
+  score += STAGE_GATE_BONUS_SCORE;
+  spawnEffect('combo', player.x, player.y - 30, `+${STAGE_GATE_BONUS_SCORE}P +$${STAGE_GATE_BONUS_CASH}`);
+  savings += STAGE_GATE_BONUS_CASH;
+  try { localStorage.setItem(SAVINGS_KEY, String(savings)); } catch (_) {}
+  pendingStageGate = null;
 }
 
 resetStageState();
@@ -1722,8 +1777,10 @@ function spawnInitialRope() {
   // Create a rope whose tip passes through player's screenX at t=0 (attached start)
   const speedMultiplier = fastModeEnabled ? 1.5 : 1.0;
   const A = deg2rad(CONFIG.AmaxDeg);
-  const L = 180;
+  let L = 180;
   const kOmega = CONFIG.kOmegaMax; // Use max speed factor
+  const anchorY = CONFIG.ceilingY;
+  L = Math.max(CONFIG.Lmin, Math.min(CONFIG.Lmax, L));
   const omega = Math.sqrt(CONFIG.gravity / L) * kOmega * speedMultiplier;
   const t = simTime;
   // choose theta0 near 0 (bottom) for a calm start
@@ -1731,7 +1788,7 @@ function spawnInitialRope() {
   const phi = Math.acos(Math.max(-1, Math.min(1, theta0 / A))) - omega * t;
   const desiredX = camera.x + SCREEN_TARGET_X;
   const anchorX = desiredX - L * Math.sin(theta0);
-  const r = new Rope({ anchorX, anchorY: CONFIG.ceilingY, L, A, omega, phi, createdAt: simTime, id: `r${nextRopeId++}` });
+  const r = new Rope({ anchorX, anchorY, L, A, omega, phi, createdAt: simTime, id: `r${nextRopeId++}` });
   ropes.push(r);
   registerMainRopeSpawn(anchorX);
   player.rope = r;
@@ -1750,6 +1807,7 @@ function planNextRope() {
   const x0 = currentTip.x;
   const y0 = currentTip.y;
   const s = lv1Scale();
+  const anchorBaseY = CONFIG.ceilingY;
   // estimate velocities after detach
   const vxEst = (player.mode === 'free') ? Math.max(CONFIG.minVx, Math.min(CONFIG.maxVx, player.vx)) : ((CONFIG.baseVx + 40) * speedMultiplier);
   const vy0 = -CONFIG.jumpImpulse * 0.9; // rough estimate for planning
@@ -1779,19 +1837,19 @@ function planNextRope() {
       const t_hit = (tipX - x0) / Math.max(120, vxEst);
       if (t_hit < 0.30 || t_hit > 1.00) continue;
       const yProj = y0 + vy0 * t_hit + 0.5 * CONFIG.gravity * t_hit * t_hit;
-      const L_target = (yProj - CONFIG.ceilingY) / Math.cos(theta_hit);
+      const L_target = (yProj - anchorBaseY) / Math.cos(theta_hit);
       if (isFinite(L_target)) {
         L = Math.max(CONFIG.Lmin * s, Math.min(CONFIG.Lmax * s, CONFIG.starL * s));
       }
       const omega2 = Math.sqrt(CONFIG.gravity / L) * kOmega2;
       const tipX2 = anchorX + L * Math.sin(theta_hit);
-      const yTip2 = CONFIG.ceilingY + L * Math.cos(theta_hit);
+      const yTip2 = anchorBaseY + L * Math.cos(theta_hit);
       const dy = Math.abs(yTip2 - yProj);
       const phi = Math.acos(Math.max(-1, Math.min(1, theta_hit / A))) - omega2 * (simTime + t_hit);
       const glowBonus = shopInv.glowLevel ? (shopInv.glowLevel * 0.167 * CONFIG.catchBase) : 0;
       const catchR = ((pendingCatchR > 0 ? pendingCatchR : CONFIG.catchBase) + glowBonus) * 1.2;
       if (Math.abs(tipX2 - (x0 + vxEst * t_hit)) < 12 && dy <= catchR) {
-        return new Rope({ anchorX, anchorY: CONFIG.ceilingY, L, A, omega: omega2, phi, createdAt: simTime, id: `r${nextRopeId++}` });
+        return new Rope({ anchorX, anchorY: anchorBaseY, L, A, omega: omega2, phi, createdAt: simTime, id: `r${nextRopeId++}` });
       }
     }
     // Fallback for star mode
@@ -1804,9 +1862,22 @@ function planNextRope() {
     const baseX = prev ? prev.anchorX : x0;
     let anchorX = Math.max(baseX + CONFIG.starDmin * s, desiredEdgeX2);
     const phi = Math.acos(Math.max(-1, Math.min(1, (theta_hit || 1e-6) / A2))) - omega * (simTime + t_hit);
-    return new Rope({ anchorX, anchorY: CONFIG.ceilingY, L: L2, A: A2, omega, phi, createdAt: simTime, id: `r${nextRopeId++}` });
+    return new Rope({ anchorX, anchorY: anchorBaseY, L: L2, A: A2, omega, phi, createdAt: simTime, id: `r${nextRopeId++}` });
   }
+  const groundY = CONFIG.height - CONFIG.groundH;
   for (let tries = 0; tries < 60; tries++) {
+    const lowVariant = Math.random() < CONFIG.lowRopeChance;
+    const dropPx = lowVariant ? randRange(CONFIG.lowRopeAnchorDropMinPx, CONFIG.lowRopeAnchorDropMaxPx) : 0;
+    const anchorYBase = anchorBaseY + dropPx;
+    const LminVariant = CONFIG.Lmin * s;
+    let LmaxVariant = CONFIG.Lmax * s;
+    if (lowVariant) {
+      const clearanceLimit = groundY - CONFIG.lowRopeFloorClearance - anchorYBase;
+      if (clearanceLimit < LminVariant) continue;
+      LmaxVariant = Math.min(LmaxVariant, clearanceLimit);
+    }
+    if (LmaxVariant < LminVariant) continue;
+
     // Decide if this candidate should be a short rope; tie spacing accordingly
     const shortPick = Math.random() < CONFIG.shortLChance;
     // Mix short and normal spacings (force short spacing when short rope is picked)
@@ -1833,33 +1904,38 @@ function planNextRope() {
         continue;
       }
     }
-    // If clamped to edge, still attempt with smaller step
     const A = deg2rad(randRange(CONFIG.AminDeg, CONFIG.AmaxDeg));
-    let L = randRange(CONFIG.Lmin * s, CONFIG.Lmax * s);
+    let L = randRange(LminVariant, LmaxVariant);
     const kOmega = randRange(CONFIG.kOmegaMin, CONFIG.kOmegaMax);
-    const omega = Math.sqrt(CONFIG.gravity / L) * kOmega * speedMultiplier;
 
     // choose target swing angle near bottom, but allow wider variety
     const theta_hit = randRange(-A * 0.75, A * 0.75);
-    const tipX = anchorX + L * Math.sin(theta_hit);
+    const sinTheta = Math.sin(theta_hit);
+    const cosTheta = Math.cos(theta_hit);
+    const tipX = anchorX + L * sinTheta;
     // t to reach that x with vx
     const t_hit = (tipX - x0) / vxEst;
     if (t_hit < 0.50 || t_hit > 1.10) continue;
 
     // y alignment: choose L so that tipY close to projectile y
     const yProj = y0 + vy0 * t_hit + 0.5 * CONFIG.gravity * t_hit * t_hit;
-    // target L from y: yTip = ceiling + L*cos(theta)
-    const L_target = (yProj - CONFIG.ceilingY) / Math.cos(theta_hit);
-    if (isFinite(L_target)) {
-      // Add ±length jitter to avoid uniformity
-      let L_jitter = L_target * (1 + randRange(-CONFIG.lengthJitterPct, CONFIG.lengthJitterPct));
-      if (shortPick) L_jitter *= CONFIG.shortLFactor; // deterministically short when picked
-      else if (Math.random() < CONFIG.longLChance) L_jitter *= CONFIG.longLFactor;
-      L = Math.max(CONFIG.Lmin * s, Math.min(CONFIG.Lmax * s, L_jitter));
+    if (Math.abs(cosTheta) > 1e-6) {
+      let L_target = (yProj - anchorYBase) / cosTheta;
+      if (isFinite(L_target)) {
+        // Add ±length jitter to avoid uniformity
+        let L_jitter = L_target * (1 + randRange(-CONFIG.lengthJitterPct, CONFIG.lengthJitterPct));
+        if (shortPick) L_jitter *= CONFIG.shortLFactor; // deterministically short when picked
+        else if (Math.random() < CONFIG.longLChance) L_jitter *= CONFIG.longLFactor;
+        L = Math.max(LminVariant, Math.min(LmaxVariant, L_jitter));
+      }
+    }
+    if (lowVariant) {
+      L = Math.min(L, LmaxVariant);
     }
     const omega2 = Math.sqrt(CONFIG.gravity / L) * kOmega * speedMultiplier;
-    const tipX2 = anchorX + L * Math.sin(theta_hit);
-    const yTip2 = CONFIG.ceilingY + L * Math.cos(theta_hit);
+    const anchorY = anchorYBase;
+    const tipX2 = anchorX + L * sinTheta;
+    const yTip2 = anchorY + L * cosTheta;
     const dy = Math.abs(yTip2 - yProj);
     const phi = Math.acos(Math.max(-1, Math.min(1, theta_hit / A))) - omega2 * (simTime + t_hit);
 
@@ -1867,10 +1943,12 @@ function planNextRope() {
     const vtipApprox = L * omega2 * A; // rough
     const catchR = CONFIG.catchBase + Math.min(CONFIG.catchBonusMax, vtipApprox * CONFIG.catchVelScale);
     if (Math.abs(tipX2 - (x0 + vxEst * t_hit)) < 8 && dy <= catchR * 0.95) {
-      return new Rope({ anchorX, anchorY: CONFIG.ceilingY, L, A, omega: omega2, phi, createdAt: simTime, id: `r${nextRopeId++}` });
+      return new Rope({ anchorX, anchorY, L, A, omega: omega2, phi, createdAt: simTime, id: `r${nextRopeId++}` });
     }
   }
   // Fallback: place a moderate rope slightly to the right; catch will rely on generous radius
+  const lowVariant = Math.random() < CONFIG.lowRopeChance;
+  const dropPx = lowVariant ? randRange(CONFIG.lowRopeAnchorDropMinPx, CONFIG.lowRopeAnchorDropMaxPx) : 0;
   const A = deg2rad(randRange(8, 16));
   let L = Math.min(CONFIG.Lmax * s, Math.max(CONFIG.Lmin * s, 180 * randRange(0.9, 1.1) * s));
   if (Math.random() < CONFIG.shortLChance) {
@@ -1879,13 +1957,22 @@ function planNextRope() {
     L = Math.min(CONFIG.Lmax * s, L * CONFIG.longLFactor);
   }
   const kOmega = 1.0;
-  const omega = Math.sqrt(CONFIG.gravity / L) * kOmega * speedMultiplier;
   const theta_hit = 0;
   const t_hit = 0.8;
   const desiredEdgeX2 = camera.x + (CONFIG.maxAnchorX * s) - randRange(8, CONFIG.edgeSpawnJitter * s);
   let anchorX = Math.max((prev ? prev.anchorX + CONFIG.Dmin * s : x0 + CONFIG.Dmin * s), desiredEdgeX2);
+  let anchorY = anchorBaseY + dropPx;
+  if (lowVariant) {
+    const clearanceLimit = groundY - CONFIG.lowRopeFloorClearance - anchorY;
+    if (clearanceLimit >= CONFIG.Lmin * s) {
+      L = Math.min(L, clearanceLimit);
+    } else {
+      anchorY = anchorBaseY;
+    }
+  }
+  const omega = Math.sqrt(CONFIG.gravity / L) * kOmega * speedMultiplier;
   const phi = Math.acos(Math.max(-1, Math.min(1, (theta_hit || 1e-6) / A))) - omega * (simTime + t_hit);
-  return new Rope({ anchorX, anchorY: CONFIG.ceilingY, L, A, omega, phi, createdAt: simTime, id: `r${nextRopeId++}` });
+  return new Rope({ anchorX, anchorY, L, A, omega, phi, createdAt: simTime, id: `r${nextRopeId++}` });
 }
 
 function ensureRopesBuffered() {
@@ -2712,6 +2799,9 @@ function updateRun(dt) {
           tailorCashBonusThisRun += tailorCatchBonus;
           spawnEffect('combo', player.x, player.y - 18, '+$1');
           rope.tailorBonus = 0;
+        }
+        if (rope.stageGateStage != null && !rope.stageGateRewarded) {
+          grantStageGateReward(rope);
         }
         // Schedule snap if EXP milestone reached (>= 10)
         if (exp >= 10 && !starModeActive) {
