@@ -40,6 +40,7 @@ const CONFIG = {
   lowRopeAnchorDropMaxPx: 100,
   lowRopeFloorClearance: 100, // keep rope tip 100px above ground
   stageRopesPerStage: 5, // ropes per stage transition (test friendly)
+  bossStageTriggers: [3], // 1-based stage numbers that trigger boss fights (debug default)
 
   // Extra randomization knobs
   spacingJitterMin: 0.90, // D *= randRange(min,max)
@@ -933,7 +934,7 @@ function playerCollisionRadius() {
 
 // Simple game state machine: intro -> run -> gameover -> shop
 const State = {
-  current: 'intro', // 'intro' | 'run' | 'gameover' | 'shop'
+  current: 'intro', // 'intro' | 'run' | 'gameover' | 'shop' | 'boss_pending' | 'boss'
 };
 
 const player = new Player();
@@ -1393,6 +1394,85 @@ const STAGE_COLORS = [
 const STAGE_BANNER_DURATION = 1.5;
 const STAGE_GATE_BONUS_SCORE = 5;
 const STAGE_GATE_BONUS_CASH = 5;
+const BOSS_TYPES = ['bullet', 'slam', 'collect'];
+const BOSS_FAIL_RETURN_DELAY = 1.0;
+
+let bossState = null;
+let bossProgress = null;
+let bossBackgroundActive = false;
+
+const BOSS_HUD_TEXT = {
+  bullet: 'Dodge 6 bullets with infinite jumps!',
+  slam: 'Hit the boss 50 times with infinite jumps!',
+  collect: 'Collect 10 falling $ crates before they escape!',
+};
+
+const BOSS_SPRITES = {
+  bulletProjectile: {
+    palette: { '.': null, '1': '#ffed75', '2': '#ffb347', '3': '#e3642b', '4': '#ffffff' },
+    pixels: [
+      '..22..',
+      '.2332.',
+      '233332',
+      '233332',
+      '.2332.',
+      '..22..',
+    ],
+  },
+  cashBox: {
+    palette: { '.': null, '1': '#2f2e4f', '2': '#464971', '3': '#f6d66b', '4': '#34345b', '5': '#ffffff' },
+    pixels: [
+      '..3333..',
+      '.344443.',
+      '34422243',
+      '34255543',
+      '34422243',
+      '.344443.',
+      '..3333..'
+    ],
+  },
+  bossShooter: {
+    palette: { '.': null, '1': '#1f1739', '2': '#392a62', '3': '#e05454', '4': '#ffe27a', '5': '#0b0a16' },
+    pixels: [
+      '..1122',
+      '.12222',
+      '.12332',
+      '.12332',
+      '.12442',
+      '.15552',
+      '.15552',
+      '..1552',
+    ],
+  },
+  bossCollector: {
+    palette: { '.': null, '1': '#201a3d', '2': '#3a2f68', '3': '#6dd6c2', '4': '#ffe986', '5': '#0c1e2d' },
+    pixels: [
+      '..1122',
+      '.12222',
+      '.12332',
+      '.12332',
+      '.12442',
+      '.15552',
+      '.15552',
+      '..1552',
+    ],
+  },
+  bossSlam: {
+    palette: { '.': null, '1': '#21173f', '2': '#3b2a6b', '3': '#f47a7a', '4': '#ffeb8a', '5': '#2b1c4f', '6': '#ffffff' },
+    pixels: [
+      '...3333444...',
+      '..322233344..',
+      '.3222223344.',
+      '.3226662344.',
+      '33266662344.',
+      '33266662344.',
+      '.3222223344.',
+      '.3522222354.',
+      '..35555534..',
+      '..33555533..',
+    ],
+  },
+};
 
 let slowMoTimer = 0;
 let slowMoCooldown = 0;
@@ -1416,6 +1496,32 @@ function getRopesPerStage() {
   return Math.max(1, Math.floor(raw));
 }
 
+function resetBossProgress() {
+  bossProgress = {
+    triggeredStages: new Set(),
+    lastType: null,
+    active: false,
+  };
+  bossState = null;
+  applyBossBackground(false);
+}
+
+function applyBossBackground(active) {
+  bossBackgroundActive = !!active;
+}
+
+function drawBossBackground(g) {
+  if (!bossBackgroundActive) return;
+  const left = camera.x;
+  g.fillStyle = '#050713';
+  g.fillRect(left, 0, CONFIG.width, CONFIG.height);
+  const grad = g.createLinearGradient(left, 0, left, CONFIG.height);
+  grad.addColorStop(0, '#101b3a');
+  grad.addColorStop(1, '#040308');
+  g.fillStyle = grad;
+  g.fillRect(left, 0, CONFIG.width, CONFIG.height);
+}
+
 function getStageColor(index) {
   const count = STAGE_COLORS.length;
   if (count === 0) return '#1c2a3a';
@@ -1436,6 +1542,7 @@ function resetStageState() {
   transitionStartX = 0;
   transitionEndX = 0;
   pendingStageGate = null;
+  resetBossProgress();
 }
 
 function startStageTransition(newStageIndex) {
@@ -1487,34 +1594,600 @@ function updateStageTransition(dt) {
   if (stageBannerTimer > 0) {
     stageBannerTimer = Math.max(0, stageBannerTimer - dt);
   }
-  if (pendingStageGate && !pendingStageGate.rewarded) {
-    const playerPassed = (typeof player !== 'undefined' && player) ? (player.x >= pendingStageGate.anchorX) : false;
-    const cameraPassed = camera.x >= pendingStageGate.anchorX;
-    if (playerPassed || cameraPassed) {
-      let gateRope = null;
-      if (pendingStageGate.ropeId) {
-        gateRope = ropes.find((r) => r.id === pendingStageGate.ropeId) || null;
-      }
-      grantStageGateReward(gateRope);
-    }
-  }
 }
 
 function grantStageGateReward(triggerRope) {
   const hasStageRope = triggerRope && triggerRope.stageGateStage != null;
   if (triggerRope && triggerRope.stageGateRewarded) return;
   if (!pendingStageGate && !hasStageRope) return;
+  const stageIndex = hasStageRope ? triggerRope.stageGateStage : (pendingStageGate ? pendingStageGate.stage : null);
+  const stageNumber = stageIndex != null ? stageIndex + 1 : null;
   if (pendingStageGate && pendingStageGate.rewarded) {
     if (triggerRope) triggerRope.stageGateRewarded = true;
+    if (stageNumber != null) maybeTriggerBossStage(stageNumber, triggerRope);
     return;
   }
   if (triggerRope) triggerRope.stageGateRewarded = true;
   if (pendingStageGate) pendingStageGate.rewarded = true;
   score += STAGE_GATE_BONUS_SCORE;
-  spawnEffect('combo', player.x, player.y - 30, `+${STAGE_GATE_BONUS_SCORE}P +$${STAGE_GATE_BONUS_CASH}`);
+  spawnEffect('combo', player.x, player.y + 26, `+${STAGE_GATE_BONUS_SCORE}P +$${STAGE_GATE_BONUS_CASH}`);
   savings += STAGE_GATE_BONUS_CASH;
   try { localStorage.setItem(SAVINGS_KEY, String(savings)); } catch (_) {}
+  if (stageNumber != null) maybeTriggerBossStage(stageNumber, triggerRope);
   pendingStageGate = null;
+}
+
+function getBossStageTriggerSet() {
+  if (!CONFIG.bossStageTriggers) return new Set();
+  if (Array.isArray(CONFIG.bossStageTriggers)) {
+    return new Set(CONFIG.bossStageTriggers.map((n) => Number(n)).filter((n) => Number.isFinite(n) && n > 0));
+  }
+  const single = Number(CONFIG.bossStageTriggers);
+  if (Number.isFinite(single) && single > 0) return new Set([single]);
+  return new Set();
+}
+
+function maybeTriggerBossStage(stageNumber, entryRope) {
+  if (!bossProgress) resetBossProgress();
+  const triggers = getBossStageTriggerSet();
+  if (!triggers.has(stageNumber)) return;
+  if (bossProgress.triggeredStages.has(stageNumber)) return;
+  if (bossState && bossState.active) return;
+  if (starModeActive) {
+    starModeActive = false;
+    starModeEndTime = 0;
+  }
+  startBossStage(stageNumber, entryRope);
+}
+
+function pickBossType(stageNumber) {
+  if (!bossProgress) resetBossProgress();
+  let candidates = BOSS_TYPES;
+  if (bossProgress.lastType && BOSS_TYPES.length > 1) {
+    candidates = BOSS_TYPES.filter((t) => t !== bossProgress.lastType);
+    if (candidates.length === 0) candidates = BOSS_TYPES.slice();
+  }
+  const idx = Math.floor(Math.random() * candidates.length);
+  const type = candidates[Math.max(0, Math.min(candidates.length - 1, idx))] || BOSS_TYPES[0];
+  bossProgress.lastType = type;
+  return type;
+}
+
+function startBossStage(stageNumber, entryRope) {
+  if (!entryRope) return;
+  applyBossBackground(false);
+  const type = pickBossType(stageNumber);
+  bossProgress.triggeredStages.add(stageNumber);
+  bossProgress.active = true;
+
+  const restoreCameraX = camera.x;
+  const entryAnchorX = entryRope.anchorX;
+  const entryTip = entryRope.tip(simTime);
+
+  bossState = {
+    active: true,
+    stageNumber,
+    type,
+    phase: 'bounce',
+    timer: 0,
+    entryDuration: 1.8,
+    savedCameraX: restoreCameraX,
+    entryRope,
+    entryRetractSpeed: 240,
+    entryTargetLength: Math.max(60, entryRope.L * 0.35),
+    entryOriginalLength: entryRope.L,
+    bounceDuration: 0.32,
+    bounceAmplitude: Math.min(64, entryRope.L * 0.22),
+    cameraTargetX: restoreCameraX,
+    battle: null,
+    returnDelay: 0,
+  };
+
+  ropes.length = 0;
+  boxes.length = 0;
+  ropes.push(entryRope);
+
+  player.rope = entryRope;
+  player.mode = 'ascend';
+  player.vx = 0;
+  player.vy = 0;
+  player.x = entryTip.x;
+  player.y = entryTip.y;
+
+  State.current = 'boss_pending';
+}
+
+function updateBossPending(dt) {
+  if (!bossState || !bossState.active) {
+    State.current = 'run';
+    return;
+  }
+  simTime += dt;
+  updateParticles(dt);
+  if (bossState.phase === 'bounce') {
+    const rope = bossState.entryRope;
+    if (!rope) {
+      beginBossPop();
+      return;
+    }
+    bossState.timer += dt;
+    const duration = bossState.bounceDuration || 0.45;
+    const amp = bossState.bounceAmplitude || 40;
+    const t = Math.min(1, bossState.timer / duration);
+    const bounce = Math.sin(Math.PI * t);
+    const baseL = bossState.entryOriginalLength || rope.L;
+    rope.L = baseL + amp * bounce;
+    rope.A = 0;
+    rope.omega = 0;
+    rope.phi = 0;
+    const tip = rope.tip(simTime);
+    player.x = tip.x;
+    player.y = tip.y;
+    player.vx = 0;
+    player.vy = 0;
+    const camTarget = bossState.cameraTargetX != null ? bossState.cameraTargetX : (rope.anchorX - SCREEN_TARGET_X);
+    camera.x += (camTarget - camera.x) * Math.min(1, dt * 1.5);
+    if (t >= 1) {
+      rope.L = baseL;
+      bossState.ascendSpeed = bossState.ascendSpeed || 520;
+      bossState.ascendStartY = player.y;
+      bossState.ascendTargetY = -CONFIG.height * 0.6;
+      bossState.ascendDuration = bossState.ascendDuration || 0.48;
+      bossState.ascendX = player.x;
+      bossState.entryRope = rope;
+      player.rope = null;
+      bossState.phase = 'ascend';
+      bossState.timer = 0;
+    }
+    return;
+  }
+  if (bossState.phase === 'ascend') {
+    bossState.timer += dt;
+    const duration = bossState.ascendDuration || 0.48;
+    const t = Math.min(1, bossState.timer / Math.max(0.0001, duration));
+    const eased = easeInOutCubic(t);
+    const startY = bossState.ascendStartY != null ? bossState.ascendStartY : player.y;
+    const targetY = bossState.ascendTargetY != null ? bossState.ascendTargetY : -CONFIG.height * 0.6;
+    const ascendX = bossState.ascendX != null ? bossState.ascendX : player.x;
+    player.x = camera.x + CONFIG.width * 0.35;
+    player.y = startY + (targetY - startY) * eased;
+    player.vx = 0;
+    player.vy = (targetY - startY) / Math.max(0.0001, duration);
+    const camTarget = bossState.cameraTargetX != null ? bossState.cameraTargetX : camera.x;
+    camera.x += (camTarget - camera.x) * Math.min(1, dt * 2.4);
+    if (t >= 1) {
+      beginBossPop();
+    }
+    return;
+  }
+  beginBossPop();
+}
+
+function beginBossPop() {
+  if (!bossState || bossState.phase === 'pop' || bossState.phase === 'battle' || bossState.phase === 'battle_init') return;
+  applyBossBackground(true);
+  boxes.length = 0;
+  bossState.phase = 'pop';
+  bossState.timer = 0;
+  bossState.popStartY = CONFIG.height + 8;
+  bossState.popTargetY = CONFIG.height * 0.48;
+  bossState.popDuration = 0.65;
+  bossState.entryRope = null;
+  State.current = 'boss';
+  player.rope = null;
+  player.mode = 'boss_pop';
+  player.x = CONFIG.width * 0.35;
+  player.y = bossState.popStartY;
+  player.vx = 0;
+  player.vy = 0;
+}
+
+function initBossBattle() {
+  if (!bossState) return;
+  const basePlayerX = CONFIG.width * 0.35;
+  ropes.length = 0;
+  boxes.length = 0;
+  player.rope = null;
+  player.mode = 'boss';
+  player.x = basePlayerX;
+  player.y = CONFIG.height * 0.55;
+  player.vx = 0;
+  player.vy = 0;
+  player.angle = 0;
+  camera.x = 0;
+
+  const topClamp = 40;
+  const bottomFailY = CONFIG.height + 80;
+  const battleBase = {
+    topClamp,
+    bottomFailY,
+    playerX: basePlayerX,
+    gravity: CONFIG.gravity,
+    jumpPower: CONFIG.jumpImpulse * 0.9,
+    bossTimer: 0,
+    hudMessage: '',
+  };
+
+  if (bossState.type === 'bullet') {
+    bossState.battle = {
+      ...battleBase,
+      bossY: CONFIG.height * 0.35,
+      bossDir: 1,
+      bossSpeed: 90,
+      bossMinY: 60,
+      bossMaxY: CONFIG.height * 0.65,
+      shotsFired: 0,
+      totalShots: 10,
+      shotInterval: 1.0,
+      shotCooldown: 0.6,
+      bullets: [],
+      dodged: 0,
+      requiredDodges: 6,
+      bulletSpeed: 220,
+      failOnHit: true,
+    };
+  } else if (bossState.type === 'slam') {
+    bossState.battle = {
+      ...battleBase,
+      duration: 10.0,
+      bossX: CONFIG.width * 0.46,
+      bossY: CONFIG.height * 0.32,
+      bossRadius: 70,
+      hitCount: 0,
+      hitCooldown: 0,
+      hitGoal: 50,
+      jumpCount: 0,
+      jumpGoal: 80,
+      jumpPower: 150,
+      baseGravity: CONFIG.gravity * 1.35,
+    };
+  } else if (bossState.type === 'collect') {
+    bossState.battle = {
+      ...battleBase,
+      bossY: CONFIG.height * 0.30,
+      bossDir: 1,
+      bossSpeed: 70,
+      bossMinY: 60,
+      bossMaxY: CONFIG.height * 0.6,
+      shotsFired: 0,
+      totalShots: 10,
+      shotInterval: 1.1,
+      shotCooldown: 0.5,
+      boxes: [],
+      collected: 0,
+      missed: 0,
+      missLimit: 5,
+      travelSpeedX: 160,
+      travelSpeedY: 60,
+    };
+  }
+  bossState.phase = 'battle';
+  bossState.timer = 0;
+}
+
+function updateBoss(dt) {
+  if (!bossState || !bossState.active) return;
+  simTime += dt;
+
+  if (bossState.phase === 'pop') {
+    bossState.timer += dt;
+    const duration = bossState.popDuration || 0.6;
+    const t = Math.min(1, bossState.timer / duration);
+    const eased = easeOutCubic(t);
+    const startY = bossState.popStartY || (CONFIG.height + 60);
+    const targetY = bossState.popTargetY || (CONFIG.height * 0.55);
+    player.y = startY + (targetY - startY) * eased;
+    player.x = camera.x + CONFIG.width * 0.35;
+    player.vx = 0;
+    player.vy = 0;
+    camera.x += (0 - camera.x) * Math.min(1, dt * 2);
+    if (t >= 1) {
+      player.y = targetY;
+      player.mode = 'boss';
+      bossState.phase = 'battle_init';
+      bossState.timer = 0;
+    }
+  } else if (bossState.phase === 'battle_init') {
+    initBossBattle();
+  } else if (bossState.phase === 'battle') {
+    updateBossBattle(dt);
+  } else if (bossState.phase === 'falling') {
+    bossState.timer += dt;
+    player.vy += CONFIG.gravity * dt;
+    player.y += player.vy * dt;
+    if (bossState.timer >= (bossState.fallDuration || 1.0) || player.y >= CONFIG.height + 40) {
+      bossState.phase = 'returning';
+      bossState.returnDelay = BOSS_FAIL_RETURN_DELAY;
+    }
+  } else if (bossState.phase === 'returning') {
+    bossState.returnDelay -= dt;
+    if (bossState.returnDelay <= 0) {
+      applyBossReturn(bossState.returnPayload || { success: false });
+    }
+  }
+
+  updateParticles(dt);
+}
+
+function updateBossBattle(dt) {
+  if (!bossState || !bossState.battle) return;
+  const battle = bossState.battle;
+
+  if (!handleBossPlayerMovement(dt, battle)) return;
+  if (bossState.phase === 'returning') return;
+
+  if (bossState.type === 'bullet') {
+    updateBossTypeBullet(dt, battle);
+  } else if (bossState.type === 'slam') {
+    updateBossTypeSlam(dt, battle);
+  } else if (bossState.type === 'collect') {
+    updateBossTypeCollect(dt, battle);
+  }
+}
+
+function handleBossPlayerMovement(dt, battle) {
+  if (!bossState || bossState.phase !== 'battle') return false;
+  if (Input.justPressed) {
+    const jumpPower = bossState.type === 'slam' ? (battle.jumpPower || 160) : battle.jumpPower;
+    if (bossState.type === 'slam') {
+      battle.jumpCount = (battle.jumpCount || 0) + 1;
+    }
+    player.vy = -jumpPower;
+  }
+  const gravity = (bossState.type === 'slam') ? (battle.baseGravity || battle.gravity || CONFIG.gravity) : battle.gravity;
+  player.vy += gravity * dt;
+  player.y += player.vy * dt;
+  player.vx = 0;
+  player.x = battle.playerX;
+
+  if (player.y < battle.topClamp) {
+    player.y = battle.topClamp;
+    if (player.vy < 0) player.vy *= -0.4;
+  }
+  if (player.y > battle.bottomFailY) {
+    triggerBossFailure('fell');
+    return false;
+  }
+  return true;
+}
+
+function updateBossTypeBullet(dt, battle) {
+  battle.shotCooldown -= dt;
+  battle.bossY += battle.bossDir * battle.bossSpeed * dt;
+  if (battle.bossY < battle.bossMinY) {
+    battle.bossY = battle.bossMinY;
+    battle.bossDir = 1;
+  } else if (battle.bossY > battle.bossMaxY) {
+    battle.bossY = battle.bossMaxY;
+    battle.bossDir = -1;
+  }
+
+  if (battle.shotsFired < battle.totalShots && battle.shotCooldown <= 0) {
+    spawnBossBullet(battle);
+  }
+
+  for (let i = battle.bullets.length - 1; i >= 0; i--) {
+    const bullet = battle.bullets[i];
+    bullet.x += bullet.vx * dt;
+    bullet.y += bullet.vy * dt;
+    bullet.life += dt;
+
+    if (!bullet.hit) {
+      const dx = bullet.x - player.x;
+      const dy = bullet.y - player.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist <= player.r + bullet.radius) {
+        triggerBossFailure('hit');
+        return;
+      }
+    }
+
+    if (bullet.x < -40) {
+      battle.dodged += 1;
+      battle.bullets.splice(i, 1);
+    }
+  }
+
+  if (battle.shotsFired >= battle.totalShots && battle.bullets.length === 0) {
+    if (battle.dodged >= battle.requiredDodges) {
+      const reward = battle.dodged * 2;
+      triggerBossSuccess({ score: reward, cash: reward });
+      return;
+    } else {
+      triggerBossFailure('not_enough_dodge');
+      return;
+    }
+  }
+}
+
+function spawnBossBullet(battle) {
+  battle.shotsFired += 1;
+  battle.shotCooldown = battle.shotInterval;
+  const aimY = randRange(battle.bossMinY, battle.bossMaxY);
+  const dy = aimY - battle.bossY;
+  const dx = (camera.x + CONFIG.width + 40) - player.x;
+  const ang = Math.atan2(dy, Math.abs(dx));
+  const vx = -battle.bulletSpeed;
+  const vy = Math.tan(ang) * Math.abs(vx);
+  battle.bullets.push({
+    x: camera.x + CONFIG.width + 24,
+    y: battle.bossY,
+    vx,
+    vy,
+    radius: 10,
+    life: 0,
+    hit: false,
+  });
+}
+
+function updateBossTypeSlam(dt, battle) {
+  battle.bossTimer += dt;
+  if (battle.hitCooldown > 0) battle.hitCooldown -= dt;
+
+  if (Input.justPressed) {
+    spawnEffect('sparkle', player.x, player.y - 12);
+  }
+
+  const jumps = battle.jumpCount || 0;
+  const goal = battle.jumpGoal || 80;
+  if (jumps >= goal) {
+    const reward = Math.floor(jumps / 10) * 4;
+    triggerBossSuccess({ score: reward, cash: reward });
+    return;
+  }
+
+  if (battle.bossTimer >= battle.duration) {
+    const reward = Math.floor(jumps / 10) * 4;
+    triggerBossOutcome({ success: jumps >= goal, score: reward, cash: reward });
+    return;
+  }
+}
+
+function updateBossTypeCollect(dt, battle) {
+  battle.shotCooldown -= dt;
+  battle.bossY += battle.bossDir * battle.bossSpeed * dt;
+  if (battle.bossY < battle.bossMinY) {
+    battle.bossY = battle.bossMinY;
+    battle.bossDir = 1;
+  } else if (battle.bossY > battle.bossMaxY) {
+    battle.bossY = battle.bossMaxY;
+    battle.bossDir = -1;
+  }
+
+  if (battle.shotsFired < battle.totalShots && battle.shotCooldown <= 0) {
+    spawnBossTreasure(battle);
+  }
+
+  for (let i = battle.boxes.length - 1; i >= 0; i--) {
+    const box = battle.boxes[i];
+    box.x += box.vx * dt;
+    box.y += box.vy * dt;
+    box.vy += 30 * dt;
+
+    const dx = box.x - player.x;
+    const dy = box.y - player.y;
+    if (!box.caught && Math.hypot(dx, dy) <= player.r + 12) {
+      box.caught = true;
+      battle.collected += 1;
+      spawnEffect('combo', box.x, box.y - 12, '+$');
+      battle.boxes.splice(i, 1);
+      continue;
+    }
+
+    if (box.x < -40 || box.y > CONFIG.height + 40) {
+      if (!box.caught) battle.missed += 1;
+      battle.boxes.splice(i, 1);
+    }
+  }
+
+  if (battle.missed >= battle.missLimit) {
+    triggerBossFailure('missed_boxes');
+    return;
+  }
+
+  if (battle.collected >= battle.totalShots) {
+    const reward = battle.collected * 2;
+    triggerBossSuccess({ score: reward, cash: reward });
+    return;
+  }
+
+  if (battle.shotsFired >= battle.totalShots && battle.boxes.length === 0) {
+    const reward = battle.collected * 2;
+    if (battle.collected >= battle.totalShots) {
+      triggerBossSuccess({ score: reward, cash: reward });
+    } else {
+      triggerBossOutcome({ success: false, score: reward, cash: reward });
+    }
+  }
+}
+
+function spawnBossTreasure(battle) {
+  battle.shotsFired += 1;
+  battle.shotCooldown = battle.shotInterval;
+  battle.boxes.push({
+    x: camera.x + CONFIG.width + 20,
+    y: battle.bossY,
+    vx: -battle.travelSpeedX,
+    vy: randRange(-battle.travelSpeedY, battle.travelSpeedY * 0.2),
+    caught: false,
+  });
+}
+
+function triggerBossSuccess(reward) {
+  triggerBossOutcome({ success: true, ...reward });
+}
+
+function triggerBossFailure(reason) {
+  triggerBossOutcome({ success: false, reason });
+}
+
+function triggerBossOutcome({ success, score: rewardScore = 0, cash: rewardCash = 0, reason }) {
+  if (!bossState || bossState.phase === 'returning' || bossState.phase === 'falling') return;
+  bossState.returnPayload = { success, rewardScore, rewardCash, reason };
+  if (bossState.battle) {
+    if (bossState.battle.bullets) bossState.battle.bullets.length = 0;
+    if (bossState.battle.boxes) bossState.battle.boxes.length = 0;
+  }
+  if (bossState.type === 'bullet') {
+    bossState.phase = 'falling';
+    bossState.timer = 0;
+    bossState.fallDuration = 1.2;
+    player.vx = 0;
+    player.vy = 200;
+    bossState.battle = null;
+  } else {
+    bossState.phase = 'returning';
+    bossState.returnDelay = BOSS_FAIL_RETURN_DELAY;
+  }
+  applyBossBackground(true);
+}
+
+function applyBossReturn(payload) {
+  const { success, rewardScore = 0, rewardCash = 0 } = payload || {};
+  bossProgress.active = false;
+  if (bossState) bossState.active = false;
+  applyBossBackground(false);
+
+  if (rewardScore > 0) {
+    score += rewardScore;
+    spawnEffect('combo', player.x, player.y - 24, `+${rewardScore}P`);
+  }
+  if (rewardCash > 0) {
+    savings += rewardCash;
+    try { localStorage.setItem(SAVINGS_KEY, String(savings)); } catch (_) {}
+  }
+
+  ropes.length = 0;
+  boxes.length = 0;
+
+  const resumeCameraX = bossState && Number.isFinite(bossState.savedCameraX) ? bossState.savedCameraX : camera.x;
+  camera.x = resumeCameraX;
+  const anchorX = camera.x + SCREEN_TARGET_X;
+  const anchorY = CONFIG.ceilingY;
+  const L = 240;
+  const stableRope = new Rope({
+    anchorX,
+    anchorY,
+    L,
+    A: deg2rad(3),
+    omega: Math.sqrt(CONFIG.gravity / L) * 0.4,
+    phi: 0,
+    createdAt: simTime,
+    id: `boss_return_${Date.now()}`,
+  });
+  ropes.push(stableRope);
+  const tip = stableRope.tip(simTime);
+  player.rope = null;
+  player.mode = 'free';
+  player.x = tip.x;
+  player.y = tip.y - 260;
+  player.vx = 0;
+  player.vy = 260;
+  catchLockUntil = simTime + 0.2;
+
+  State.current = 'run';
+  ensureRopesBuffered();
+  bossState = null;
 }
 
 resetStageState();
@@ -1768,6 +2441,43 @@ function randRange(a, b) {
 }
 function deg2rad(d) { return (d * Math.PI) / 180; }
 
+function easeOutCubic(t) {
+  const clamped = Math.max(0, Math.min(1, t));
+  const inv = 1 - clamped;
+  return 1 - inv * inv * inv;
+}
+
+function easeInCubic(t) {
+  const clamped = Math.max(0, Math.min(1, t));
+  return clamped * clamped * clamped;
+}
+
+function easeInOutCubic(t) {
+  const clamped = Math.max(0, Math.min(1, t));
+  return clamped < 0.5 ? 4 * clamped * clamped * clamped : 1 - Math.pow(-2 * clamped + 2, 3) / 2;
+}
+
+function drawPixelSprite(g, cx, cy, sprite, scale = 4, align = 'center') {
+  if (!sprite || !sprite.pixels || !sprite.palette) return;
+  const rows = sprite.pixels.length;
+  if (rows === 0) return;
+  const cols = sprite.pixels[0].length;
+  let originX = cx - (cols * scale) / 2;
+  if (align === 'right') originX = cx - cols * scale;
+  else if (align === 'left') originX = cx;
+  let originY = cy - (rows * scale) / 2;
+  for (let r = 0; r < rows; r++) {
+    const row = sprite.pixels[r];
+    for (let c = 0; c < cols; c++) {
+      const key = row[c];
+      const color = sprite.palette[key];
+      if (!color) continue;
+      g.fillStyle = color;
+      g.fillRect(originX + c * scale, originY + r * scale, scale, scale);
+    }
+  }
+}
+
 // Effective scaling for level 1 ease (rope position/length/spacing only)
 function lv1Scale() {
   return getLevelByExp(exp) === 1 ? 0.8 : 1.0;
@@ -1819,51 +2529,6 @@ function planNextRope() {
     if (!ropes[i].isWebRope) { prev = ropes[i]; break; }
   }
 
-  // Star (fever) mode: fixed-length, dense spacing, small jitter; loosen catch acceptance
-  if (starModeActive) {
-    const A = deg2rad(CONFIG.starAdeg);
-    let L = CONFIG.starL * s;
-    const kOmega = 1.0;
-    const desiredEdgeX = camera.x + (CONFIG.maxAnchorX * s) - randRange(4, CONFIG.starEdgeJitter * s);
-    for (let tries = 0; tries < 60; tries++) {
-      const useShort = true;
-      let D = randRange(CONFIG.starDmin * s, CONFIG.starDmax * s);
-      const baseX = prev ? prev.anchorX : x0;
-      let anchorX = Math.max(baseX + D, desiredEdgeX);
-      const kOmega2 = kOmega * (fastModeEnabled ? 1.4 : 1.0);
-      const omega = Math.sqrt(CONFIG.gravity / L) * kOmega2;
-      const theta_hit = randRange(-A * 0.6, A * 0.6);
-      const tipX = anchorX + L * Math.sin(theta_hit);
-      const t_hit = (tipX - x0) / Math.max(120, vxEst);
-      if (t_hit < 0.30 || t_hit > 1.00) continue;
-      const yProj = y0 + vy0 * t_hit + 0.5 * CONFIG.gravity * t_hit * t_hit;
-      const L_target = (yProj - anchorBaseY) / Math.cos(theta_hit);
-      if (isFinite(L_target)) {
-        L = Math.max(CONFIG.Lmin * s, Math.min(CONFIG.Lmax * s, CONFIG.starL * s));
-      }
-      const omega2 = Math.sqrt(CONFIG.gravity / L) * kOmega2;
-      const tipX2 = anchorX + L * Math.sin(theta_hit);
-      const yTip2 = anchorBaseY + L * Math.cos(theta_hit);
-      const dy = Math.abs(yTip2 - yProj);
-      const phi = Math.acos(Math.max(-1, Math.min(1, theta_hit / A))) - omega2 * (simTime + t_hit);
-      const glowBonus = shopInv.glowLevel ? (shopInv.glowLevel * 0.167 * CONFIG.catchBase) : 0;
-      const catchR = ((pendingCatchR > 0 ? pendingCatchR : CONFIG.catchBase) + glowBonus) * 1.2;
-      if (Math.abs(tipX2 - (x0 + vxEst * t_hit)) < 12 && dy <= catchR) {
-        return new Rope({ anchorX, anchorY: anchorBaseY, L, A, omega: omega2, phi, createdAt: simTime, id: `r${nextRopeId++}` });
-      }
-    }
-    // Fallback for star mode
-    const A2 = A;
-    const L2 = Math.max(CONFIG.Lmin * s, Math.min(CONFIG.Lmax * s, CONFIG.starL * s));
-    const omega = Math.sqrt(CONFIG.gravity / L2) * (fastModeEnabled ? 1.4 : 1.0);
-    const theta_hit = 0;
-    const t_hit = 0.6;
-    const desiredEdgeX2 = camera.x + (CONFIG.maxAnchorX * s) - randRange(4, CONFIG.starEdgeJitter * s);
-    const baseX = prev ? prev.anchorX : x0;
-    let anchorX = Math.max(baseX + CONFIG.starDmin * s, desiredEdgeX2);
-    const phi = Math.acos(Math.max(-1, Math.min(1, (theta_hit || 1e-6) / A2))) - omega * (simTime + t_hit);
-    return new Rope({ anchorX, anchorY: anchorBaseY, L: L2, A: A2, omega, phi, createdAt: simTime, id: `r${nextRopeId++}` });
-  }
   const groundY = CONFIG.height - CONFIG.groundH;
   for (let tries = 0; tries < 60; tries++) {
     const lowVariant = Math.random() < CONFIG.lowRopeChance;
@@ -1979,7 +2644,7 @@ function ensureRopesBuffered() {
   const s = lv1Scale();
   // Spawn only when the farthest NORMAL rope is behind the target edge position
   const targetEdgeX = camera.x + (CONFIG.maxAnchorX * s) - 8;
-  const fillUntil = starModeActive ? (camera.x + (CONFIG.maxAnchorX * s) + CONFIG.width * 0.25) : targetEdgeX;
+  const fillUntil = targetEdgeX;
   const luckyLevel = shopInv.luckyLevel || 0;
   const itemSpawnChance = Math.min(1, CONFIG.itemSpawnProb + luckyLevel * LUCKY_BONUS_PER_LEVEL);
   const tailorActive = characterIs('tailor');
@@ -2066,7 +2731,7 @@ function ensureRopesBuffered() {
       boxes.push({ x: midX, y: by, kind, active: true, phase: Math.random() * Math.PI * 2 });
     }
     spawnCount++;
-    if (!starModeActive || spawnCount >= 10) break; // safety cap
+    if (spawnCount >= 10) break; // safety cap
   }
 }
 
@@ -2742,7 +3407,8 @@ function updateRun(dt) {
       const dx = bx - player.x;
       const dy = by - player.y;
       const glowBonus = shopInv.glowLevel ? (shopInv.glowLevel * 0.167 * CONFIG.catchBase) : 0;
-      const catchR = (pendingCatchR > 0 ? pendingCatchR : CONFIG.catchBase) + glowBonus;
+      let catchR = (pendingCatchR > 0 ? pendingCatchR : CONFIG.catchBase) + glowBonus;
+      if (starModeActive) catchR *= 1.5;
       let withinCatch = Math.hypot(dx, dy) <= catchR;
 
       if (!withinCatch && budHitZones.length > 0) {
@@ -3133,6 +3799,75 @@ function renderRun(g) {
   g.fillText(`LV ${getLevelByExp(exp)}`, 12, 46);
 }
 
+function renderBoss(g) {
+  g.save();
+  g.translate(-camera.x, 0);
+  if (bossBackgroundActive) drawBossBackground(g); else drawBackground(g);
+
+  const battle = bossState ? bossState.battle : null;
+  if (bossState) {
+    const fallbackY = CONFIG.height * 0.4;
+    if (bossState.type === 'bullet') {
+      const villainY = battle ? battle.bossY : fallbackY;
+      drawPixelSprite(g, camera.x + CONFIG.width - 8, villainY, BOSS_SPRITES.bossShooter, 4, 'right');
+    } else if (bossState.type === 'collect') {
+      const villainY = battle ? battle.bossY : fallbackY;
+      drawPixelSprite(g, camera.x + CONFIG.width - 8, villainY, BOSS_SPRITES.bossCollector, 4, 'right');
+    }
+  }
+
+  if (battle) {
+    if (bossState.type === 'bullet') {
+      for (const bullet of battle.bullets) {
+        drawPixelSprite(g, bullet.x, bullet.y, BOSS_SPRITES.bulletProjectile, 3);
+      }
+    } else if (bossState.type === 'collect') {
+      for (const box of battle.boxes) {
+        drawPixelSprite(g, box.x, box.y, BOSS_SPRITES.cashBox, 3);
+      }
+    }
+  }
+
+  player.draw(g);
+
+  g.restore();
+
+  drawParticles(g);
+
+  g.save();
+  g.fillStyle = '#ffffff';
+  g.textAlign = 'center';
+  g.textBaseline = 'top';
+  g.font = `16px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+  const title = bossState ? `BOSS STAGE ${bossState.stageNumber}` : 'BOSS STAGE';
+  g.fillText(title, CONFIG.width / 2, 16);
+  g.font = `12px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+  if (bossState && bossState.battle) {
+    if (bossState.type === 'bullet') {
+      const b = bossState.battle;
+      g.fillText(`Shots ${b.shotsFired}/${b.totalShots} | Dodged ${b.dodged}/${b.requiredDodges}`, CONFIG.width / 2, 40);
+    } else if (bossState.type === 'slam') {
+      const b = bossState.battle;
+      const remain = Math.max(0, b.duration - b.bossTimer).toFixed(1);
+      g.font = `26px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+      g.fillText(`${b.jumpCount || 0} / ${b.jumpGoal || 80} JUMPS`, CONFIG.width / 2, CONFIG.height * 0.42);
+      g.font = `12px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+      g.fillText(`Time ${remain}s`, CONFIG.width / 2, 40);
+    } else if (bossState.type === 'collect') {
+      const b = bossState.battle;
+      g.fillText(`Collected ${b.collected}/${b.totalShots} | Missed ${b.missed}/${b.missLimit}`, CONFIG.width / 2, 40);
+    }
+  }
+  if (bossState) {
+    const info = BOSS_HUD_TEXT[bossState.type];
+    if (info) {
+      g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+      g.fillText(info, CONFIG.width / 2, 56);
+    }
+  }
+  g.restore();
+}
+
 function renderRouletteOverlay(g) {
   if (!rouletteState || !rouletteState.active) return;
   const rawOp = rouletteState.displayOp || '?';
@@ -3155,7 +3890,7 @@ function renderRouletteOverlay(g) {
   g.fillText('ROULETTE', centerX, y - 14);
 
   function drawCell(x, label, highlight) {
-    g.fillStyle = highlight ? '#2f4763' : '#22334a';
+    g.fillStyle = highlight ? 'rgba(47,71,99,0.42)' : 'rgba(34,51,74,0.32)';
     g.strokeStyle = '#9fb5d8';
     g.lineWidth = 2;
     g.beginPath();
@@ -3498,6 +4233,8 @@ function tick(now) {
     else if (State.current === 'run') updateRun(dt);
     else if (State.current === 'gameover') updateGameOver(dt);
     else if (State.current === 'shop') updateShop(dt);
+    else if (State.current === 'boss_pending') updateBossPending(dt);
+    else if (State.current === 'boss') updateBoss(dt);
     acc -= dt;
     Input.endFrame();
   }
@@ -3507,6 +4244,8 @@ function tick(now) {
   else if (State.current === 'run') renderRun(ctx);
   else if (State.current === 'gameover') renderGameOver(ctx);
   else if (State.current === 'shop') renderShop(ctx);
+  else if (State.current === 'boss_pending') renderRun(ctx);
+  else if (State.current === 'boss') renderBoss(ctx);
 
   requestAnimationFrame(tick);
 }
