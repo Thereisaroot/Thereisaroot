@@ -1196,7 +1196,17 @@ let lastShopHelpRect = null; // cached '?' button rect computed during render
 
 
 // Pixel character definitions provided via external spec
-const PIXEL_CHARACTERS = (typeof window !== 'undefined' ? window.CHAR_SPECS : undefined) || {};
+function withScaledCharacterPrices(chars) {
+  if (!chars) return {};
+  const out = {};
+  for (const [id, char] of Object.entries(chars)) {
+    const price = Math.max(0, Math.floor((char.price || 0) / 5));
+    out[id] = { ...char, price };
+  }
+  return out;
+}
+
+const PIXEL_CHARACTERS = withScaledCharacterPrices((typeof window !== 'undefined' ? window.CHAR_SPECS : undefined) || {});
 
 function characterIs(id) {
   return selectedCharacter === id;
@@ -1614,7 +1624,6 @@ function grantStageGateReward(triggerRope) {
   savings += STAGE_GATE_BONUS_CASH;
   try { localStorage.setItem(SAVINGS_KEY, String(savings)); } catch (_) {}
   if (stageNumber != null) maybeTriggerBossStage(stageNumber, triggerRope);
-  pendingStageGate = null;
 }
 
 function getBossStageTriggerSet() {
@@ -1838,7 +1847,7 @@ function initBossBattle() {
       hitGoal: 50,
       jumpCount: 0,
       jumpGoal: 80,
-      jumpPower: 150,
+      jumpPower: 195,
       baseGravity: CONFIG.gravity * 1.35,
     };
   } else if (bossState.type === 'collect') {
@@ -2706,6 +2715,18 @@ function ensureRopesBuffered() {
       }
     }
 
+    if (pendingStageGate && !pendingStageGate.rewarded) {
+      const stageIndex = pendingStageGate.stage;
+      if (midRope) {
+        midRope.stageGateStage = stageIndex;
+        midRope.stageGateRewarded = false;
+      }
+      if (r) {
+        r.stageGateStage = stageIndex;
+        r.stageGateRewarded = false;
+      }
+    }
+
     if (midRope) ropes.push(midRope);
     ropes.push(r);
     if (!r.isWebRope) registerMainRopeSpawn(r.anchorX, prev ? prev.anchorX : undefined);
@@ -2910,7 +2931,7 @@ function updateIntro(dt) {
 
 function renderIntro(g, t) {
   drawBackground(g);
-  drawCenteredText(g, '쩜푸 쩜푸', CONFIG.height * 0.28, 20);
+  drawCenteredText(g, 'Boing! Boing!', CONFIG.height * 0.28, 20);
   const blink = Math.sin(t * 3) > 0 ? 1 : 0.3;
   g.globalAlpha = blink;
   drawCenteredText(g, 'PRESS START', CONFIG.height * 0.52, 14);
