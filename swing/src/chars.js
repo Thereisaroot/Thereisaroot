@@ -65,8 +65,8 @@
     },
     wizard: {
       name: 'Wizard',
-      price: 2500,
-      minLevel: 10,
+      price: 10,
+      minLevel: 2,
       pixels: [
         [0,0,0,1,0,0,0,0],
         [0,0,1,1,1,0,0,0],
@@ -98,6 +98,24 @@
       colors: ['#C0C0C0', '#808080', '#FF0000', '#FFD700'],
       description: 'Double score & $ but -1 air jump',
       abilityNotes: 'Stat modifiers applied in scoring; consider armor sheen animation.',
+    },
+    tailor: {
+      name: 'Tailor',
+      price: 2600,
+      minLevel: 9,
+      pixels: [
+        [0,0,3,3,3,3,0,0],
+        [0,3,2,2,2,2,3,0],
+        [0,3,2,1,1,2,3,0],
+        [3,2,1,1,1,1,2,3],
+        [3,2,1,4,4,1,2,3],
+        [0,3,2,1,1,2,3,0],
+        [0,0,3,2,2,3,0,0],
+        [0,0,0,3,3,0,0,0],
+      ],
+      colors: ['#ff6f61', '#ffd166', '#6a4c93', '#2b2d42'],
+      description: 'Stitches bonus ropes mid-air',
+      abilityNotes: '50% chance to add a mid-gap rope; catching it grants +$1 (Tailor only).',
     },
     bird: {
       name: 'Bird',

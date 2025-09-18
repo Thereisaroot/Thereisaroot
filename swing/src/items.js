@@ -65,15 +65,7 @@
       maxLevel: 5,
       price: 30,
       minLevel: 3,
-      notes: 'Extends pickup radius by +10px per level and pulls boxes toward the player.',
-    },
-    {
-      id: 'shield',
-      name: 'Shield',
-      type: 'consumable',
-      price: 100,
-      minLevel: 4,
-      notes: 'Consumable: plan to spend charge on rope snap to prevent break (per run).',
+      notes: 'Extends pickup radius by +10px per level and pulls nearby boxes inward.',
     },
     {
       id: 'combo',
@@ -82,7 +74,7 @@
       maxLevel: 3,
       price: 80,
       minLevel: 6,
-      notes: 'TODO: apply +0.5 combo multiplier per level when scoring combo catches.',
+      notes: 'Active: combo catches grant +0.5x bonus per level.',
     },
     {
       id: 'slow',
@@ -90,7 +82,7 @@
       type: 'consumable',
       price: 100,
       minLevel: 3,
-      notes: 'Consumable: plan to auto-trigger slow-mo when falling, clears per run.',
+      notes: 'Consumable: auto slow-mo triggers on falls (up to 3 uses).',
     },
     {
       id: 'double',
@@ -98,7 +90,7 @@
       type: 'single',
       price: 100,
       minLevel: 8,
-      notes: 'TODO: boost rope detach power by ~1.3x while active.',
+      notes: 'Active: rope detach boost 1.3x stronger.',
     },
     {
       id: 'lucky',
@@ -107,7 +99,7 @@
       maxLevel: 5,
       price: 40,
       minLevel: 2,
-      notes: 'TODO: increase item spawn probability by +5% per level.',
+      notes: 'Active: +5% box spawn chance per level.',
     },
     {
       id: 'revival',
@@ -115,15 +107,7 @@
       type: 'consumable',
       price: 100,
       minLevel: 10,
-      notes: 'Consumable: plan to auto-revive once on ground impact, clears per run.',
-    },
-    {
-      id: 'rainbow',
-      name: 'Rainbow',
-      type: 'single',
-      price: 30,
-      minLevel: 3,
-      notes: 'TODO: apply animated rainbow tint to player body and trail.',
+      notes: 'Consumable: auto rescue rope on ground impact (one use).',
     },
     {
       id: 'fever',
@@ -132,16 +116,7 @@
       maxLevel: 3,
       price: 60,
       minLevel: 5,
-      notes: 'TODO: extend star mode duration by +2 seconds per level.',
-    },
-    {
-      id: 'bank',
-      name: 'Bank',
-      type: 'level',
-      maxLevel: 5,
-      price: 100,
-      minLevel: 1,
-      notes: 'TODO: grant +10% earnings interest per level at run end.',
+      notes: 'Level: star mode lasts +2s per level.',
     },
   ];
 

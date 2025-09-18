@@ -508,6 +508,7 @@ class Rope {
     this.isWebRope = params.isWebRope || false;
     this.webTargetL = params.webTargetL || null;
     this.retractSpeed = params.retractSpeed || 250;
+    this.tailorBonus = params.tailorBonus || 0;
   }
   // θ(t) = A cos(ω t + φ)
   theta(t) {
@@ -1053,7 +1054,24 @@ class ShopCard {
       if (!char) return;
       
       const charInv = shopInv.characters || [];
-      const isOwned = charInv.includes(charId) || charId === 'default';
+      const lvl = getLevelByExp(exp);
+      const state = characterCardState(charId, char, lvl, charInv, savings);
+
+      if (state.levelLocked) {
+        shopMsg = `Requires LV ${state.minLevel}`;
+        shopMsgTimer = 2.0;
+        shopConfirm = null;
+        return;
+      }
+
+      if (state.fundsLocked) {
+        shopMsg = `Need $${state.price}`;
+        shopMsgTimer = 2.0;
+        shopConfirm = null;
+        return;
+      }
+
+      const isOwned = state.owned;
       
       shopConfirm = {
         id: charId,
@@ -1178,13 +1196,23 @@ function characterIs(id) {
   return selectedCharacter === id;
 }
 
-function visibleCharacters() {
+function visibleCharacters(includeLocked = true) {
   const lvl = getLevelByExp(exp);
   return Object.entries(PIXEL_CHARACTERS).filter(([id, char]) => {
-    if ((char.minLevel || 1) > lvl) return false;
     if (id === 'bird' && !shopInv.fly) return false;
+    if (!includeLocked && (char.minLevel || 1) > lvl) return false;
     return true;
   });
+}
+
+function characterCardState(id, char, lvl, charInv, currentSavings) {
+  const owned = charInv.includes(id) || id === 'default';
+  const minLevel = char.minLevel || 1;
+  const levelLocked = !owned && lvl < minLevel;
+  const price = char.price || 0;
+  const fundsLocked = !owned && !levelLocked && currentSavings < price;
+  const locked = levelLocked || fundsLocked;
+  return { owned, levelLocked, fundsLocked, locked, minLevel, price };
 }
 
 function characterAirJumpBonus() {
@@ -1210,9 +1238,7 @@ const SHOP_INV_DEFAULTS = {
   comboLevel: 0,
   double: false,
   luckyLevel: 0,
-  rainbow: false,
   feverLevel: 0,
-  bankLevel: 0,
   characters: [],
   consumables: {},
 };
@@ -1227,8 +1253,23 @@ function loadShopInv() {
   // Legacy migration: convert one-time booleans to consumable counts
   let migrated = false;
   if (shopInv.shield) {
-    shopInv.consumables.shield = Math.max(1, shopInv.consumables.shield || 0);
     delete shopInv.shield;
+    migrated = true;
+  }
+  if ('rainbow' in shopInv) {
+    delete shopInv.rainbow;
+    migrated = true;
+  }
+  if ('bankLevel' in shopInv) {
+    delete shopInv.bankLevel;
+    migrated = true;
+  }
+  if (shopInv.consumables && shopInv.consumables.shield) {
+    delete shopInv.consumables.shield;
+    migrated = true;
+  }
+  if (shopInv.consumables && shopInv.consumables.rainbow) {
+    delete shopInv.consumables.rainbow;
     migrated = true;
   }
   if (shopInv.slow) {
@@ -1255,7 +1296,6 @@ function applyRunConsumables() {
   // Reset runtime flags before applying
   shopInv.gambleActive = false;
   shopInv.webActive = false;
-  activeShieldCharges = 0;
   activeSlowCharges = 0;
   activeRevivalCharges = 0;
 
@@ -1268,12 +1308,6 @@ function applyRunConsumables() {
     shopInv.webActive = true;
     cons.web = 0;
     dirty = true;
-  }
-  if ((cons.shield || 0) > 0) {
-    activeShieldCharges = cons.shield;
-    cons.shield = 0;
-    dirty = true;
-    // TODO: spend charges when rope snap occurs.
   }
   if ((cons.slow || 0) > 0) {
     activeSlowCharges = cons.slow;
@@ -1313,9 +1347,9 @@ let baseScoreForRewards = 0;
 let wizardFloatTimer = 0;
 let wizardSpinTimer = 0;
 let wizardSpinRate = 0;
-let activeShieldCharges = 0; // Consumable shield charges applied at run start (TODO: hook into rope snap)
-let activeSlowCharges = 0;   // Consumable slow-mo charges (TODO: apply on fall)
-let activeRevivalCharges = 0; // Consumable revival charges (TODO: trigger on ground impact)
+let activeSlowCharges = 0;   // Slow item charges remaining this run
+let activeRevivalCharges = 0; // Revival charges remaining this run
+let tailorCashBonusThisRun = 0; // Extra $ from Tailor rope catches this run
 // Web rope creation marker (explicitly declared to avoid implicit globals)
 let webRopeJustCreated = false;
 // Prevent double rope buffering within one update step
@@ -1329,6 +1363,106 @@ const boxes = [];
 let pendingExtraJump = false;
 let pendingCatchR = 0;
 let pendingSizeScale = 0;
+
+const SLOW_MO_SCALE = 0.35;
+const SLOW_MO_DURATION = 0.9;
+const SLOW_MO_COOLDOWN = 1.5;
+const SLOW_MO_TRIGGER_VY = 140;
+const SLOW_MO_TRIGGER_DISTANCE = 200;
+const DOUBLE_MULTIPLIER = 1.3;
+const COMBO_BONUS_PER_LEVEL = 0.5;
+const LUCKY_BONUS_PER_LEVEL = 0.05;
+const FEVER_BONUS_SECONDS = 2;
+const TAILOR_EXTRA_ROPE_CHANCE = 0.5;
+
+const STAGE_COLORS = [
+  '#0f1a2a', // initial default
+  '#112240',
+  '#1d1f4a',
+  '#291e42',
+  '#2f2a3f',
+  '#322a33',
+  '#1c2e3d',
+  '#2b2234',
+];
+const STAGE_BANNER_DURATION = 1.5;
+
+let slowMoTimer = 0;
+let slowMoCooldown = 0;
+
+let totalMainRopesSpawned = 0;
+let currentStageIndex = 0;
+let stageTransitionActive = false;
+let stageTransitionProgress = 0;
+let stageColorPrev = STAGE_COLORS[0];
+let stageColorNext = STAGE_COLORS[0];
+let stageBannerTimer = 0;
+let stageBannerStage = 1;
+let transitionAnchorX = 0;
+let transitionStartX = 0;
+let transitionEndX = 0;
+
+function getStageColor(index) {
+  const count = STAGE_COLORS.length;
+  if (count === 0) return '#1c2a3a';
+  const wrapped = ((index % count) + count) % count;
+  return STAGE_COLORS[wrapped];
+}
+
+function resetStageState() {
+  totalMainRopesSpawned = 0;
+  currentStageIndex = 0;
+  stageTransitionActive = false;
+  stageTransitionProgress = 0;
+  stageColorPrev = getStageColor(0);
+  stageColorNext = stageColorPrev;
+  stageBannerTimer = 0;
+  stageBannerStage = 1;
+  transitionAnchorX = 0;
+  transitionStartX = 0;
+  transitionEndX = 0;
+}
+
+function startStageTransition(newStageIndex) {
+  stageColorPrev = stageColorNext;
+  stageColorNext = getStageColor(newStageIndex);
+  stageTransitionActive = true;
+  stageTransitionProgress = 0;
+  stageBannerStage = newStageIndex + 1;
+  stageBannerTimer = STAGE_BANNER_DURATION;
+  currentStageIndex = newStageIndex;
+}
+
+function registerMainRopeSpawn(anchorX, prevAnchorX) {
+  const prevStage = Math.floor(Math.max(totalMainRopesSpawned - 1, 0) / 10);
+  totalMainRopesSpawned++;
+  const newStage = Math.floor(Math.max(totalMainRopesSpawned - 1, 0) / 10);
+  if (newStage > prevStage) {
+    transitionStartX = (typeof prevAnchorX === 'number') ? prevAnchorX : anchorX;
+    transitionEndX = anchorX;
+    transitionAnchorX = anchorX;
+    startStageTransition(newStage);
+  }
+}
+
+function updateStageTransition(dt) {
+  if (stageTransitionActive) {
+    const span = Math.max(1, transitionEndX - transitionStartX);
+    const playerWorldX = (typeof player !== 'undefined' && player) ? player.x : transitionAnchorX;
+    const delta = playerWorldX - transitionStartX;
+    stageTransitionProgress = Math.max(0, Math.min(1, delta / span));
+    if (stageTransitionProgress >= 1) {
+      stageTransitionActive = false;
+      stageColorPrev = stageColorNext;
+      stageTransitionProgress = 0;
+    }
+  }
+  if (stageBannerTimer > 0) {
+    stageBannerTimer = Math.max(0, stageBannerTimer - dt);
+  }
+}
+
+resetStageState();
 
 // Simple particle system for catch effects
 const particles = [];
@@ -1599,6 +1733,7 @@ function spawnInitialRope() {
   const anchorX = desiredX - L * Math.sin(theta0);
   const r = new Rope({ anchorX, anchorY: CONFIG.ceilingY, L, A, omega, phi, createdAt: simTime, id: `r${nextRopeId++}` });
   ropes.push(r);
+  registerMainRopeSpawn(anchorX);
   player.rope = r;
   player.mode = 'attached';
   // Place player at tip now
@@ -1758,6 +1893,9 @@ function ensureRopesBuffered() {
   // Spawn only when the farthest NORMAL rope is behind the target edge position
   const targetEdgeX = camera.x + (CONFIG.maxAnchorX * s) - 8;
   const fillUntil = starModeActive ? (camera.x + (CONFIG.maxAnchorX * s) + CONFIG.width * 0.25) : targetEdgeX;
+  const luckyLevel = shopInv.luckyLevel || 0;
+  const itemSpawnChance = Math.min(1, CONFIG.itemSpawnProb + luckyLevel * LUCKY_BONUS_PER_LEVEL);
+  const tailorActive = characterIs('tailor');
   let spawnCount = 0;
   while (true) {
     let prev = null;
@@ -1767,10 +1905,61 @@ function ensureRopesBuffered() {
     const farthestX = prev ? prev.anchorX : -Infinity;
     if (farthestX >= fillUntil) break;
     const r = planNextRope();
+
+    let midRope = null;
+    if (prev && tailorActive && Math.random() < TAILOR_EXTRA_ROPE_CHANCE) {
+      // Tailor ability: stitch a midway rope between anchors at mid height with matched swing profile
+      const midAnchorX = prev.anchorX + (r.anchorX - prev.anchorX) * 0.5;
+      const groundY = CONFIG.height - CONFIG.groundH;
+      const anchorY = CONFIG.ceilingY + 0.5 * (groundY - CONFIG.ceilingY);
+      const maxTipY = groundY - 150;
+      const maxLengthFromAnchor = Math.max(0, maxTipY - anchorY);
+      if (maxLengthFromAnchor > 0) {
+        let desiredL = r.L * 0.7;
+        desiredL = Math.min(desiredL, maxLengthFromAnchor);
+        if (desiredL >= CONFIG.Lmin) {
+          const A = r.A;
+          const baseKOmega = r.omega / Math.sqrt(CONFIG.gravity / r.L);
+          const L = desiredL;
+          const omega = Math.sqrt(CONFIG.gravity / L) * baseKOmega;
+          let phi = r.phi;
+          if (A > 0 && omega > 0) {
+            const timeNow = simTime;
+            const basePhase = r.omega * timeNow + r.phi;
+            const baseTheta = r.A * Math.cos(basePhase);
+            const baseDTheta = -r.A * r.omega * Math.sin(basePhase);
+            let cosVal = A !== 0 ? (baseTheta / A) : 1;
+            let sinVal = -baseDTheta / (A * omega);
+            if (!isFinite(cosVal)) cosVal = 1;
+            if (!isFinite(sinVal)) sinVal = 0;
+            const mag = Math.hypot(cosVal, sinVal);
+            if (mag > 1e-6) {
+              cosVal /= mag;
+              sinVal /= mag;
+            }
+            phi = Math.atan2(sinVal, cosVal) - omega * timeNow;
+          }
+          midRope = new Rope({
+            anchorX: midAnchorX,
+            anchorY,
+            L,
+            A,
+            omega,
+            phi,
+            createdAt: simTime,
+            tailorBonus: 1,
+            id: `r${nextRopeId++}`
+          });
+        }
+      }
+    }
+
+    if (midRope) ropes.push(midRope);
     ropes.push(r);
+    if (!r.isWebRope) registerMainRopeSpawn(r.anchorX, prev ? prev.anchorX : undefined);
     ropesBufferedThisStep = true;
     // Maybe spawn a box between prev and new rope if eligible
-    if (!starModeActive && prev && exp >= 50 && Math.random() < CONFIG.itemSpawnProb) {
+    if (!starModeActive && prev && exp >= 50 && Math.random() < itemSpawnChance) {
       const midX = prev.anchorX + (r.anchorX - prev.anchorX) * 0.5;
       // Place much higher, with vertical randomness
       const minY = CONFIG.ceilingY + 60;
@@ -1816,7 +2005,9 @@ function resetRun() {
   uiButtons.shop.buttons = [];
   rouletteState = null;
   rouletteSummary = null;
-  
+
+  resetStageState();
+
   player.reset();
   score = 0;
   comboCount = 0;
@@ -1850,13 +2041,50 @@ function resetRun() {
   wizardFloatTimer = 0;
   wizardSpinTimer = 0;
   wizardSpinRate = 0;
+  tailorCashBonusThisRun = 0;
 }
 
 function drawBackground(g) {
-  // Sky already via body background; draw ground and horizon
   const groundY = CONFIG.height - CONFIG.groundH;
 
-  // Horizon line
+  g.fillStyle = stageColorPrev;
+  g.fillRect(0, 0, CONFIG.width, groundY);
+
+  if (stageTransitionActive) {
+    const boundaryScreen = transitionAnchorX - camera.x;
+    const rectStart = Math.min(CONFIG.width, Math.max(boundaryScreen, 0));
+    const maxWidth = Math.max(0, CONFIG.width - rectStart);
+    const rectWidth = maxWidth;
+    if (rectWidth > 0) {
+      g.fillStyle = stageColorNext;
+      g.fillRect(rectStart, 0, rectWidth, groundY);
+    }
+  } else {
+    g.fillStyle = stageColorNext;
+    g.fillRect(0, 0, CONFIG.width, groundY);
+  }
+
+  if (stageTransitionActive || stageBannerTimer > 0) {
+    const bannerWorldX = transitionAnchorX;
+    const screenBannerX = bannerWorldX - camera.x;
+    if (screenBannerX >= -24 && screenBannerX <= CONFIG.width + 24) {
+      const alpha = stageTransitionActive ? 1 : Math.min(1, stageBannerTimer / STAGE_BANNER_DURATION);
+      g.save();
+      g.translate(screenBannerX, groundY * 0.35);
+      g.rotate(-Math.PI / 2);
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.font = `18px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+      g.fillStyle = 'rgba(0,0,0,0.25)';
+      g.fillText(`STAGE ${stageBannerStage}`, 2, 2);
+      g.globalAlpha = alpha;
+      g.fillStyle = '#ffffff';
+      g.fillText(`STAGE ${stageBannerStage}`, 0, 0);
+      g.restore();
+      g.globalAlpha = 1;
+    }
+  }
+
   g.strokeStyle = 'rgba(255,255,255,0.05)';
   g.lineWidth = 1;
   g.beginPath();
@@ -1864,7 +2092,6 @@ function drawBackground(g) {
   g.lineTo(CONFIG.width, groundY + 0.5);
   g.stroke();
 
-  // Ground
   g.fillStyle = '#1c2a3a';
   g.fillRect(0, groundY, CONFIG.width, CONFIG.groundH);
 }
@@ -1888,6 +2115,7 @@ function guideButtonRect() {
 function pointInRect(px, py, r) { return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h; }
 
 function updateIntro(dt) {
+  updateStageTransition(dt);
   // Debounce to ensure we show intro at least a moment after transitions
   if (simTime < inputLockUntil) { UI.reset && UI.reset(); return; }
   
@@ -2093,7 +2321,16 @@ function drawRope(g, rope) {
 }
 
 function updateRun(dt) {
+  const baseDt = dt;
+  if (slowMoTimer > 0) {
+    dt *= SLOW_MO_SCALE;
+  }
   simTime += dt;
+  if (slowMoTimer > 0) slowMoTimer = Math.max(0, slowMoTimer - baseDt);
+  if (slowMoCooldown > 0) slowMoCooldown = Math.max(0, slowMoCooldown - baseDt);
+  updateStageTransition(baseDt);
+  const groundY = CONFIG.height - CONFIG.groundH;
+  const collR = playerCollisionRadius();
   // reset per-step rope buffering flag
   ropesBufferedThisStep = false;
 
@@ -2116,8 +2353,10 @@ function updateRun(dt) {
       const upFactor = 0.8 + 0.2 * Math.cos(tip.th || 0); // near bottom stronger
       const js = CONFIG.jumpSpeedScale || 1;
       const speedMultiplier = fastModeEnabled ? 1.5 : 1.0;
-      let detVx = Math.max(CONFIG.minVx, Math.min(CONFIG.maxVx, ((tip.vx || 0) * js + CONFIG.baseVx * js) * speedMultiplier));
-      let detVy = (tip.vy || 0) * js - CONFIG.jumpImpulse * upFactor * js;
+      const jumpBoost = shopInv.double ? DOUBLE_MULTIPLIER : 1;
+      const baseForward = CONFIG.baseVx * js * jumpBoost;
+      let detVx = Math.max(CONFIG.minVx, Math.min(CONFIG.maxVx, ((tip.vx || 0) * js + baseForward) * speedMultiplier));
+      let detVy = (tip.vy || 0) * js - (CONFIG.jumpImpulse * upFactor * js * jumpBoost);
       // prevent instant re-catch on the same rope
       lastDetachedRope = player.rope;
       player.rope = null;
@@ -2140,8 +2379,8 @@ function updateRun(dt) {
       if (characterIs('wizard')) {
         const wizardSpeed = Math.max(0, CONFIG.wizardJumpSpeed || 0);
         const wizardImpulse = Math.max(0, CONFIG.wizardJumpImpulse || CONFIG.jumpImpulse);
-        detVx = wizardSpeed * speedMultiplier;
-        detVy = -wizardImpulse;
+        detVx = Math.max(CONFIG.minVx, Math.min(CONFIG.maxVx, wizardSpeed * speedMultiplier * jumpBoost));
+        detVy = -wizardImpulse * jumpBoost;
         wizardFloatTimer = 2.0;
         wizardSpinTimer = wizardFloatTimer;
         const spinRevs = CONFIG.wizardSpinRevolutions || 0;
@@ -2213,6 +2452,16 @@ function updateRun(dt) {
   }
   cleanupRopes();
 
+  if (activeSlowCharges > 0 && slowMoTimer <= 0 && slowMoCooldown <= 0 && player.mode === 'free') {
+    const distanceToGround = groundY - (player.y + collR);
+    if (player.vy > SLOW_MO_TRIGGER_VY && distanceToGround > 0 && distanceToGround <= SLOW_MO_TRIGGER_DISTANCE) {
+      slowMoTimer = SLOW_MO_DURATION;
+      slowMoCooldown = SLOW_MO_COOLDOWN;
+      activeSlowCharges = Math.max(0, activeSlowCharges - 1);
+      spawnEffect('combo', player.x, player.y - 24, 'SLOW!');
+    }
+  }
+
   // Box pickup
   const magnetLevel = shopInv.magnetLevel || 0;
   const baseCatchR = CONFIG.catchBase;
@@ -2257,7 +2506,8 @@ function updateRun(dt) {
 
     if (b.kind === 'star') {
       starModeActive = true;
-      starModeEndTime = simTime + (CONFIG.starDuration || 3.0);
+      const feverBonus = (shopInv.feverLevel || 0) * FEVER_BONUS_SECONDS;
+      starModeEndTime = simTime + (CONFIG.starDuration || 3.0) + feverBonus;
       const worldX = b.x;
       const worldY = b.y;
       const targetWorldX = worldX;
@@ -2406,7 +2656,22 @@ function updateRun(dt) {
       const dy = by - player.y;
       const glowBonus = shopInv.glowLevel ? (shopInv.glowLevel * 0.167 * CONFIG.catchBase) : 0;
       const catchR = (pendingCatchR > 0 ? pendingCatchR : CONFIG.catchBase) + glowBonus;
-      if (Math.hypot(dx, dy) <= catchR) {
+      let withinCatch = Math.hypot(dx, dy) <= catchR;
+
+      if (!withinCatch && budHitZones.length > 0) {
+        // Buds trailing orbs can snag ropes for the player
+        for (let j = 0; j < budHitZones.length; j++) {
+          const bud = budHitZones[j];
+          const budDx = bx - bud.x;
+          const budDy = by - bud.y;
+          if (Math.hypot(budDx, budDy) <= bud.r) {
+            withinCatch = true;
+            break;
+          }
+        }
+      }
+
+      if (withinCatch) {
         // Attach
         player.mode = 'attached';
         player.rope = rope;
@@ -2414,10 +2679,7 @@ function updateRun(dt) {
         wizardSpinTimer = 0;
         wizardSpinRate = 0;
         const baseGained = starModeActive ? 3 : ((usedAirJumps === 0) ? 3 : (usedAirJumps === 1) ? 2 : 1);
-        baseScoreForRewards += baseGained;
-        let scoreGain = baseGained;
-        if (characterIs('knight')) scoreGain *= 2;
-        score += scoreGain;
+        let rewardGain = baseGained;
         const kind = (baseGained === 3) ? 'big' : (baseGained === 2) ? 'medium' : 'small';
         const tipNow = rope.tip(simTime);
         spawnEffect(kind, tipNow.x, tipNow.y);
@@ -2433,6 +2695,23 @@ function updateRun(dt) {
           }
         } else {
           comboCount = 0;
+        }
+        const comboLevel = shopInv.comboLevel || 0;
+        if (comboLevel > 0 && comboEligible && comboCount >= 2) {
+          const comboMultiplier = 1 + comboLevel * COMBO_BONUS_PER_LEVEL;
+          rewardGain = Math.max(1, Math.round(rewardGain * comboMultiplier));
+        } else {
+          rewardGain = Math.max(1, Math.round(rewardGain));
+        }
+        const tailorCatchBonus = (rope.tailorBonus && characterIs('tailor')) ? rope.tailorBonus : 0;
+        baseScoreForRewards += rewardGain;
+        let scoreGain = rewardGain;
+        if (characterIs('knight')) scoreGain *= 2;
+        score += scoreGain;
+        if (tailorCatchBonus > 0) {
+          tailorCashBonusThisRun += tailorCatchBonus;
+          spawnEffect('combo', player.x, player.y - 18, '+$1');
+          rope.tailorBonus = 0;
         }
         // Schedule snap if EXP milestone reached (>= 10)
         if (exp >= 10 && !starModeActive) {
@@ -2459,8 +2738,6 @@ function updateRun(dt) {
   }
 
   // Game over if grounded while free
-  const groundY = CONFIG.height - CONFIG.groundH;
-  const collR = playerCollisionRadius();
   if (player.y + collR >= groundY) {
     player.y = groundY - collR;
     comboCount = 0; // Reset combo on death
@@ -2504,6 +2781,43 @@ function updateRun(dt) {
       ensureRopesBuffered();
       return;
     }
+    if (activeRevivalCharges > 0) {
+      activeRevivalCharges = Math.max(0, activeRevivalCharges - 1);
+      spawnEffect('combo', player.x, player.y - 30, 'REVIVE!');
+      const anchorX = player.x;
+      const anchorY = CONFIG.ceilingY;
+      const tipTarget = groundY - (collR + 24);
+      const ropeLength = Math.max(220, tipTarget - anchorY);
+      const retractTarget = Math.max(160, ropeLength - 200);
+      const revivalRope = new Rope({
+        anchorX,
+        anchorY,
+        L: ropeLength,
+        A: 0,
+        omega: 0,
+        phi: 0,
+        createdAt: simTime,
+        isWebRope: true,
+        webTargetL: retractTarget,
+        retractSpeed: 220,
+        id: `r${nextRopeId++}`
+      });
+      ropes.push(revivalRope);
+      player.rope = revivalRope;
+      player.mode = 'attached';
+      const tipNow = revivalRope.tip(simTime);
+      player.x = tipNow.x;
+      player.y = tipNow.y;
+      player.vx = 0;
+      player.vy = -120;
+      lastDetachedRope = null;
+      catchLockUntil = simTime + 0.2;
+      airJumpsLeft = 0;
+      usedAirJumps = 0;
+      webRopeJustCreated = true;
+      ensureRopesBuffered();
+      return;
+    }
     // Ground break effect at impact
     spawnEffect('break', player.x, groundY);
     // Earnings and EXP: $1 and 1 EXP per point beyond 5 this run
@@ -2511,6 +2825,7 @@ function updateRun(dt) {
     let earnedMoney = baseEarned;
     let earnedExp = baseEarned;
     if (characterIs('pirate')) earnedMoney += pirateBonusThisRun;
+    earnedMoney += tailorCashBonusThisRun;
     if (characterIs('knight')) {
       earnedMoney *= 2;
       earnedExp *= 2;
@@ -2561,6 +2876,7 @@ function updateRun(dt) {
         localStorage.setItem(EXP_KEY, String(exp));
       } catch(_){}
     }
+    tailorCashBonusThisRun = 0;
     pirateBonusThisRun = 0;
     baseScoreForRewards = 0;
     wizardFloatTimer = 0;
@@ -2833,6 +3149,7 @@ function computeBudHitZones() {
 function updateGameOver(dt) {
   // allow particles to continue animating on game over
   updateParticles(dt);
+  updateStageTransition(dt);
   // advance gameover local timer
   gameOverTimer += dt;
   levelUpPopupTimer += dt;
@@ -3123,9 +3440,7 @@ function getItemLevel(it) {
   if (it.id === 'combo') return shopInv.comboLevel || 0;
   if (it.id === 'double') return shopInv.double ? 1 : 0;
   if (it.id === 'lucky') return shopInv.luckyLevel || 0;
-  if (it.id === 'rainbow') return shopInv.rainbow ? 1 : 0;
   if (it.id === 'fever') return shopInv.feverLevel || 0;
-  if (it.id === 'bank') return shopInv.bankLevel || 0;
   return 0;
 }
 function currentBodySides() {
@@ -3183,15 +3498,12 @@ function itemDescription(id) {
   if (id === 'gamble') return 'Next run earns 1.5x money (one-time use).';
   if (id === 'web') return 'Emergency web when falling (one-time use).';
   if (id === 'magnet') return 'Magnet radius +10px per level and pulls boxes inward (max 5).';
-  if (id === 'shield') return 'Blocks rope snap once per run.';
   if (id === 'combo') return 'Combo score +0.5x per level (max 3).';
   if (id === 'slow') return 'Auto slow-mo when falling (3 times per run).';
   if (id === 'double') return 'Jump boost 1.3x stronger from ropes.';
   if (id === 'lucky') return 'Item spawn chance +5% per level (max 5).';
   if (id === 'revival') return 'Revive once when falling to ground.';
-  if (id === 'rainbow') return 'Rainbow color animation effect.';
   if (id === 'fever') return 'Star mode duration +2 sec per level (max 3).';
-  if (id === 'bank') return 'Earnings +10% interest per level (max 5).';
   return 'No description.';
 }
 
@@ -3200,12 +3512,24 @@ function renderCharacterShop(g) {
   const titleY = CONFIG.height * 0.12;
   drawCenteredText(g, 'CHARACTERS', titleY, 14);
   
+  const lvl = getLevelByExp(exp);
+  const charInv = shopInv.characters || [];
+
   // Show $ at top-right
   g.fillStyle = '#ffffff';
   g.textAlign = 'right';
   g.textBaseline = 'top';
   g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
   g.fillText(`$ ${savings}`, CONFIG.width - 12, titleY + 24);
+
+  const showShopMsg = shopMsg && shopMsgTimer > 0 && (!shopConfirm || shopConfirm.type === 'character');
+  if (showShopMsg) {
+    g.textAlign = 'center';
+    g.textBaseline = 'top';
+    g.fillStyle = '#ff6666';
+    g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+    g.fillText(shopMsg, CONFIG.width / 2, titleY + 40);
+  }
   
   // Help button '?' for character shop
   {
@@ -3229,9 +3553,6 @@ function renderCharacterShop(g) {
     g.fillText('?', x + w/2, y + h/2 + 1);
   }
   
-  // Get purchased characters from inventory
-  const charInv = shopInv.characters || [];
-  
   // Character grid (pagination)
   const chars = visibleCharacters();
   const cols = 2;
@@ -3251,17 +3572,19 @@ function renderCharacterShop(g) {
   // Draw character cards for current page
   for (let i = startIdx; i < endIdx; i++) {
     const [id, char] = chars[i];
+    const state = characterCardState(id, char, lvl, charInv, savings);
     const local = i - startIdx;
     const row = Math.floor(local / cols);
     const col = local % cols;
     const x = marginX + col * cellW;
     const y = top + row * (cellH + gap);
+    const shrink = 3;
     
     // Card background with solid border
-    const cardX = x + 6;
-    const cardW = cellW - 40;
-    const cardY = y;
-    const cardH = cellH;
+    const cardX = x + 6 + shrink;
+    const cardW = cellW - 40 - shrink * 2;
+    const cardY = y + shrink;
+    const cardH = cellH - shrink * 2;
     g.fillStyle = '#0f1a2a';
     g.fillRect(cardX, cardY, cardW, cardH);
     g.save();
@@ -3279,7 +3602,7 @@ function renderCharacterShop(g) {
     g.textAlign = 'center';
     g.textBaseline = 'top';
     g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-    g.fillText(char.name, centerX, y + 6);
+    g.fillText(char.name, centerX, cardY + 6);
 
     // 2) Pixel art centered
     if (id === 'default') {
@@ -3314,17 +3637,43 @@ function renderCharacterShop(g) {
       });
     }
 
-    // 3) Text bottom-centered (price/owned/selected)
-    const isPurchased = charInv.includes(id) || id === 'default';
+    // Locked overlay (drawn after artwork to dim card)
+    if (state.locked) {
+      g.save();
+      g.fillStyle = 'rgba(8, 12, 20, 0.78)';
+      g.fillRect(cardX, cardY, cardW, cardH);
+      if (state.levelLocked) {
+        g.translate(centerX, cardY + cardH / 2);
+        g.rotate(-Math.PI / 6);
+        g.fillStyle = '#ff5c5c';
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
+        g.font = `18px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+        g.fillText(`LV ${state.minLevel}`, 0, 0);
+      }
+      g.restore();
+    }
+
+    // 3) Text bottom-centered (owned/price/state)
     const isSelected = selectedCharacter === id;
     g.textAlign = 'center';
     g.textBaseline = 'bottom';
     g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-    if (isPurchased) {
-      if (isSelected) { g.fillStyle = '#ffff88'; g.fillText('SELECTED', centerX, y + cardH - 6); }
-      else { g.fillStyle = '#88ff88'; g.fillText('OWNED', centerX, y + cardH - 6); }
+    if (state.owned) {
+      if (isSelected) {
+        g.fillStyle = '#ffff88';
+        g.fillText('SELECTED', centerX, cardY + cardH - 6);
+      } else {
+        g.fillStyle = '#88ff88';
+        g.fillText('OWNED', centerX, cardY + cardH - 6);
+      }
+    } else if (state.locked) {
+      g.fillStyle = '#ffb0b0';
+      const footText = state.levelLocked ? `Reach LV ${state.minLevel}` : `Need $${state.price}`;
+      g.fillText(footText, centerX, cardY + cardH - 6);
     } else {
-      g.fillStyle = '#ffffff'; g.fillText(`$${char.price}`, centerX, y + cardH - 6);
+      g.fillStyle = '#ffffff';
+      g.fillText(`$${char.price}`, centerX, cardY + cardH - 6);
     }
   }
 
@@ -3473,10 +3822,17 @@ function renderCharacterShop(g) {
       g.fillStyle = '#fffa75';
       g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
       g.fillText(char.name.toUpperCase(), px + 10, yPos);
-      // Price/owned
-      if (id === 'default' || (shopInv.characters||[]).includes(id)) {
+      // Price/owned/locked state
+      const state = characterCardState(id, char, lvl, charInv, savings);
+      if (state.owned) {
         g.fillStyle = '#88ff88';
         g.fillText('[OWNED]', px + pw - 80, yPos);
+      } else if (state.levelLocked) {
+        g.fillStyle = '#ff8888';
+        g.fillText(`LV ${state.minLevel}`, px + pw - 80, yPos);
+      } else if (state.fundsLocked) {
+        g.fillStyle = '#ffb0b0';
+        g.fillText(`$${char.price}`, px + pw - 80, yPos);
       } else {
         g.fillStyle = '#ffffff';
         g.fillText(`$${char.price}`, px + pw - 80, yPos);
@@ -3491,6 +3847,7 @@ function renderCharacterShop(g) {
         pirate:  ['Combo catches earn', '+$2 extra'],
         wizard:  ['1.5x launch distance', 'with floaty fall'],
         knight:  ['-1 air jump but double', 'score and earnings'],
+        tailor:  ['50% chance extra rope', '+$1 when you grab it'],
         bird:    ['Fly can trigger during', 'any jump (needs Fly)'],
       };
       const descLines = summaries[id] || [''];
@@ -3584,7 +3941,7 @@ function renderShop(g) {
     const r = Math.floor(local / cols);
     const c = local % cols;
     const x = marginX + c * cellW;
-    const y = top + paddingTop + r * (cellH + gap);
+    const y = top + paddingTop + r * (cellH + gap) + 3;
     // card with 2px inner margin and solid border
     const m2 = 2;
     g.fillStyle = '#0f1a2a';
@@ -3619,15 +3976,12 @@ function renderShop(g) {
     else if (allItems[i].id === 'web') label = 'W';
     else if (allItems[i].id === 'big') label = 'B';
     else if (allItems[i].id === 'magnet') label = 'M';
-    else if (allItems[i].id === 'shield') label = 'S';
     else if (allItems[i].id === 'combo') label = 'C';
     else if (allItems[i].id === 'slow') label = '~';
     else if (allItems[i].id === 'double') label = '2';
     else if (allItems[i].id === 'lucky') label = 'L';
     else if (allItems[i].id === 'revival') label = 'R';
-    else if (allItems[i].id === 'rainbow') label = '=';
     else if (allItems[i].id === 'fever') label = 'F';
-    else if (allItems[i].id === 'bank') label = '%';
     else label = '?';
     g.fillText(label, x + cellW/2, y + Math.floor(cellH * 0.60));
     // 4) Level line (no max display)
@@ -3901,10 +4255,11 @@ function buildShopCards() {
       const local = i - startIdx;
       const r = Math.floor(local / cols);
       const c = local % cols;
-      const x = marginX + c * cellW + 6;
-      const baseY = top + r * (cellH + gapY);
-      const w = cellW - 40;
-      const h = cellH;
+      const shrink = 3;
+      const x = marginX + c * cellW + 6 + shrink;
+      const baseY = top + r * (cellH + gapY) + shrink;
+      const w = cellW - 40 - shrink * 2;
+      const h = cellH - shrink * 2;
       const card = new ShopCard(x, baseY, w, h, id, i, 'char');
       card.updateScroll(0);
       uiButtons.shop.cards.push(card);
@@ -3944,7 +4299,7 @@ function buildShopCards() {
       const c = local % cols;
       const borderMargin = 2;
       const x = marginX + c * cellW + 6 + borderMargin;
-      const baseY = top + paddingTop + r * (cellH + gap) + borderMargin; // 스크롤 제거
+      const baseY = top + paddingTop + r * (cellH + gap) + borderMargin + 3; // 스크롤 제거 + offset
       const w = (cellW - 12) - borderMargin * 2;
       const h = cellH - borderMargin * 2;
       const card = new ShopCard(x, baseY, w, h, item, i, 'item');
@@ -3997,6 +4352,7 @@ function buildShopCards() {
 }
 
 function updateShop(dt) {
+  updateStageTransition(dt);
   // Only process if in shop state
   if (State.current !== 'shop') return;
   
@@ -4266,16 +4622,10 @@ function tryPurchase(id) {
     const current = shopInv.luckyLevel || 0;
     if (current >= 5) { shopConfirm = null; return; }
     savings -= price; shopInv.luckyLevel = current + 1; saveShopInv();
-  } else if (id === 'rainbow') {
-    savings -= price; shopInv.rainbow = true; saveShopInv();
   } else if (id === 'fever') {
     const current = shopInv.feverLevel || 0;
     if (current >= 3) { shopConfirm = null; return; }
     savings -= price; shopInv.feverLevel = current + 1; saveShopInv();
-  } else if (id === 'bank') {
-    const current = shopInv.bankLevel || 0;
-    if (current >= 5) { shopConfirm = null; return; }
-    savings -= price; shopInv.bankLevel = current + 1; saveShopInv();
   }
   try { localStorage.setItem(SAVINGS_KEY, String(savings)); } catch(_){}
   shopConfirm = null;
