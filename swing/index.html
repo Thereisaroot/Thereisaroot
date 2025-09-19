@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="ko">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>Boing! Boing!</title>
+    <title data-i18n="meta.title">Boing! Boing!</title>
     <!-- Preload local font to avoid first-launch miss in WebView -->
     <!-- <link rel="preload" href="./assets/fonts/dalmoori.woff2" as="font" type="font/woff2" crossorigin> -->
     <!-- <link rel="preload" href="./assets/fonts/PressStart2P-Regular.ttf" as="font" type="font/ttf" crossorigin> -->
@@ -14,30 +14,30 @@
   <body>
     <div id="debug-panel" hidden>
       <div class="row">
-        <strong>Debug</strong>
-        <span class="hint">(Press V to toggle)</span>
+        <strong data-i18n="debug.title">Debug</strong>
+        <span class="hint" data-i18n="debug.hint">(Press V to toggle)</span>
       </div>
       <div class="grid">
-        <label>점프 속도 <input type="range" id="dbg-jumpSpeed" min="50" max="150" step="1"></label>
-        <label>점프 거리 <input type="range" id="dbg-jumpImpulse" min="300" max="1000" step="1"></label>
-        <label>Catch R <input type="range" id="dbg-catchR" min="8" max="80" step="1"></label>
-        <label>Buds Sway Min% <input type="range" id="dbg-budSwayMin" min="0" max="60" step="1"></label>
-        <label>Buds Sway Max% <input type="range" id="dbg-budSwayMax" min="0" max="80" step="1"></label>
-        <label>Lmin <input type="range" id="dbg-Lmin" min="40" max="300" step="1"></label>
-        <label>Lmax <input type="range" id="dbg-Lmax" min="100" max="520" step="1"></label>
-        <label>Length Jitter % <input type="range" id="dbg-Ljit" min="0" max="60" step="1"></label>
-        <label>Dmin <input type="range" id="dbg-Dmin" min="60" max="300" step="1"></label>
-        <label>Dmax <input type="range" id="dbg-Dmax" min="100" max="420" step="1"></label>
-        <label>Spacing Jitter Min <input type="range" id="dbg-SJmin" min="70" max="110" step="1"></label>
-        <label>Spacing Jitter Max <input type="range" id="dbg-SJmax" min="90" max="140" step="1"></label>
-        <label>Short Rope Prob <input type="range" id="dbg-shortProb" min="0" max="100" step="1"></label>
-        <label>Short Rope Factor <input type="range" id="dbg-shortFactor" min="50" max="95" step="1"></label>
-        <label>Long Rope Prob <input type="range" id="dbg-longProb" min="0" max="100" step="1"></label>
-        <label>Long Rope Factor <input type="range" id="dbg-longFactor" min="105" max="170" step="1"></label>
-        <label>Break Prob <input type="range" id="dbg-breakProb" min="0" max="100" step="1"></label>
-        <label>Item Spawn Prob <input type="range" id="dbg-itemProb" min="0" max="100" step="1"></label>
-        <label>DshortMin <input type="range" id="dbg-DshortMin" min="60" max="240" step="1"></label>
-        <label>DshortProb <input type="range" id="dbg-DshortProb" min="0" max="100" step="1"></label>
+        <label><span data-i18n="debug.jumpSpeed">Jump Speed</span> <input type="range" id="dbg-jumpSpeed" min="50" max="150" step="1"></label>
+        <label><span data-i18n="debug.jumpImpulse">Jump Impulse</span> <input type="range" id="dbg-jumpImpulse" min="300" max="1000" step="1"></label>
+        <label><span data-i18n="debug.catchRadius">Catch Radius</span> <input type="range" id="dbg-catchR" min="8" max="80" step="1"></label>
+        <label><span data-i18n="debug.budSwayMin">Buds Sway Min%</span> <input type="range" id="dbg-budSwayMin" min="0" max="60" step="1"></label>
+        <label><span data-i18n="debug.budSwayMax">Buds Sway Max%</span> <input type="range" id="dbg-budSwayMax" min="0" max="80" step="1"></label>
+        <label><span data-i18n="debug.lengthMin">Rope Length Min</span> <input type="range" id="dbg-Lmin" min="40" max="300" step="1"></label>
+        <label><span data-i18n="debug.lengthMax">Rope Length Max</span> <input type="range" id="dbg-Lmax" min="100" max="520" step="1"></label>
+        <label><span data-i18n="debug.lengthJitter">Length Jitter %</span> <input type="range" id="dbg-Ljit" min="0" max="60" step="1"></label>
+        <label><span data-i18n="debug.spacingMin">Spacing Min</span> <input type="range" id="dbg-Dmin" min="60" max="300" step="1"></label>
+        <label><span data-i18n="debug.spacingMax">Spacing Max</span> <input type="range" id="dbg-Dmax" min="100" max="420" step="1"></label>
+        <label><span data-i18n="debug.spacingJitterMin">Spacing Jitter Min</span> <input type="range" id="dbg-SJmin" min="70" max="110" step="1"></label>
+        <label><span data-i18n="debug.spacingJitterMax">Spacing Jitter Max</span> <input type="range" id="dbg-SJmax" min="90" max="140" step="1"></label>
+        <label><span data-i18n="debug.shortProb">Short Rope Prob</span> <input type="range" id="dbg-shortProb" min="0" max="100" step="1"></label>
+        <label><span data-i18n="debug.shortFactor">Short Rope Factor</span> <input type="range" id="dbg-shortFactor" min="50" max="95" step="1"></label>
+        <label><span data-i18n="debug.longProb">Long Rope Prob</span> <input type="range" id="dbg-longProb" min="0" max="100" step="1"></label>
+        <label><span data-i18n="debug.longFactor">Long Rope Factor</span> <input type="range" id="dbg-longFactor" min="105" max="170" step="1"></label>
+        <label><span data-i18n="debug.breakProb">Break Prob</span> <input type="range" id="dbg-breakProb" min="0" max="100" step="1"></label>
+        <label><span data-i18n="debug.itemProb">Item Spawn Prob</span> <input type="range" id="dbg-itemProb" min="0" max="100" step="1"></label>
+        <label><span data-i18n="debug.shortDistanceMin">Short Distance Min</span> <input type="range" id="dbg-DshortMin" min="60" max="240" step="1"></label>
+        <label><span data-i18n="debug.shortDistanceProb">Short Distance Prob</span> <input type="range" id="dbg-DshortProb" min="0" max="100" step="1"></label>
       </div>
     </div>
     <canvas id="game" aria-label="Boing! Boing! Canvas" role="img"></canvas>
@@ -57,7 +57,9 @@
                 document.body.appendChild(s);
               });
             }
-            loadScript("./src/items.js")
+            loadScript("./src/i18n.js")
+              .then(function(){ return loadScript("./src/i18n.lang.js"); })
+              .then(function(){ return loadScript("./src/items.js"); })
               .then(function(){ return loadScript("./src/chars.js"); })
               .then(function(){ return loadScript("./src/main.js"); })
               .catch(function(err){ console.error('Script load failed', err); });

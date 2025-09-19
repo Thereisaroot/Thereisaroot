@@ -4,6 +4,11 @@
   --ground: #1c2a3a;
   --accent: #e53d3d;
   --text: #ffffff;
+  --dalmoori-font-bump: 0px;
+}
+
+:lang(ko) {
+  --dalmoori-font-bump: 3px;
 }
 
 html, body {
@@ -41,7 +46,7 @@ body {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 6px;
-  font-size: 10px;
+  font-size: calc(10px + var(--dalmoori-font-bump));
 }
 #debug-panel .row .hint { color: #9fb3d1; font-weight: normal; }
 #debug-panel .grid {
@@ -54,7 +59,7 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  font-size: 10px;
+  font-size: calc(10px + var(--dalmoori-font-bump));
 }
 #debug-panel input[type="range"] {
   flex: 1;

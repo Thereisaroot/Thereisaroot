@@ -5,6 +5,8 @@ HTML5 Canvas 기반의 2D 로프 스윙 러너 게임입니다. 기본 도형 �
 ## 최근 업데이트
 - 스테이지 전환 시스템 추가: 10번째와 11번째 로프 사이에서 배경이 짙은 파스텔 팔레트로 단계적으로 교체되며 `STAGE N` 배너가 로프 위치에 맞춰 함께 이동합니다. 초기 스테이지는 기존 색상을 유지합니다.
 - Tailor 픽셀 캐릭터 도입: 중간 로프를 50% 확률로 이어 붙이고, 해당 로프를 잡으면 추가로 $1을 획득합니다.
+- 다국어(i18n) 모듈 도입: 영어/한국어 리소스를 제공하며, `src/i18n.js`가 DOM과 HUD를 동적으로 갱신합니다.
+- 인트로 `SETTINGS` 메뉴 추가: 언어를 실시간 변경하고 선택값을 `localStorage`(`webswing_lang`)에 저장합니다.
 
 ## 실행 및 배포
 - **웹**: 브라우저에서 `index.html`을 직접 열면 실행됩니다. 별도의 번들링/서버가 필요 없습니다.
@@ -15,11 +17,18 @@ HTML5 Canvas 기반의 2D 로프 스윙 러너 게임입니다. 기본 도형 �
 - **폰트**: `fonts.css`에서 로컬 `Press Start 2P`, `Dalmoori` 폰트를 등록합니다. `assets/fonts/`에 woff2/ttf 파일을 배치하세요.
 - **배포 스크립트**: `deploy.sh`는 로컬 전용 쉘 스크립트로, 외부 동기화와 캐시 버스터, git 커밋을 수행합니다 (환경 경로 수정 필요).
 
+## 다국어(i18n) 지원
+- `src/i18n.js`가 `webswing_lang` 키를 통해 현재 언어를 저장/로딩하고, DOM(`data-i18n`)과 HUD 텍스트를 즉시 갱신합니다.
+- `src/i18n.lang.js`에는 영어(en)·한국어(ko) 메시지 테이블이 포함되어 있으며, 필요 시 동일 구조로 새 언어를 추가할 수 있습니다.
+- 인트로 화면 하단의 `SETTINGS` 버튼에서 언어를 변경할 수 있고, 화살표/Enter/클릭 모두를 지원합니다.
+- 번역 키는 `t('namespace.key', params)`로 접근하며, 상점·가이드·보스 HUD 등 대부분의 문자열이 i18n으로 이관되었습니다.
+
 ## 주요 폴더/파일
 - `index.html`: Canvas/디버그 패널 DOM, SafeStorage 브리지 삽입, `src/main.js` 로딩.
 - `style.css`: 배경 그라데이션, 캔버스 스타일, 디버그 패널 UI.
 - `fonts.css`: 라틴/한글 폰트 페어링 (`GameFont`).
 - `src/main.js`: 게임 로직 전체 (상태 머신, 물리, 렌더, 상점/캐릭터 UI, 아이템 등) 단일 파일.
+- `src/i18n.js`, `src/i18n.lang.js`: 로컬 저장 기반 언어 선택기 및 en/ko 문자열 리소스.
 - `save/`: 브라우저·네이티브 공용 세이브 모듈.
   - `safeStorage(.mjs/nomodule)`: Capacitor Preferences + Filesystem 백업 + localStorage 미러.
   - `storageBridge(.mjs/nomodule)`: 기존 `localStorage` API를 패치해 SafeStorage와 양방향 동기화.
@@ -35,9 +44,10 @@ HTML5 Canvas 기반의 2D 로프 스윙 러너 게임입니다. 기본 도형 �
 ## 게임 루프와 상태 머신
 - 고정 물리 스텝 `dt = 1/120`, 렌더는 `requestAnimationFrame` 기반.
 - 상태(`State.current`):
-  - `intro`: 타이틀, 가이드, 상점 진입 버튼.
+  - `intro`: 타이틀, 가이드, 상점·SETTINGS 버튼 및 언어 변경.
   - `run`: 스윙/점프/아이템/카메라 업데이트.
-  - `gameover`: 결과, 레벨업 안내, `ITEMS`/`CHARS` 상점 버튼, Fast Mode 토글(레벨 ≥8).
+  - `boss_pending`/`boss`: 보스전 진입 전 세팅과 실전 진행(탄막·슬램·수집 타입).
+  - `gameover`: 결과, 레벨업 안내, `ITEMS`/`CHARS`/Fast Mode(레벨 ≥8) 버튼.
   - `shop`: 탭 구조(아이템/캐릭터), 페이지네이션, 도움말 모달.
 - Fast Mode: 레벨 8 이상 시 토글 가능. 이동 속도 및 스폰 관련 파라미터를 1.5배로 보정합니다.
 
@@ -48,6 +58,15 @@ HTML5 Canvas 기반의 2D 로프 스윙 러너 게임입니다. 기본 도형 �
 - **로프 스냅**: 경험치 10 이상부터 확률적 스냅 이벤트. 상점의 `Shield`가 있다면 1회 방어 예정.
 - **플레이어 조작**: 부착 시 입력 → 탈출/점프, 자유 상태에서 남은 공중 점프 소모. `Fly` 구매 시 롱프레스 비행 1회/런, `Web` 구매 시 긴급 로프 1회 사용.
 - **카메라**: X축만 추적, 상태별 스무딩. Fast Mode/스타 모드에서 보정.
+
+## 보스전 시스템
+- `bossStageTriggers` 설정에 맞춰 특정 스테이지에서 보스 프로그레스가 발동되며, `boss_pending` → `boss` 상태로 진입합니다.
+- 타입별 목표
+  - **탄막(bullet)**: 제한 시간 동안 탄환 회피, `Shots/Dodged` HUD와 전용 픽셀 보스가 등장.
+  - **슬램(slam)**: 주어진 시간 내 지정 횟수만큼 점프/충돌을 성공시켜 누적(`JUMPS`, 잔여 시간 표시).
+  - **수집(collect)**: 떨어지는 상자를 요구 수량만큼 회수, 놓치면 `missed` 카운트가 증가합니다.
+- 성공 시 추가 점수/캐시를 보상하고, 실패 시 복귀 연출 후 일반 런으로 복귀합니다. 진행 상황은 `t('boss.*')` 키로 HUD에 다국어로 표시됩니다.
+- 보스전 중 배경과 로프 스폰 로직이 전용 패턴으로 대체되며, 종료 시 기존 러너 상태(카메라 위치, 로프 버퍼)가 복구됩니다.
 
 ## 아이템 상자 & 스타 모드
 - EXP ≥ 50 이후 로프 사이에 상자 스폰 확률(`itemSpawnProb`).
@@ -127,4 +146,4 @@ SafeStorage/`localStorage`에 사용되는 주요 키:
 1. `index.html`을 브라우저에서 열기 → Space/클릭으로 시작.
 2. 로프 끝을 잡으며 전진, 점수 5 초과분만큼 SAV/EXP 획득.
 3. GAME OVER → `ITEMS` 또는 `CHARS` 상점에서 업그레이드 & 픽셀 캐릭터 구매.
-4. SafeStorage 덕분에 웹/네이티브 간 동일 세이브로 이어서 플레이 가능.
+4. 필요 시 인트로 `SETTINGS`에서 언어를 변경하고, SafeStorage 덕분에 웹/네이티브 간 동일 세이브로 이어서 플레이 가능.

@@ -1,16 +1,12 @@
 (function (global) {
   const CHAR_SPECS = {
     default: {
-      name: 'Polygon',
       price: 0,
       minLevel: 1,
       pixels: [],
       colors: [],
-      description: 'Classic geometric shape that evolves with level',
-      abilityNotes: 'Base form; upgrades tied to player level and shop items.',
     },
     robot: {
-      name: 'Robot',
       price: 1000,
       minLevel: 3,
       pixels: [
@@ -24,11 +20,8 @@
         [0,0,1,0,0,1,0,0],
       ],
       colors: ['#8B93AF', '#4A90E2', '#2E5266'],
-      description: 'Emergency web revival once per run',
-      abilityNotes: 'Instant rescue rope already implemented; post-crash palette swap handled in main.',
     },
     ninja: {
-      name: 'Ninja',
       price: 1500,
       minLevel: 5,
       pixels: [
@@ -42,11 +35,8 @@
         [1,0,0,0,0,0,0,1],
       ],
       colors: ['#1a1a1a', '#ffffff', '#ff0000'],
-      description: 'Extra air jump for agile escapes',
-      abilityNotes: 'Grants an additional air jump; consider stealth particle effects later.',
     },
     pirate: {
-      name: 'Pirate',
       price: 2000,
       minLevel: 7,
       pixels: [
@@ -60,11 +50,8 @@
         [1,0,0,0,0,0,0,1],
       ],
       colors: ['#8B4513', '#ffffff', '#000000', '#FFD700'],
-      description: 'Combo catches grant +$2',
-      abilityNotes: 'Bonus payout logic handled in main; future: add parrot buddy cosmetic.',
     },
     wizard: {
-      name: 'Wizard',
       price: 10,
       minLevel: 2,
       pixels: [
@@ -78,11 +65,8 @@
         [0,1,0,0,0,1,0,0],
       ],
       colors: ['#4B0082', '#ffffff', '#FFD700', '#C0C0C0'],
-      description: 'Floaty leaps and soft landings',
-      abilityNotes: 'Custom detach physics + slow-spin currently maintained; add staff sparkle later.',
     },
     knight: {
-      name: 'Knight',
       price: 3000,
       minLevel: 12,
       pixels: [
@@ -96,11 +80,8 @@
         [1,0,0,0,0,0,0,1],
       ],
       colors: ['#C0C0C0', '#808080', '#FF0000', '#FFD700'],
-      description: 'Double score & $ but -1 air jump',
-      abilityNotes: 'Stat modifiers applied in scoring; consider armor sheen animation.',
     },
     tailor: {
-      name: 'Tailor',
       price: 2600,
       minLevel: 9,
       pixels: [
@@ -114,11 +95,8 @@
         [0,0,0,3,3,0,0,0],
       ],
       colors: ['#ff6f61', '#ffd166', '#6a4c93', '#2b2d42'],
-      description: 'Stitches bonus ropes mid-air',
-      abilityNotes: '50% chance to add a mid-gap rope; catching it grants +$1 (Tailor only).',
     },
     bird: {
-      name: 'Bird',
       price: 2800,
       minLevel: 8,
       pixels: [
@@ -132,8 +110,6 @@
         [0,0,0,2,2,0,0,0],
       ],
       colors: ['#7dd3ff', '#2a9df4', '#ffd35a'],
-      description: 'Fly ability available any time',
-      abilityNotes: 'Permits Fly activation without jump depletion; consider feather particle trail.',
     },
   };
 

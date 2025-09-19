@@ -40,7 +40,7 @@ const CONFIG = {
   lowRopeAnchorDropMaxPx: 100,
   lowRopeFloorClearance: 100, // keep rope tip 100px above ground
   stageRopesPerStage: 5, // ropes per stage transition (test friendly)
-  bossStageTriggers: [3], // 1-based stage numbers that trigger boss fights (debug default)
+  bossStageTriggers: [3, 7, 10], // 1-based stage numbers that trigger boss fights
 
   // Extra randomization knobs
   spacingJitterMin: 0.90, // D *= randRange(min,max)
@@ -82,6 +82,56 @@ const CONFIG = {
 
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
+const I18N_API = typeof window !== 'undefined' ? window.I18N : null;
+
+function t(key, params) {
+  if (I18N_API && typeof I18N_API.t === 'function') {
+    return I18N_API.t(key, params);
+  }
+  return key;
+}
+
+function translateList(key) {
+  const raw = t(key);
+  if (!raw) return [];
+  return String(raw).split('\n');
+}
+
+function itemName(it) {
+  return t(`items.${it.id}.name`);
+}
+
+function itemDescriptionKey(id) {
+  return `items.${id}.description`;
+}
+
+function itemDescription(it) {
+  return t(itemDescriptionKey(it.id));
+}
+
+function characterName(id) {
+  return t(`chars.${id}.name`);
+}
+
+function characterSummaryLines(id) {
+  return translateList(`chars.${id}.summary`);
+}
+
+function commonText(key, params) {
+  return t(`common.${key}`, params);
+}
+
+if (I18N_API && typeof I18N_API.onChange === 'function') {
+  I18N_API.onChange(() => {
+    applyLocalizedAccessibility();
+    if (typeof buildIntroButtons === 'function') buildIntroButtons();
+    if (typeof buildGameOverButtons === 'function') buildGameOverButtons();
+    if (typeof buildShopCards === 'function') buildShopCards();
+    if (shopMsgKey) shopMsg = t(shopMsgKey, shopMsgArgs);
+  });
+}
+
+applyLocalizedAccessibility();
 
 let dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
 
@@ -96,6 +146,12 @@ function setupCanvas() {
 
 setupCanvas();
 window.addEventListener('resize', setupCanvas);
+
+function applyLocalizedAccessibility() {
+  if (canvas) {
+    canvas.setAttribute('aria-label', t('meta.canvasLabel'));
+  }
+}
 
 const Fonts = {
   loaded: false,
@@ -116,6 +172,60 @@ const Fonts = {
     }
   },
 };
+
+// Ensure Hangul text rendered with Dalmoori reads slightly larger than Latin glyphs.
+(function patchCanvasFontSizing() {
+  if (typeof CanvasRenderingContext2D === 'undefined') return;
+
+  const HANGUL_REGEX = /[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7A3]/;
+  const FONT_DELTA_PX = 3;
+
+  const proto = CanvasRenderingContext2D.prototype;
+  const originals = {
+    fillText: proto.fillText,
+    strokeText: proto.strokeText,
+    measureText: proto.measureText,
+  };
+
+  function adjustFontString(font) {
+    if (!font || typeof font !== 'string') return null;
+    if (!font.includes('GameFont') && !font.includes('Dalmoori')) return null;
+    return font.replace(/(^|\s)(\d+(?:\.\d+)?)px/, (full, prefix, size) => {
+      const adjusted = Math.max(0, parseFloat(size) + FONT_DELTA_PX);
+      return `${prefix}${adjusted}px`;
+    });
+  }
+
+  function withAdjustedFont(ctx, text, fn) {
+    const content = text == null ? '' : String(text);
+    if (!HANGUL_REGEX.test(content)) {
+      return fn();
+    }
+    const originalFont = ctx.font;
+    const adjusted = adjustFontString(originalFont);
+    if (!adjusted || adjusted === originalFont) {
+      return fn();
+    }
+    ctx.font = adjusted;
+    try {
+      return fn();
+    } finally {
+      ctx.font = originalFont;
+    }
+  }
+
+  proto.fillText = function patchedFillText(text, x, y, maxWidth) {
+    return withAdjustedFont(this, text, () => originals.fillText.call(this, text, x, y, maxWidth));
+  };
+
+  proto.strokeText = function patchedStrokeText(text, x, y, maxWidth) {
+    return withAdjustedFont(this, text, () => originals.strokeText.call(this, text, x, y, maxWidth));
+  };
+
+  proto.measureText = function patchedMeasureText(text) {
+    return withAdjustedFont(this, text, () => originals.measureText.call(this, text));
+  };
+})();
 
 // Tuning state (can be loaded from server later)
 const TUNING_KEY = 'webswing_tuning_v1';
@@ -349,6 +459,9 @@ window.addEventListener('keydown', (e) => {
   if (isFromDebug(e)) return; // ignore UI key capture while editing debug
   if (e.code === 'Space') UI.keyPressed = 'Space';
   else if (e.code === 'Escape') UI.keyPressed = 'Escape';
+  else if (e.code === 'ArrowDown') UI.keyPressed = 'ArrowDown';
+  else if (e.code === 'ArrowUp') UI.keyPressed = 'ArrowUp';
+  else if (e.code === 'Enter') UI.keyPressed = 'Enter';
 });
 window.addEventListener('keyup', (e) => {
   if (e.code === 'Space' || e.key === ' ' || e.key === 'Spacebar' ) onRelease();
@@ -1024,8 +1137,12 @@ class UIButton {
            my >= this.y && my <= this.y + this.h;
   }
   
+  labelText() {
+    return typeof this.label === 'function' ? this.label() : this.label;
+  }
+
   onClick() {
-    console.log(`Button clicked: ${this.label} in ${this.state}`);
+    console.log(`Button clicked: ${this.labelText()} in ${this.state}`);
     this.action();
   }
 }
@@ -1064,14 +1181,18 @@ class ShopCard {
       const state = characterCardState(charId, char, lvl, charInv, savings);
 
       if (state.levelLocked) {
-        shopMsg = `Requires LV ${state.minLevel}`;
+        shopMsgKey = 'shop.error.level';
+        shopMsgArgs = { level: state.minLevel };
+        shopMsg = t(shopMsgKey, shopMsgArgs);
         shopMsgTimer = 2.0;
         shopConfirm = null;
         return;
       }
 
       if (state.fundsLocked) {
-        shopMsg = `Need $${state.price}`;
+        shopMsgKey = 'shop.error.funds';
+        shopMsgArgs = { amount: state.price };
+        shopMsg = t(shopMsgKey, shopMsgArgs);
         shopMsgTimer = 2.0;
         shopConfirm = null;
         return;
@@ -1088,8 +1209,10 @@ class ShopCard {
     } else {
       // 일반 아이템 구매 처리
       if (isItemSoldOut(this.item)) {
-        shopMsg = 'Already purchased';
-        shopMsgTimer = 1.5;
+      shopMsgKey = 'shop.error.alreadyPurchased';
+      shopMsgArgs = null;
+      shopMsg = t(shopMsgKey);
+      shopMsgTimer = 1.5;
       } else {
         const price = nextPriceForItem(this.item);
         shopConfirm = { id: this.item.id, price: price };
@@ -1104,9 +1227,17 @@ function buildIntroButtons() {
   const lvl = getLevelByExp(exp);
   
   // Guide button
-  const btn = guideButtonRect();
-  uiButtons.intro.push(new UIButton(btn.x, btn.y, btn.w, btn.h, 'GUIDE', () => {
+  const footer = footerButtonRects();
+  uiButtons.intro.push(new UIButton(footer.guide.x, footer.guide.y, footer.guide.w, footer.guide.h, () => t('intro.guide'), () => {
     showGuide = true;
+  }, 'intro'));
+  uiButtons.intro.push(new UIButton(footer.settings.x, footer.settings.y, footer.settings.w, footer.settings.h, () => t('intro.settings'), () => {
+    showSettings = true;
+    settingsOptionRects = [];
+    const langs = I18N_API ? I18N_API.getAvailableLanguages() : ['en'];
+    const current = I18N_API ? I18N_API.getLanguage() : 'en';
+    const idx = langs.indexOf(current);
+    settingsFocusedIndex = idx >= 0 ? idx : 0;
   }, 'intro'));
   
   // Shop buttons (if level >= 2)
@@ -1118,7 +1249,7 @@ function buildIntroButtons() {
     const by = CONFIG.height * 0.65;
     
     // ITEMS button
-  uiButtons.intro.push(new UIButton(startX, by, bw, bh, 'ITEMS', () => {
+    uiButtons.intro.push(new UIButton(startX, by, bw, bh, () => t('common.items'), () => {
       previousState = State.current;
       State.current = 'shop';
       shopMode = 'items';
@@ -1127,7 +1258,7 @@ function buildIntroButtons() {
     }, 'intro'));
     
     // CHARS button
-  uiButtons.intro.push(new UIButton(startX + bw + spacing, by, bw, bh, 'CHARS', () => {
+    uiButtons.intro.push(new UIButton(startX + bw + spacing, by, bw, bh, () => t('common.chars'), () => {
       previousState = State.current;
       State.current = 'shop';
       shopMode = 'chars';
@@ -1150,7 +1281,7 @@ function buildGameOverButtons() {
     const by = CONFIG.height * 0.80;
     
     // ITEMS button
-  uiButtons.gameover.push(new UIButton(startX, by, bw, bh, 'ITEMS', () => {
+    uiButtons.gameover.push(new UIButton(startX, by, bw, bh, () => t('common.items'), () => {
       previousState = 'gameover';
       State.current = 'shop';
       shopMode = 'items';
@@ -1161,7 +1292,7 @@ function buildGameOverButtons() {
     }, 'gameover'));
     
     // CHARS button
-  uiButtons.gameover.push(new UIButton(startX + bw + spacing, by, bw, bh, 'CHARS', () => {
+    uiButtons.gameover.push(new UIButton(startX + bw + spacing, by, bw, bh, () => t('common.chars'), () => {
       previousState = 'gameover';
       State.current = 'shop';
       shopMode = 'chars';
@@ -1178,7 +1309,7 @@ function buildGameOverButtons() {
     const fx = (CONFIG.width - fw) / 2;
     const fy = CONFIG.height * 0.80 + 80;
     
-    uiButtons.gameover.push(new UIButton(fx, fy, fw, fh, fastModeEnabled ? 'FAST: ON' : 'FAST: OFF', () => {
+    uiButtons.gameover.push(new UIButton(fx, fy, fw, fh, () => t('game.fastToggle', { state: commonText(fastModeEnabled ? 'on' : 'off') }), () => {
       fastModeEnabled = !fastModeEnabled;
       localStorage.setItem('webswing_fastmode_v1', fastModeEnabled ? '1' : '0');
       buildGameOverButtons(); // Rebuild to update label
@@ -1189,6 +1320,8 @@ let previousState = 'intro'; // 상점 진입 전 상태 저장
 let shopConfirm = null; // { id, price }
 let selectedCharacter = 'default'; // Currently selected character
 let shopMsg = null;      // string message inside confirm (e.g., insufficient funds)
+let shopMsgKey = null;
+let shopMsgArgs = null;
 let shopMsgTimer = 0;    // seconds until message auto-dismiss
 let shopHelp = false;    // show help popup under SHOP
 let shopHelpScroll = 0;  // scroll position for help popup
@@ -1412,9 +1545,9 @@ let bossProgress = null;
 let bossBackgroundActive = false;
 
 const BOSS_HUD_TEXT = {
-  bullet: 'Dodge 6 bullets with infinite jumps!',
-  slam: 'Hit the boss 50 times with infinite jumps!',
-  collect: 'Collect 10 falling $ crates before they escape!',
+  bullet: 'boss.hud.bullet',
+  slam: 'boss.hud.slam',
+  collect: 'boss.hud.collect',
 };
 
 const BOSS_SPRITES = {
@@ -1620,7 +1753,7 @@ function grantStageGateReward(triggerRope) {
   if (triggerRope) triggerRope.stageGateRewarded = true;
   if (pendingStageGate) pendingStageGate.rewarded = true;
   score += STAGE_GATE_BONUS_SCORE;
-  spawnEffect('combo', player.x, player.y + 26, `+${STAGE_GATE_BONUS_SCORE}P +$${STAGE_GATE_BONUS_CASH}`);
+  spawnEffect('combo', player.x, player.y + 26, t('effects.stageBonus', { points: STAGE_GATE_BONUS_SCORE, cash: STAGE_GATE_BONUS_CASH }));
   savings += STAGE_GATE_BONUS_CASH;
   try { localStorage.setItem(SAVINGS_KEY, String(savings)); } catch (_) {}
   if (stageNumber != null) maybeTriggerBossStage(stageNumber, triggerRope);
@@ -2078,7 +2211,7 @@ function updateBossTypeCollect(dt, battle) {
     if (!box.caught && Math.hypot(dx, dy) <= player.r + 12) {
       box.caught = true;
       battle.collected += 1;
-      spawnEffect('combo', box.x, box.y - 12, '+$');
+      spawnEffect('combo', box.x, box.y - 12, t('effects.cashPickup'));
       battle.boxes.splice(i, 1);
       continue;
     }
@@ -2159,7 +2292,7 @@ function applyBossReturn(payload) {
 
   if (rewardScore > 0) {
     score += rewardScore;
-    spawnEffect('combo', player.x, player.y - 24, `+${rewardScore}P`);
+    spawnEffect('combo', player.x, player.y - 24, t('effects.pointsEarned', { points: rewardScore }));
   }
   if (rewardCash > 0) {
     savings += rewardCash;
@@ -2848,11 +2981,12 @@ function drawBackground(g) {
       g.textAlign = 'center';
       g.textBaseline = 'middle';
       g.font = `18px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+      const bannerText = t('stage.banner', { stage: stageBannerStage });
       g.fillStyle = 'rgba(0,0,0,0.25)';
-      g.fillText(`STAGE ${stageBannerStage}`, 2, 2);
+      g.fillText(bannerText, 2, 2);
       g.globalAlpha = alpha;
       g.fillStyle = '#ffffff';
-      g.fillText(`STAGE ${stageBannerStage}`, 0, 0);
+      g.fillText(bannerText, 0, 0);
       g.restore();
       g.globalAlpha = 1;
     }
@@ -2878,12 +3012,22 @@ function drawCenteredText(g, text, y, size = 18, color = '#fff') {
 }
 
 let showGuide = false;
-function guideButtonRect() {
+let showSettings = false;
+let settingsPopupRect = null;
+let settingsOptionRects = [];
+let settingsFocusedIndex = 0;
+
+function footerButtonRects() {
   const w = 92, h = 24;
-  const x = (CONFIG.width - w) / 2;
+  const spacing = 12;
+  const totalWidth = w * 2 + spacing;
   const groundY = CONFIG.height - CONFIG.groundH;
+  const baseX = (CONFIG.width - totalWidth) / 2;
   const y = Math.floor(groundY + (CONFIG.groundH - h) / 2);
-  return { x, y, w, h };
+  return {
+    guide: { x: baseX, y, w, h },
+    settings: { x: baseX + w + spacing, y, w, h }
+  };
 }
 function pointInRect(px, py, r) { return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h; }
 
@@ -2900,6 +3044,44 @@ function updateIntro(dt) {
   if (showGuide) {
     if (UI.clicked || UI.keyPressed === 'Escape' || UI.keyPressed === 'Space') {
       showGuide = false;
+      UI.reset();
+    }
+    return;
+  }
+
+  if (showSettings) {
+    const langs = I18N_API ? I18N_API.getAvailableLanguages() : ['en'];
+    if (UI.keyPressed === 'Escape') {
+      showSettings = false;
+      UI.reset();
+      return;
+    }
+    if ((UI.keyPressed === 'Space' || UI.keyPressed === 'Enter') && langs[settingsFocusedIndex]) {
+      if (I18N_API) I18N_API.setLanguage(langs[settingsFocusedIndex]);
+      showSettings = false;
+      UI.reset();
+      return;
+    }
+    if (UI.keyPressed === 'ArrowDown') {
+      settingsFocusedIndex = Math.min(langs.length - 1, settingsFocusedIndex + 1);
+      UI.reset();
+    } else if (UI.keyPressed === 'ArrowUp') {
+      settingsFocusedIndex = Math.max(0, settingsFocusedIndex - 1);
+      UI.reset();
+    }
+    if (UI.clicked) {
+      if (settingsPopupRect && pointInRect(UI.mx, UI.my, settingsPopupRect)) {
+        for (let i = 0; i < settingsOptionRects.length; i++) {
+          const rect = settingsOptionRects[i];
+          if (rect && pointInRect(UI.mx, UI.my, rect)) {
+            if (I18N_API) I18N_API.setLanguage(langs[i]);
+            showSettings = false;
+            break;
+          }
+        }
+      } else {
+        showSettings = false;
+      }
       UI.reset();
     }
     return;
@@ -2929,12 +3111,12 @@ function updateIntro(dt) {
   }
 }
 
-function renderIntro(g, t) {
+function renderIntro(g, time) {
   drawBackground(g);
-  drawCenteredText(g, 'Boing! Boing!', CONFIG.height * 0.28, 20);
-  const blink = Math.sin(t * 3) > 0 ? 1 : 0.3;
+  drawCenteredText(g, t('intro.title'), CONFIG.height * 0.28, 20);
+  const blink = Math.sin(time * 3) > 0 ? 1 : 0.3;
   g.globalAlpha = blink;
-  drawCenteredText(g, 'PRESS START', CONFIG.height * 0.52, 14);
+  drawCenteredText(g, t('intro.pressStart'), CONFIG.height * 0.52, 14);
   g.globalAlpha = 1;
   
   // Shop buttons (if level >= 2)
@@ -2956,7 +3138,7 @@ function renderIntro(g, t) {
     g.textAlign = 'center';
     g.textBaseline = 'middle';
     g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-    g.fillText('ITEMS', startX + bw/2, by + bh/2 + 1);
+    g.fillText(t('common.items'), startX + bw/2, by + bh/2 + 1);
     
     // CHARS button
     const charsX = startX + bw + spacing;
@@ -2965,21 +3147,32 @@ function renderIntro(g, t) {
     g.strokeStyle = '#b4c0d9';
     g.strokeRect(charsX, by, bw, bh);
     g.fillStyle = '#ffffff';
-    g.fillText('CHARS', charsX + bw/2, by + bh/2 + 1);
+    g.fillText(t('common.chars'), charsX + bw/2, by + bh/2 + 1);
   }
   
   // Guide button
-  const btn = guideButtonRect();
+  const footer = footerButtonRects();
+  const guideBtn = footer.guide;
   g.fillStyle = '#22334a';
   g.strokeStyle = '#b4c0d9';
   g.lineWidth = 2;
-  g.fillRect(btn.x, btn.y, btn.w, btn.h);
-  g.strokeRect(btn.x, btn.y, btn.w, btn.h);
+  g.fillRect(guideBtn.x, guideBtn.y, guideBtn.w, guideBtn.h);
+  g.strokeRect(guideBtn.x, guideBtn.y, guideBtn.w, guideBtn.h);
   g.fillStyle = '#ffffff';
   g.textAlign = 'center';
   g.textBaseline = 'middle';
   g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-  g.fillText('GUIDE', btn.x + btn.w/2, btn.y + btn.h/2 + 1);
+  g.fillText(t('intro.guide'), guideBtn.x + guideBtn.w/2, guideBtn.y + guideBtn.h/2 + 1);
+
+  // Settings button
+  const settingsBtn = footer.settings;
+  g.fillStyle = '#22334a';
+  g.strokeStyle = '#b4c0d9';
+  g.lineWidth = 2;
+  g.fillRect(settingsBtn.x, settingsBtn.y, settingsBtn.w, settingsBtn.h);
+  g.strokeRect(settingsBtn.x, settingsBtn.y, settingsBtn.w, settingsBtn.h);
+  g.fillStyle = '#ffffff';
+  g.fillText(t('intro.settings'), settingsBtn.x + settingsBtn.w/2, settingsBtn.y + settingsBtn.h/2 + 1);
 
   // Popup overlay
   if (showGuide) {
@@ -2995,13 +3188,7 @@ function renderIntro(g, t) {
     g.lineWidth = 2;
     g.fillRect(px, py, pw, ph);
     g.strokeRect(px, py, pw, ph);
-    const lines = [
-      'Game Guide',
-      '',
-      '- Go as far as possible',
-      '- Use multiple jumps each run',
-      '- Catch the rope tip to attach',
-    ];
+    const lines = translateList('guide.lines');
     g.fillStyle = '#ffffff';
     g.textAlign = 'left';
     g.textBaseline = 'top';
@@ -3014,8 +3201,61 @@ function renderIntro(g, t) {
     g.fillStyle = '#b4c0d9';
     g.font = `8px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
     g.textAlign = 'center';
-    g.fillText('Click anywhere to close', px + pw/2, py + ph - 18);
+    g.fillText(t('common.clickAnywhereToClose'), px + pw/2, py + ph - 18);
     g.restore();
+  }
+
+  if (showSettings) {
+    g.save();
+    g.fillStyle = 'rgba(0,0,0,0.55)';
+    g.fillRect(0, 0, CONFIG.width, CONFIG.height);
+    const pw = CONFIG.width * 0.7;
+    const ph = Math.min(200, CONFIG.height * 0.5);
+    const px = (CONFIG.width - pw) / 2;
+    const py = CONFIG.height * 0.32;
+    settingsPopupRect = { x: px, y: py, w: pw, h: ph };
+    g.fillStyle = '#0f1a2a';
+    g.strokeStyle = '#b4c0d9';
+    g.lineWidth = 2;
+    g.fillRect(px, py, pw, ph);
+    g.strokeRect(px, py, pw, ph);
+    g.fillStyle = '#ffffff';
+    g.textAlign = 'center';
+    g.textBaseline = 'top';
+    g.font = `12px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+    g.fillText(t('settings.title'), px + pw / 2, py + 10);
+    const langs = I18N_API ? I18N_API.getAvailableLanguages() : ['en'];
+    const current = I18N_API ? I18N_API.getLanguage() : 'en';
+    if (settingsFocusedIndex >= langs.length) settingsFocusedIndex = langs.length - 1;
+    if (settingsFocusedIndex < 0) settingsFocusedIndex = 0;
+    const optionTop = py + 40;
+    const optionHeight = 26;
+    settingsOptionRects = [];
+    g.textAlign = 'left';
+    for (let i = 0; i < langs.length; i++) {
+      const code = langs[i];
+      const label = t(`languages.${code}.name`);
+      const oy = optionTop + i * optionHeight;
+      const rect = { x: px + 20, y: oy - 6, w: pw - 40, h: optionHeight };
+      settingsOptionRects.push(rect);
+      const isFocused = i === settingsFocusedIndex;
+      const isSelected = code === current;
+      g.fillStyle = isFocused ? '#22334a' : 'transparent';
+      if (isFocused) {
+        g.fillRect(rect.x, rect.y, rect.w, rect.h);
+      }
+      g.fillStyle = '#ffffff';
+      g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+      g.fillText(`${label} ${isSelected ? t('settings.currentMarker') : ''}`, rect.x + 10, oy);
+    }
+    g.textAlign = 'center';
+    g.fillStyle = '#b4c0d9';
+    g.font = `9px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+    g.fillText(t('settings.help'), px + pw/2, py + ph - 18);
+    g.restore();
+  } else {
+    settingsPopupRect = null;
+    settingsOptionRects = [];
   }
 }
 
@@ -3231,7 +3471,7 @@ function updateRun(dt) {
       slowMoTimer = SLOW_MO_DURATION;
       slowMoCooldown = SLOW_MO_COOLDOWN;
       activeSlowCharges = Math.max(0, activeSlowCharges - 1);
-      spawnEffect('combo', player.x, player.y - 24, 'SLOW!');
+      spawnEffect('combo', player.x, player.y - 24, t('effects.slow'));
     }
   }
 
@@ -3465,7 +3705,7 @@ function updateRun(dt) {
             pirateBonusThisRun += 2;
           }
           if (comboCount >= 2) {
-            spawnEffect('combo', player.x, player.y - 30, `${comboCount} COMBO`);
+            spawnEffect('combo', player.x, player.y - 30, t('effects.comboCount', { combo: comboCount }));
           }
         } else {
           comboCount = 0;
@@ -3484,7 +3724,7 @@ function updateRun(dt) {
         score += scoreGain;
         if (tailorCatchBonus > 0) {
           tailorCashBonusThisRun += tailorCatchBonus;
-          spawnEffect('combo', player.x, player.y - 18, '+$1');
+          spawnEffect('combo', player.x, player.y - 18, t('effects.tailorBonus', { amount: `$${tailorCatchBonus}` }));
           rope.tailorBonus = 0;
         }
         if (rope.stageGateStage != null && !rope.stageGateRewarded) {
@@ -3560,7 +3800,7 @@ function updateRun(dt) {
     }
     if (activeRevivalCharges > 0) {
       activeRevivalCharges = Math.max(0, activeRevivalCharges - 1);
-      spawnEffect('combo', player.x, player.y - 30, 'REVIVE!');
+      spawnEffect('combo', player.x, player.y - 30, t('effects.revive'));
       const anchorX = player.x;
       const anchorY = CONFIG.ceilingY;
       const tipTarget = groundY - (collR + 24);
@@ -3788,17 +4028,17 @@ function renderRun(g) {
   g.textAlign = 'left';
   g.textBaseline = 'top';
   g.font = `12px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-  g.fillText(`SCORE ${score}`, 12, 10);
-  g.fillText(`BEST ${best}`, 12, 28);
+  g.fillText(t('hud.score', { score }), 12, 10);
+  g.fillText(t('hud.best', { best }), 12, 28);
   g.textAlign = 'right';
-  g.fillText(`$ ${savings}`, CONFIG.width - 12, 10);
+  g.fillText(t('hud.savings', { amount: savings }), CONFIG.width - 12, 10);
   // Fever badge and timer
   if (starModeActive) {
     const rem = Math.max(0, starModeEndTime - simTime);
     g.textAlign = 'center';
     g.fillStyle = '#ffd966';
     g.font = `12px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-    g.fillText('FEVER', CONFIG.width / 2, 10);
+    g.fillText(t('hud.fever'), CONFIG.width / 2, 10);
     // Timer bar under the title
     const bw = 120, bh = 6;
     const bx = (CONFIG.width - bw) / 2;
@@ -3817,7 +4057,7 @@ function renderRun(g) {
   // Level display
   g.textAlign = 'left';
   g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-  g.fillText(`LV ${getLevelByExp(exp)}`, 12, 46);
+  g.fillText(t('hud.level', { level: getLevelByExp(exp) }), 12, 46);
 }
 
 function renderBoss(g) {
@@ -3860,30 +4100,30 @@ function renderBoss(g) {
   g.textAlign = 'center';
   g.textBaseline = 'top';
   g.font = `16px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-  const title = bossState ? `BOSS STAGE ${bossState.stageNumber}` : 'BOSS STAGE';
+  const title = bossState ? t('boss.stageWithNumber', { stage: bossState.stageNumber }) : t('boss.stage');
   g.fillText(title, CONFIG.width / 2, 16);
   g.font = `12px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
   if (bossState && bossState.battle) {
     if (bossState.type === 'bullet') {
       const b = bossState.battle;
-      g.fillText(`Shots ${b.shotsFired}/${b.totalShots} | Dodged ${b.dodged}/${b.requiredDodges}`, CONFIG.width / 2, 40);
+      g.fillText(t('boss.bulletHud', { shots: b.shotsFired, total: b.totalShots, dodged: b.dodged, required: b.requiredDodges }), CONFIG.width / 2, 40);
     } else if (bossState.type === 'slam') {
       const b = bossState.battle;
       const remain = Math.max(0, b.duration - b.bossTimer).toFixed(1);
       g.font = `26px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-      g.fillText(`${b.jumpCount || 0} / ${b.jumpGoal || 80} JUMPS`, CONFIG.width / 2, CONFIG.height * 0.42);
+      g.fillText(t('boss.slamHudProgress', { current: b.jumpCount || 0, goal: b.jumpGoal || 80 }), CONFIG.width / 2, CONFIG.height * 0.42);
       g.font = `12px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-      g.fillText(`Time ${remain}s`, CONFIG.width / 2, 40);
+      g.fillText(t('boss.slamHudTime', { seconds: remain }), CONFIG.width / 2, 40);
     } else if (bossState.type === 'collect') {
       const b = bossState.battle;
-      g.fillText(`Collected ${b.collected}/${b.totalShots} | Missed ${b.missed}/${b.missLimit}`, CONFIG.width / 2, 40);
+      g.fillText(t('boss.collectHud', { collected: b.collected, total: b.totalShots, missed: b.missed, allowed: b.missLimit }), CONFIG.width / 2, 40);
     }
   }
   if (bossState) {
-    const info = BOSS_HUD_TEXT[bossState.type];
-    if (info) {
+    const infoKey = BOSS_HUD_TEXT[bossState.type];
+    if (infoKey) {
       g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-      g.fillText(info, CONFIG.width / 2, 56);
+      g.fillText(t(infoKey), CONFIG.width / 2, 56);
     }
   }
   g.restore();
@@ -3908,7 +4148,7 @@ function renderRouletteOverlay(g) {
   g.textBaseline = 'top';
   g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
   g.fillStyle = '#ffffff';
-  g.fillText('ROULETTE', centerX, y - 14);
+  g.fillText(t('roulette.title'), centerX, y - 14);
 
   function drawCell(x, label, highlight) {
     g.fillStyle = highlight ? 'rgba(47,71,99,0.42)' : 'rgba(34,51,74,0.32)';
@@ -3933,13 +4173,17 @@ function renderRouletteOverlay(g) {
   g.textBaseline = 'top';
   g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
   if (rouletteState.spinning) {
-    g.fillText('Spinning...', centerX, y + boxH + 6);
+    g.fillText(t('roulette.spinning'), centerX, y + boxH + 6);
   } else if (rouletteSummary && rouletteState.applied) {
     const opSymbol = rouletteSummary.op === 'x' ? '×' : rouletteSummary.op;
-    const formula = `${rouletteSummary.before} ${opSymbol} ${rouletteSummary.value} = ${rouletteSummary.after}`;
-    g.fillText(formula, centerX, y + boxH + 6);
+    g.fillText(t('roulette.formula', {
+      before: rouletteSummary.before,
+      op: opSymbol,
+      value: rouletteSummary.value,
+      after: rouletteSummary.after,
+    }), centerX, y + boxH + 6);
   } else if (settled) {
-    g.fillText('Result locked', centerX, y + boxH + 6);
+    g.fillText(t('roulette.locked'), centerX, y + boxH + 6);
   }
 
   g.restore();
@@ -4042,16 +4286,16 @@ function renderGameOver(g) {
   drawBackground(g);
   drawParticles(g);
   if (lastDemoLoss) {
-    drawCenteredText(g, 'GAME OVER', CONFIG.height * 0.30 - 20, 18, '#ff6666');
+    drawCenteredText(g, t('gameOver.title'), CONFIG.height * 0.30 - 20, 18, '#ff6666');
     g.fillStyle = '#ffffff';
     g.textAlign = 'center';
     g.textBaseline = 'top';
     g.font = `12px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-    g.fillText('YOU LOSE EVERYTHING.', CONFIG.width / 2, CONFIG.height * 0.40 - 20);
-    g.fillText('YOU WILL BECOME A SMALL EGG.', CONFIG.width / 2, CONFIG.height * 0.46 - 20);
+    g.fillText(t('gameOver.demoLossLine1'), CONFIG.width / 2, CONFIG.height * 0.40 - 20);
+    g.fillText(t('gameOver.demoLossLine2'), CONFIG.width / 2, CONFIG.height * 0.46 - 20);
   } else {
-    drawCenteredText(g, 'GAME OVER', CONFIG.height * 0.30 - 20, 18, '#ff6666');
-    drawCenteredText(g, `SCORE ${score}`, CONFIG.height * 0.40 - 20, 12);
+    drawCenteredText(g, t('gameOver.title'), CONFIG.height * 0.30 - 20, 18, '#ff6666');
+    drawCenteredText(g, t('hud.score', { score }), CONFIG.height * 0.40 - 20, 12);
 
     // Savings summary and next target
     g.fillStyle = '#ffffff';
@@ -4066,35 +4310,39 @@ function renderGameOver(g) {
     }
     let nextText;
     if (demoActive) {
-      nextText = 'Try to exceed 111P';
+      nextText = t('gameOver.nextDemo');
     } else {
       const next = nextLevelThreshold(exp);
       if (next) {
         const remaining = Math.max(0, next - exp);
-        nextText = `Next Level: ${remaining}P to go`;
+        nextText = t('gameOver.nextLevel', { remaining });
       } else {
-        nextText = 'Max level reached!';
+        nextText = t('gameOver.maxLevel');
       }
     }
     const earnedText = (lastEarned > 0 || lastExpEarned > 0)
-      ? `Gained: $${lastEarned} / +${lastExpEarned}P`
-      : 'Earn $ and P by scoring over 5';
+      ? t('gameOver.earned', { money: lastEarned, exp: lastExpEarned })
+      : t('gameOver.earnedHint');
     // Next Target line with Score font size (12px)
     g.font = `12px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
     g.fillText(nextText, CONFIG.width / 2, y0);
     // Other lines with default small font (10px)
     g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
     // EXP and $ in one line
-    g.fillText(`EXP: ${exp}P | $${savings}`, CONFIG.width / 2, y0 + 32);
+    g.fillText(t('gameOver.stats', { exp, savings }), CONFIG.width / 2, y0 + 32);
     // Earn explanation three lines below
     g.fillText(earnedText, CONFIG.width / 2, y0 + 80);
     if (rouletteSummary) {
       const opSymbol = rouletteSummary.op === 'x' ? '×' : rouletteSummary.op;
-      const formula = `${rouletteSummary.before} ${opSymbol} ${rouletteSummary.value} = ${rouletteSummary.after}`;
-      g.fillText(`Roulette: ${formula}`, CONFIG.width / 2, y0 + 96);
+      g.fillText(t('gameOver.rouletteResult', {
+        before: rouletteSummary.before,
+        op: opSymbol,
+        value: rouletteSummary.value,
+        after: rouletteSummary.after,
+      }), CONFIG.width / 2, y0 + 96);
     } else if (rouletteState && rouletteState.active && rouletteState.finalOp != null) {
       const opSymbol = rouletteState.finalOp === 'x' ? '×' : rouletteState.finalOp;
-      g.fillText(`Roulette: ${opSymbol} ${rouletteState.finalValue}`, CONFIG.width / 2, y0 + 96);
+      g.fillText(t('gameOver.roulettePending', { op: opSymbol, value: rouletteState.finalValue }), CONFIG.width / 2, y0 + 96);
     }
   }
 
@@ -4106,16 +4354,16 @@ function renderGameOver(g) {
     g.textAlign = 'center';
     g.textBaseline = 'middle';
     g.font = `12px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-    g.fillText(`LEVEL UP! LV ${gameOverLevelUp.to}`, cx, cy);
+    g.fillText(t('gameOver.levelUp', { level: gameOverLevelUp.to }), cx, cy);
   }
   const wait = CONFIG.gameOverWait || 5.0;
   const rem = Math.max(0, wait - gameOverTimer);
   if (rem > 0) {
     // Countdown until retry is enabled
     const sec = Math.ceil(rem);
-    drawCenteredText(g, `RETRY IN ${sec}`, CONFIG.height * 0.74 - 20, 10, '#b4c0d9');
+    drawCenteredText(g, t('gameOver.retryCountdown', { seconds: sec }), CONFIG.height * 0.74 - 20, 10, '#b4c0d9');
   } else {
-    drawCenteredText(g, 'CLICK / SPACE TO RETRY', CONFIG.height * 0.74 - 20, 10, '#b4c0d9');
+    drawCenteredText(g, t('gameOver.retryReady'), CONFIG.height * 0.74 - 20, 10, '#b4c0d9');
     // Shop buttons (Level >= 2)
     const lvl = getLevelByExp(exp);
     if (lvl >= 2) {
@@ -4136,7 +4384,7 @@ function renderGameOver(g) {
       g.textAlign = 'center';
       g.textBaseline = 'middle';
       g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-      g.fillText('ITEMS', itemsBx + bw/2, by + bh/2 + 1);
+      g.fillText(t('common.items'), itemsBx + bw/2, by + bh/2 + 1);
       
       // CHARS button
       const charsBx = startX + bw + spacing;
@@ -4145,7 +4393,7 @@ function renderGameOver(g) {
       g.strokeStyle = '#b4c0d9';
       g.strokeRect(charsBx, by, bw, bh);
       g.fillStyle = '#ffffff';
-      g.fillText('CHARS', charsBx + bw/2, by + bh/2 + 1);
+      g.fillText(t('common.chars'), charsBx + bw/2, by + bh/2 + 1);
 
       // Fast mode toggle (Level >= 8)
       if (lvl >= 8) {
@@ -4161,7 +4409,7 @@ function renderGameOver(g) {
         g.textAlign = 'center';
         g.textBaseline = 'middle';
         g.font = `10px "Press Start 2P", monospace`;
-        g.fillText(`FAST MODE: ${fastModeEnabled ? 'ON' : 'OFF'}`, bx + bw/2, by + bh/2 + 1);
+        g.fillText(t('game.fastToggle', { state: commonText(fastModeEnabled ? 'on' : 'off') }), bx + bw/2, by + bh/2 + 1);
       }
     }
   }
@@ -4339,28 +4587,11 @@ function shopGrid() {
 
 function shopHelpRect() { return lastShopHelpRect; }
 
-function itemDescription(id) {
-  if (id === 'fly') return 'Hold to fly upward once per run.';
-  if (id === 'plusjump') return 'Extra air jump during free fall.';
-  if (id === 'glow') return 'Glow effect and +5% catch range per level (max 3).';
-  if (id === 'buds') return 'Adds trailing orbs to vertices (max = sides).';
-  if (id === 'big') return 'Grows by 2.5% per level (max = player level).';
-  if (id === 'gamble') return 'Next run earns 1.5x money (one-time use).';
-  if (id === 'web') return 'Emergency web when falling (one-time use).';
-  if (id === 'magnet') return 'Magnet radius +10px per level and pulls boxes inward (max 5).';
-  if (id === 'combo') return 'Combo score +0.5x per level (max 3).';
-  if (id === 'slow') return 'Auto slow-mo when falling (3 times per run).';
-  if (id === 'double') return 'Jump boost 1.3x stronger from ropes.';
-  if (id === 'lucky') return 'Item spawn chance +5% per level (max 5).';
-  if (id === 'revival') return 'Revive once when falling to ground.';
-  if (id === 'fever') return 'Star mode duration +2 sec per level (max 3).';
-  return 'No description.';
-}
-
 function renderCharacterShop(g) {
   // Character shop UI
   const titleY = CONFIG.height * 0.12;
-  drawCenteredText(g, 'CHARACTERS', titleY, 14);
+  const charactersTitle = t('shop.charactersTitle');
+  drawCenteredText(g, charactersTitle, titleY, 14);
   
   const lvl = getLevelByExp(exp);
   const charInv = shopInv.characters || [];
@@ -4384,7 +4615,7 @@ function renderCharacterShop(g) {
   // Help button '?' for character shop
   {
     g.font = `14px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-    const tw = g.measureText('CHARACTERS').width;
+    const tw = g.measureText(charactersTitle).width;
     const cx = CONFIG.width / 2;
     const left = cx - tw / 2;
     const w = 20, h = 20;
@@ -4452,7 +4683,7 @@ function renderCharacterShop(g) {
     g.textAlign = 'center';
     g.textBaseline = 'top';
     g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-    g.fillText(char.name, centerX, cardY + 6);
+    g.fillText(characterName(id), centerX, cardY + 6);
 
     // 2) Pixel art centered
     if (id === 'default') {
@@ -4499,7 +4730,7 @@ function renderCharacterShop(g) {
         g.textAlign = 'center';
         g.textBaseline = 'middle';
         g.font = `18px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-        g.fillText(`LV ${state.minLevel}`, 0, 0);
+        g.fillText(t('shop.lockTag', { level: state.minLevel }), 0, 0);
       }
       g.restore();
     }
@@ -4512,18 +4743,20 @@ function renderCharacterShop(g) {
     if (state.owned) {
       if (isSelected) {
         g.fillStyle = '#ffff88';
-        g.fillText('SELECTED', centerX, cardY + cardH - 6);
+        g.fillText(t('shop.selected'), centerX, cardY + cardH - 6);
       } else {
         g.fillStyle = '#88ff88';
-        g.fillText('OWNED', centerX, cardY + cardH - 6);
+        g.fillText(t('shop.owned'), centerX, cardY + cardH - 6);
       }
     } else if (state.locked) {
       g.fillStyle = '#ffb0b0';
-      const footText = state.levelLocked ? `Reach LV ${state.minLevel}` : `Need $${state.price}`;
+      const footText = state.levelLocked
+        ? t('shop.lockedLevel', { level: state.minLevel })
+        : t('shop.lockedFunds', { amount: state.price });
       g.fillText(footText, centerX, cardY + cardH - 6);
     } else {
       g.fillStyle = '#ffffff';
-      g.fillText(`$${char.price}`, centerX, cardY + cardH - 6);
+      g.fillText(t('shop.price', { amount: char.price }), centerX, cardY + cardH - 6);
     }
   }
 
@@ -4564,7 +4797,7 @@ function renderCharacterShop(g) {
   g.textAlign = 'center';
   g.textBaseline = 'middle';
   g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-  g.fillText('BACK', startX + bw/2, by + bh/2 + 1);
+  g.fillText(t('common.back'), startX + bw/2, by + bh/2 + 1);
   
   // ITEMS button  
   const itemsX = startX + bw + spacing;
@@ -4573,7 +4806,7 @@ function renderCharacterShop(g) {
   g.strokeStyle = '#b4c0d9';
   g.strokeRect(itemsX, by, bw, bh);
   g.fillStyle = '#ffffff';
-  g.fillText('ITEMS', itemsX + bw/2, by + bh/2 + 1);
+  g.fillText(t('common.items'), itemsX + bw/2, by + bh/2 + 1);
   
   // Character purchase/selection confirmation
   if (shopConfirm && shopConfirm.type === 'character') {
@@ -4601,11 +4834,11 @@ function renderCharacterShop(g) {
     g.font = `12px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
     
     if (isPurchased) {
-      g.fillText(`Select ${char.name}?`, px + pw/2, py + 20);
+      g.fillText(t('shop.confirmSelectCharacter', { name: characterName(shopConfirm.id) }), px + pw/2, py + 20);
     } else {
-      g.fillText(`Buy ${char.name} for $${char.price}?`, px + pw/2, py + 10);
+      g.fillText(t('shop.confirmPurchase', { name: characterName(shopConfirm.id), amount: char.price }), px + pw/2, py + 10);
       g.font = `8px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-      g.fillText(`$ ${savings}`, px + pw/2, py + 38);
+      g.fillText(t('hud.savings', { amount: savings }), px + pw/2, py + 38);
     }
     
     // YES/NO buttons
@@ -4624,8 +4857,8 @@ function renderCharacterShop(g) {
     g.fillStyle = '#ffffff';
     g.textBaseline = 'middle';
     g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-    g.fillText('YES', bx2 + bw2/2, by2 + bh2/2);
-    g.fillText('NO', bx3 + bw2/2, by2 + bh2/2);
+    g.fillText(t('common.yes'), bx2 + bw2/2, by2 + bh2/2);
+    g.fillText(t('common.no'), bx3 + bw2/2, by2 + bh2/2);
   }
   
   // Help popup for character shop (pagination, no scroll)
@@ -4647,7 +4880,7 @@ function renderCharacterShop(g) {
     g.textAlign = 'center';
     g.textBaseline = 'top';
     g.font = `12px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-    g.fillText('CHARACTER INFO', px + pw/2, py + 10);
+    g.fillText(t('shop.characterInfoTitle'), px + pw/2, py + 10);
     // Content area (no scroll)
     const contentY = py + 35;
     const contentBottom = py + ph - 70;
@@ -4671,36 +4904,27 @@ function renderCharacterShop(g) {
       // Name
       g.fillStyle = '#fffa75';
       g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-      g.fillText(char.name.toUpperCase(), px + 10, yPos);
+      g.fillText(characterName(id).toUpperCase(), px + 10, yPos);
       // Price/owned/locked state
       const state = characterCardState(id, char, lvl, charInv, savings);
       if (state.owned) {
         g.fillStyle = '#88ff88';
-        g.fillText('[OWNED]', px + pw - 80, yPos);
+        g.fillText(t('shop.ownedTag'), px + pw - 80, yPos);
       } else if (state.levelLocked) {
         g.fillStyle = '#ff8888';
-        g.fillText(`LV ${state.minLevel}`, px + pw - 80, yPos);
+        g.fillText(t('shop.levelTag', { level: state.minLevel }), px + pw - 80, yPos);
       } else if (state.fundsLocked) {
         g.fillStyle = '#ffb0b0';
-        g.fillText(`$${char.price}`, px + pw - 80, yPos);
+        g.fillText(t('shop.price', { amount: char.price }), px + pw - 80, yPos);
       } else {
         g.fillStyle = '#ffffff';
-        g.fillText(`$${char.price}`, px + pw - 80, yPos);
+        g.fillText(t('shop.price', { amount: char.price }), px + pw - 80, yPos);
       }
       // Desc lines (two-line summary)
       g.fillStyle = '#b4c0d9';
       g.font = `8px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-      const summaries = {
-        default: ['Classic geometric shape that', 'evolves with level'],
-        robot:   ['Emergency web rescue', 'once per run'],
-        ninja:   ['Extra air jump for', 'sharp maneuvers'],
-        pirate:  ['Combo catches earn', '+$2 extra'],
-        wizard:  ['1.5x launch distance', 'with floaty fall'],
-        knight:  ['-1 air jump but double', 'score and earnings'],
-        tailor:  ['50% chance extra rope', '+$1 when you grab it'],
-        bird:    ['Fly can trigger during', 'any jump (needs Fly)'],
-      };
-      const descLines = summaries[id] || [''];
+      const summary = t(`chars.${id}.help`);
+      const descLines = String(summary || '').split('\n');
       descLines.forEach((line, li) => g.fillText(line, px + 10, yPos + lineHeight + li * 10));
       yPos += entryH;
       if (yPos > contentY + contentH - 10) break;
@@ -4726,7 +4950,7 @@ function renderCharacterShop(g) {
     g.textBaseline = 'middle';
     g.fillStyle = '#b4c0d9';
     g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-    g.fillText('Click outside to close', px + pw/2, py + ph - 18);
+    g.fillText(t('common.clickOutsideToClose'), px + pw/2, py + ph - 18);
   }
 }
 
@@ -4743,7 +4967,8 @@ function renderShop(g) {
   
   // Original item shop
   const titleY = CONFIG.height * 0.12;
-  drawCenteredText(g, 'ITEMS', titleY, 14);
+  const itemsTitle = t('shop.itemsTitle');
+  drawCenteredText(g, itemsTitle, titleY, 14);
   // Show $ at top-right, two lines below the SHOP title
   {
     const headerY = CONFIG.height * 0.12;
@@ -4751,13 +4976,13 @@ function renderShop(g) {
     g.textAlign = 'right';
     g.textBaseline = 'top';
     g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-    g.fillText(`$ ${savings}`, CONFIG.width - 12, headerY + 24);
+    g.fillText(t('hud.savings', { amount: savings }), CONFIG.width - 12, headerY + 24);
   }
   // Help button '?' positioned 20px to the right of the SHOP title
   {
     // measure SHOP text width to place the '?' with 20px gap
     g.font = `14px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-    const tw = g.measureText('SHOP').width;
+    const tw = g.measureText(itemsTitle).width;
     const cx = CONFIG.width / 2;
     const left = cx - tw / 2;
     const w = 20, h = 20;
@@ -4808,11 +5033,11 @@ function renderShop(g) {
     g.textAlign = 'left';
     g.textBaseline = 'top';
     g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-    g.fillText(allItems[i].name, x + 14, y + 6);
+    g.fillText(itemName(allItems[i]), x + 14, y + 6);
     // 2) Price (right aligned), dynamic for level-type
     g.textAlign = 'right';
-    const ptext = `$${nextPriceForItem(allItems[i])}`;
-    g.fillText(ptext, x + cellW - 14, y + 20);
+    const priceText = t('shop.price', { amount: nextPriceForItem(allItems[i]) });
+    g.fillText(priceText, x + cellW - 14, y + 20);
     // 3) Icon (center)
     g.textAlign = 'center';
     g.textBaseline = 'middle';
@@ -4839,7 +5064,7 @@ function renderShop(g) {
     g.textBaseline = 'bottom';
     g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
     const lvVal = getItemLevel(allItems[i]);
-    g.fillText(`Lv. ${lvVal}`, x + cellW/2, y + cellH - 6);
+    g.fillText(t('shop.itemLevel', { level: lvVal }), x + cellW/2, y + cellH - 6);
     // sold out overlay
     if (isItemSoldOut(allItems[i])) {
       g.fillStyle = 'rgba(0,0,0,0.5)';
@@ -4848,10 +5073,10 @@ function renderShop(g) {
       g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
       if (allItems[i].type === 'single' || allItems[i].type === 'consumable') {
         g.fillStyle = '#ff6666';
-        g.fillText('SOLD OUT', x + cellW/2, y + cellH/2 + 2);
+        g.fillText(t('shop.soldOut'), x + cellW/2, y + cellH/2 + 2);
       } else {
         g.fillStyle = '#a6ffc1';
-        g.fillText('MAX', x + cellW/2, y + cellH/2 + 2);
+        g.fillText(t('shop.maxed'), x + cellW/2, y + cellH/2 + 2);
       }
     }
   }
@@ -4903,7 +5128,7 @@ function renderShop(g) {
   g.textAlign = 'center';
   g.textBaseline = 'middle';
   g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-  g.fillText('BACK', startX + bw/2, by + bh/2 + 1);
+  g.fillText(t('common.back'), startX + bw/2, by + bh/2 + 1);
   
   // CHARS button
   const charsX = startX + bw + spacing;
@@ -4912,7 +5137,7 @@ function renderShop(g) {
   g.strokeStyle = '#b4c0d9';
   g.strokeRect(charsX, by, bw, bh);
   g.fillStyle = '#ffffff';
-  g.fillText('CHARS', charsX + bw/2, by + bh/2 + 1);
+  g.fillText(t('common.chars'), charsX + bw/2, by + bh/2 + 1);
 
   // Confirm popup
   if (shopConfirm) {
@@ -4929,12 +5154,13 @@ function renderShop(g) {
     g.textAlign = 'center';
     g.textBaseline = 'top';
     g.font = `12px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-    const itName = (SHOP_ITEMS.find(x=>x.id===shopConfirm.id)?.name || shopConfirm.id).toString();
-    g.fillText(`Buy ${itName} for $${shopConfirm.price}?`, px + pw/2, py + 10);
+    const confirmedItem = SHOP_ITEMS.find(x => x.id === shopConfirm.id);
+    const itName = confirmedItem ? itemName(confirmedItem) : shopConfirm.id;
+    g.fillText(t('shop.confirmPurchase', { name: itName, amount: shopConfirm.price }), px + pw/2, py + 10);
     // Current $ centered two lines below, font 2px smaller
     g.textAlign = 'center';
     g.font = `8px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-    g.fillText(`$ ${savings}`, px + pw/2, py + 38);
+    g.fillText(t('hud.savings', { amount: savings }), px + pw/2, py + 38);
     // Message (e.g., insufficient funds)
     if (shopMsg && shopMsgTimer > 0) {
       g.textAlign = 'center';
@@ -4961,9 +5187,9 @@ function renderShop(g) {
     g.fillStyle = showingMsg ? '#8a98ad' : '#ffffff';
     g.textBaseline = 'middle';
     g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-    g.fillText('YES', bx2 + bw2/2, by2 + bh2/2);
+    g.fillText(t('common.yes'), bx2 + bw2/2, by2 + bh2/2);
     g.fillStyle = '#ffffff';
-    g.fillText('NO', bx3 + bw2/2, by2 + bh2/2);
+    g.fillText(t('common.no'), bx3 + bw2/2, by2 + bh2/2);
   }
 
   // Help popup (items) with pagination instead of scroll
@@ -4985,7 +5211,7 @@ function renderShop(g) {
     g.textAlign = 'center';
     g.textBaseline = 'top';
     g.font = `12px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-    g.fillText('ITEM DESCRIPTIONS', px + pw/2, py + 10);
+    g.fillText(t('shop.itemsHelpTitle'), px + pw/2, py + 10);
     
     // Content area (no scroll)
     const contentTop = py + 35;
@@ -5000,7 +5226,7 @@ function renderShop(g) {
     const leftPad = 10, rightPad = 10, gap = 8;
     let nameColW = 0;
     for (const it of allItems) {
-      const w = g.measureText(it.name || it.id).width;
+      const w = g.measureText(itemName(it)).width;
       nameColW = Math.max(nameColW, w);
     }
     nameColW = Math.max(50, Math.min(100, Math.floor(nameColW + 6)));
@@ -5031,8 +5257,8 @@ function renderShop(g) {
     let yy = contentTop + 5;
     for (let i = hs; i < he; i++) {
       const it = allItems[i];
-      const name = it.name || it.id;
-      const desc = itemDescription(it.id);
+      const name = itemName(it);
+      const desc = itemDescription(it);
       const wrapped = wrapText(g, desc, descMaxW);
       // Name
       g.textAlign = 'right';
@@ -5076,7 +5302,7 @@ function renderShop(g) {
     g.textBaseline = 'middle';
     g.fillStyle = '#b4c0d9';
     g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-    g.fillText('Click outside to close', px + pw/2, py + ph - 18);
+    g.fillText(t('common.clickOutsideToClose'), px + pw/2, py + ph - 18);
   }
 }
 
@@ -5119,8 +5345,8 @@ function buildShopCards() {
     const btnW = 36, btnH = 36; const cx = CONFIG.width / 2; const offset = 60;
     const leftX = Math.floor(cx - offset - btnW/2);
     const rightX = Math.floor(cx + offset - btnW/2);
-    if (shopCharPage > 0) uiButtons.shop.buttons.push(new UIButton(leftX, py - btnH/2, btnW, btnH, 'CHAR_PAGE_PREV', () => { shopCharPage = Math.max(0, shopCharPage - 1); buildShopCards(); }, 'shop'));
-    if (shopCharPage < shopCharTotalPages - 1) uiButtons.shop.buttons.push(new UIButton(rightX, py - btnH/2, btnW, btnH, 'CHAR_PAGE_NEXT', () => { shopCharPage = Math.min(shopCharTotalPages - 1, shopCharPage + 1); buildShopCards(); }, 'shop'));
+    if (shopCharPage > 0) uiButtons.shop.buttons.push(new UIButton(leftX, py - btnH/2, btnW, btnH, () => t('pagination.prev'), () => { shopCharPage = Math.max(0, shopCharPage - 1); buildShopCards(); }, 'shop'));
+    if (shopCharPage < shopCharTotalPages - 1) uiButtons.shop.buttons.push(new UIButton(rightX, py - btnH/2, btnW, btnH, () => t('pagination.next'), () => { shopCharPage = Math.min(shopCharTotalPages - 1, shopCharPage + 1); buildShopCards(); }, 'shop'));
 
     // Character shop nav buttons after pagination
     const bw = 86, bh = 26;
@@ -5128,8 +5354,8 @@ function buildShopCards() {
     const totalWidth = bw * 2 + spacing;
     const startX = (CONFIG.width - totalWidth) / 2;
     const by = CONFIG.height - 50;
-    uiButtons.shop.buttons.push(new UIButton(startX, by, bw, bh, 'BACK', () => { State.current = previousState; }, 'shop'));
-    uiButtons.shop.buttons.push(new UIButton(startX + bw + spacing, by, bw, bh, 'ITEMS', () => { shopMode = 'items'; shopScroll = 0; shopItemPage = 0; buildShopCards(); }, 'shop'));
+    uiButtons.shop.buttons.push(new UIButton(startX, by, bw, bh, () => t('common.back'), () => { State.current = previousState; }, 'shop'));
+    uiButtons.shop.buttons.push(new UIButton(startX + bw + spacing, by, bw, bh, () => t('common.items'), () => { shopMode = 'items'; shopScroll = 0; shopItemPage = 0; buildShopCards(); }, 'shop'));
   } else {
     // Item cards (pagination)
     const { cols, cellW, cellH, marginX, top, paddingTop, gap } = shopGrid();
@@ -5175,24 +5401,24 @@ function buildShopCards() {
     const rightX = Math.floor(cx + offset - btnW / 2);
     // Left button only if not first page
     if (shopItemPage > 0) {
-      uiButtons.shop.buttons.push(new UIButton(leftX, py - btnH / 2, btnW, btnH, 'PAGE_PREV', () => {
+      uiButtons.shop.buttons.push(new UIButton(leftX, py - btnH / 2, btnW, btnH, () => t('pagination.prev'), () => {
         shopItemPage = Math.max(0, shopItemPage - 1);
         buildShopCards();
       }, 'shop'));
     }
     // Right button only if not last page
     if (shopItemPage < shopItemTotalPages - 1) {
-      uiButtons.shop.buttons.push(new UIButton(rightX, py - btnH / 2, btnW, btnH, 'PAGE_NEXT', () => {
+      uiButtons.shop.buttons.push(new UIButton(rightX, py - btnH / 2, btnW, btnH, () => t('pagination.next'), () => {
         shopItemPage = Math.min(shopItemTotalPages - 1, shopItemPage + 1);
         buildShopCards();
       }, 'shop'));
     }
 
     // Navigation buttons after pagination
-    uiButtons.shop.buttons.push(new UIButton(startX, by, bw, bh, 'BACK', () => {
+    uiButtons.shop.buttons.push(new UIButton(startX, by, bw, bh, () => t('common.back'), () => {
       State.current = previousState;
     }, 'shop'));
-    uiButtons.shop.buttons.push(new UIButton(startX + bw + spacing, by, bw, bh, 'CHARS', () => {
+    uiButtons.shop.buttons.push(new UIButton(startX + bw + spacing, by, bw, bh, () => t('common.chars'), () => {
       shopMode = 'chars';
       shopScroll = 0;
       shopCharPage = 0;
@@ -5211,6 +5437,8 @@ function updateShop(dt) {
     shopMsgTimer = Math.max(0, shopMsgTimer - dt);
     if (shopMsgTimer === 0) {
       shopMsg = null;
+      shopMsgKey = null;
+      shopMsgArgs = null;
       shopConfirm = null;
     }
   }
@@ -5290,7 +5518,7 @@ function updateShop(dt) {
         // If purchase succeeded, tryPurchase closes confirm; else message set
       } else if (x>=bx3 && x<=bx3+bw2 && y>=by2 && y<=by2+bh2) {
         // NO closes immediately
-        shopConfirm = null; shopMsg = null; shopMsgTimer = 0; UI.reset(); return;
+        shopConfirm = null; shopMsg = null; shopMsgKey = null; shopMsgArgs = null; shopMsgTimer = 0; UI.reset(); return;
       }
       UI.reset();
       return;
@@ -5398,7 +5626,9 @@ function tryPurchase(id) {
     // Purchasing a new character
     const price = char.price;
     if (savings < price) {
-      shopMsg = 'Insufficient funds';
+      shopMsgKey = 'shop.error.funds';
+      shopMsgArgs = { amount: price };
+      shopMsg = t(shopMsgKey, shopMsgArgs);
       shopMsgTimer = 2.0;
       shopConfirm = null;
       return;
@@ -5427,7 +5657,9 @@ function tryPurchase(id) {
   let price = nextPriceForItem(it);
   // enforce affordability
   if (savings < price) {
-    shopMsg = 'Insufficient funds';
+    shopMsgKey = 'shop.error.funds';
+    shopMsgArgs = { amount: price };
+    shopMsg = t(shopMsgKey, shopMsgArgs);
     shopMsgTimer = 2.0;
     return;
   }
@@ -5454,7 +5686,7 @@ function tryPurchase(id) {
     const maxLv = getLevelByExp(exp);
     const current = shopInv.bigLevel || 0;
     const dynPrice = 20 + 10 * current;
-    if (savings < dynPrice) { shopMsg = 'Insufficient funds'; shopMsgTimer = 2.0; return; }
+    if (savings < dynPrice) { shopMsgKey = 'shop.error.funds'; shopMsgArgs = { amount: dynPrice }; shopMsg = t(shopMsgKey, shopMsgArgs); shopMsgTimer = 2.0; return; }
     savings -= dynPrice;
     shopInv.bigLevel = Math.min(maxLv, current + 1);
     saveShopInv();
