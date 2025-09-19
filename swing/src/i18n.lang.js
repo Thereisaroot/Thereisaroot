@@ -136,7 +136,7 @@
       },
     },
     effects: {
-      stageBonus: '+{points}P +${cash}',
+      stageBonus: '+${cash}',
       cashPickup: '+$',
       pointsEarned: '+{points}P',
       slow: 'SLOW!',
@@ -319,7 +319,7 @@
       banner: 'STAGE {stage}',
     },
     boss: {
-      stageWithNumber: '보스 스테이지 {stage}',
+      stageWithNumber: '스테이지 {stage} : 보스전',
       stage: '보스 스테이지',
       bulletHud: '발사 {shots}/{total} | 회피 {dodged}/{required}',
       slamHudProgress: '{current} / {goal} 점프',
@@ -352,7 +352,7 @@
       stats: '경험치: {exp}P | ${savings}',
       rouletteResult: '룰렛: {before} {op} {value} = {after}',
       roulettePending: '룰렛: {op} {value}',
-      levelUp: '레벨 업! LV {level}',
+      levelUp: 'LEVEL UP! LV {level}',
       retryCountdown: '다시 시작까지 {seconds}초',
       retryReady: '클릭 또는 스페이스로 재시작',
     },
@@ -381,11 +381,11 @@
       },
     },
     effects: {
-      stageBonus: '+{points}P +${cash}',
+      stageBonus: '+${cash}',
       cashPickup: '+$',
       pointsEarned: '+{points}P',
       slow: '슬로우!',
-      comboCount: '{combo} 콤보',
+      comboCount: '{combo} COMBO',
       tailorBonus: '+{amount}',
       revive: '부활!',
     },
@@ -461,7 +461,7 @@
       ninja: {
         name: '닌자',
         summary: '공중 점프가\n1회 추가됩니다',
-        help: '민첩한 탈출을 위해 공중 점프를 한 번 더 제공합니다.',
+        help: '민첩한 탈출을 위해 공중 점프를 \n한 번 더 제공합니다.',
       },
       pirate: {
         name: '해적',

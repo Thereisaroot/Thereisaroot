@@ -522,7 +522,7 @@ window.addEventListener('mousemove', (e) => {
     } else {
       // Item shop help - calculate based on descriptions
       const lvl = getLevelByExp(exp);
-      const visibleItems = SHOP_ITEMS.filter(it => (it.minLevel || 1) <= lvl);
+      const visibleItems = availableItems(lvl);
       const lineHeight = 14;
       const itemHeight = 36;
       const totalContentHeight = visibleItems.length * itemHeight;
@@ -561,7 +561,7 @@ window.addEventListener('mousemove', (e) => {
       const { cols, cellW, cellH, marginX, top, paddingTop, paddingBottom } = shopGrid();
       const gap = 8;
       const lvl = getLevelByExp(exp);
-      const items = SHOP_ITEMS.filter(it => (it.minLevel || 1) <= lvl);
+      const items = availableItems(lvl);
       const rows = Math.ceil(items.length / cols) || 1;
       const contentH = paddingTop + rows * (cellH + gap) - gap + paddingBottom;
       const viewportH = CONFIG.height - top - 90;
@@ -602,7 +602,7 @@ window.addEventListener('touchmove', (e) => {
       const { cols, cellW, cellH, marginX, top, paddingTop, paddingBottom } = shopGrid();
       const gap = 8;
       const lvl = getLevelByExp(exp);
-      const items = SHOP_ITEMS.filter(it => (it.minLevel || 1) <= lvl);
+      const items = availableItems(lvl);
       const rows = Math.ceil(items.length / cols) || 1;
       const contentH = paddingTop + rows * (cellH + gap) - gap + paddingBottom;
       const viewportH = CONFIG.height - top - 90;
@@ -1333,13 +1333,14 @@ function withScaledCharacterPrices(chars) {
   if (!chars) return {};
   const out = {};
   for (const [id, char] of Object.entries(chars)) {
-    const price = Math.max(0, Math.floor((char.price || 0) / 5));
-    out[id] = { ...char, price };
+    // Preserve original spec values without scaling while avoiding mutation.
+    out[id] = { ...char };
   }
   return out;
 }
 
 const PIXEL_CHARACTERS = withScaledCharacterPrices((typeof window !== 'undefined' ? window.CHAR_SPECS : undefined) || {});
+const CHARACTER_ORDER = new Map(Object.keys(PIXEL_CHARACTERS).map((id, idx) => [id, idx]));
 
 function characterIs(id) {
   return selectedCharacter === id;
@@ -1347,11 +1348,20 @@ function characterIs(id) {
 
 function visibleCharacters(includeLocked = true) {
   const lvl = getLevelByExp(exp);
-  return Object.entries(PIXEL_CHARACTERS).filter(([id, char]) => {
-    if (id === 'bird' && !shopInv.fly) return false;
-    if (!includeLocked && (char.minLevel || 1) > lvl) return false;
-    return true;
-  });
+  return Object.entries(PIXEL_CHARACTERS)
+    .filter(([id, char]) => {
+      if (id === 'bird' && !shopInv.fly) return false;
+      if (!includeLocked && (char.minLevel || 1) > lvl) return false;
+      return true;
+    })
+    .sort(([idA, charA], [idB, charB]) => {
+      const minA = Number.isFinite(charA?.minLevel) ? charA.minLevel : 1;
+      const minB = Number.isFinite(charB?.minLevel) ? charB.minLevel : 1;
+      if (minA !== minB) return minA - minB;
+      const orderA = CHARACTER_ORDER.has(idA) ? CHARACTER_ORDER.get(idA) : Number.MAX_SAFE_INTEGER;
+      const orderB = CHARACTER_ORDER.has(idB) ? CHARACTER_ORDER.get(idB) : Number.MAX_SAFE_INTEGER;
+      return orderA - orderB;
+    });
 }
 
 function characterCardState(id, char, lvl, charInv, currentSavings) {
@@ -1753,7 +1763,7 @@ function grantStageGateReward(triggerRope) {
   if (triggerRope) triggerRope.stageGateRewarded = true;
   if (pendingStageGate) pendingStageGate.rewarded = true;
   score += STAGE_GATE_BONUS_SCORE;
-  spawnEffect('combo', player.x, player.y + 26, t('effects.stageBonus', { points: STAGE_GATE_BONUS_SCORE, cash: STAGE_GATE_BONUS_CASH }));
+  spawnEffect('combo', player.x, player.y + 26, t('effects.stageBonus', { cash: STAGE_GATE_BONUS_CASH }));
   savings += STAGE_GATE_BONUS_CASH;
   try { localStorage.setItem(SAVINGS_KEY, String(savings)); } catch (_) {}
   if (stageNumber != null) maybeTriggerBossStage(stageNumber, triggerRope);
@@ -1804,7 +1814,7 @@ function startBossStage(stageNumber, entryRope) {
 
   const restoreCameraX = camera.x;
   const entryAnchorX = entryRope.anchorX;
-  const entryTip = entryRope.tip(simTime);
+  const entryBaseTipY = entryRope.anchorY + entryRope.L;
 
   bossState = {
     active: true,
@@ -1818,6 +1828,9 @@ function startBossStage(stageNumber, entryRope) {
     entryRetractSpeed: 240,
     entryTargetLength: Math.max(60, entryRope.L * 0.35),
     entryOriginalLength: entryRope.L,
+    entryAnchorX,
+    entryAnchorY: entryRope.anchorY,
+    entryStableTipY: entryRope.anchorY + entryRope.L,
     bounceDuration: 0.32,
     bounceAmplitude: Math.min(64, entryRope.L * 0.22),
     cameraTargetX: restoreCameraX,
@@ -1833,8 +1846,11 @@ function startBossStage(stageNumber, entryRope) {
   player.mode = 'ascend';
   player.vx = 0;
   player.vy = 0;
-  player.x = entryTip.x;
-  player.y = entryTip.y;
+  entryRope.A = 0;
+  entryRope.omega = 0;
+  entryRope.phi = 0;
+  player.x = entryAnchorX;
+  player.y = entryBaseTipY;
 
   State.current = 'boss_pending';
 }
@@ -1854,17 +1870,16 @@ function updateBossPending(dt) {
     }
     bossState.timer += dt;
     const duration = bossState.bounceDuration || 0.45;
-    const amp = bossState.bounceAmplitude || 40;
     const t = Math.min(1, bossState.timer / duration);
-    const bounce = Math.sin(Math.PI * t);
     const baseL = bossState.entryOriginalLength || rope.L;
-    rope.L = baseL + amp * bounce;
+    rope.L = baseL;
     rope.A = 0;
     rope.omega = 0;
     rope.phi = 0;
-    const tip = rope.tip(simTime);
-    player.x = tip.x;
-    player.y = tip.y;
+    const anchorX = bossState.entryAnchorX != null ? bossState.entryAnchorX : rope.anchorX;
+    const baseTipY = bossState.entryStableTipY != null ? bossState.entryStableTipY : (rope.anchorY + baseL);
+    player.x = anchorX;
+    player.y = baseTipY;
     player.vx = 0;
     player.vy = 0;
     const camTarget = bossState.cameraTargetX != null ? bossState.cameraTargetX : (rope.anchorX - SCREEN_TARGET_X);
@@ -1891,7 +1906,7 @@ function updateBossPending(dt) {
     const startY = bossState.ascendStartY != null ? bossState.ascendStartY : player.y;
     const targetY = bossState.ascendTargetY != null ? bossState.ascendTargetY : -CONFIG.height * 0.6;
     const ascendX = bossState.ascendX != null ? bossState.ascendX : player.x;
-    player.x = camera.x + CONFIG.width * 0.35;
+    player.x = ascendX;
     player.y = startY + (targetY - startY) * eased;
     player.vx = 0;
     player.vy = (targetY - startY) / Math.max(0.0001, duration);
@@ -1980,7 +1995,7 @@ function initBossBattle() {
       hitGoal: 50,
       jumpCount: 0,
       jumpGoal: 80,
-      jumpPower: 195,
+      jumpPower: 253.5,
       baseGravity: CONFIG.gravity * 1.35,
     };
   } else if (bossState.type === 'collect') {
@@ -4524,6 +4539,24 @@ function tick(now) {
 // - Then implement multi-rope spawner with reachability guarantee.
 // Shop item definitions provided via external spec
 const SHOP_ITEMS = (typeof window !== 'undefined' ? window.ITEM_SPECS : undefined) || [];
+const SHOP_ITEM_ORDER = new Map(SHOP_ITEMS.map((item, idx) => [item, idx]));
+
+function sortItemsByMinLevel(list) {
+  const arr = list.slice();
+  arr.sort((a, b) => {
+    const minA = Number.isFinite(a?.minLevel) ? a.minLevel : 1;
+    const minB = Number.isFinite(b?.minLevel) ? b.minLevel : 1;
+    if (minA !== minB) return minA - minB;
+    const orderA = SHOP_ITEM_ORDER.get(a) ?? Number.MAX_SAFE_INTEGER;
+    const orderB = SHOP_ITEM_ORDER.get(b) ?? Number.MAX_SAFE_INTEGER;
+    return orderA - orderB;
+  });
+  return arr;
+}
+
+function availableItems(level = getLevelByExp(exp)) {
+  return sortItemsByMinLevel(SHOP_ITEMS.filter((it) => (it.minLevel || 1) <= level));
+}
 
 function getItemLevel(it) {
   if (it.type === 'consumable') {
@@ -5003,7 +5036,7 @@ function renderShop(g) {
   const { cols, cellW, cellH, marginX, top, paddingTop, paddingBottom, gap } = shopGrid();
   // Filter items by level visibility
   const lvl = getLevelByExp(exp);
-  const allItems = SHOP_ITEMS.filter(it => (it.minLevel || 1) <= lvl);
+  const allItems = availableItems(lvl);
   const rowsPerPage = 4; // 1페이지 4줄
   const itemsPerPage = cols * rowsPerPage + ITEM_CARD_EXTRA_PER_PAGE;
   shopItemTotalPages = Math.max(1, Math.ceil(allItems.length / itemsPerPage));
@@ -5222,7 +5255,7 @@ function renderShop(g) {
     g.textAlign = 'left';
     g.textBaseline = 'top';
     g.font = `9px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-    const allItems = SHOP_ITEMS; // 모든 아이템 설명
+    const allItems = sortItemsByMinLevel(SHOP_ITEMS);
     const leftPad = 10, rightPad = 10, gap = 8;
     let nameColW = 0;
     for (const it of allItems) {
@@ -5361,7 +5394,7 @@ function buildShopCards() {
     const { cols, cellW, cellH, marginX, top, paddingTop, gap } = shopGrid();
     const rowsPerPage = 4; // 1페이지에 4줄
     const lvl = getLevelByExp(exp);
-    const allItems = SHOP_ITEMS.filter(it => (it.minLevel || 1) <= lvl);
+    const allItems = availableItems(lvl);
     const itemsPerPage = cols * rowsPerPage + ITEM_CARD_EXTRA_PER_PAGE;
     shopItemTotalPages = Math.max(1, Math.ceil(allItems.length / itemsPerPage));
     if (shopItemPage >= shopItemTotalPages) shopItemPage = shopItemTotalPages - 1;
@@ -5581,7 +5614,7 @@ function updateShop(dt) {
     let items;
     if (shopMode === 'items') {
       ({ cols, cellH, paddingTop, paddingBottom, gap } = shopGrid());
-      items = SHOP_ITEMS.filter(it => (it.minLevel || 1) <= lvl);
+      items = availableItems(lvl);
     } else {
       cols = 2;
       cellH = CHAR_CARD_CELL_H;
