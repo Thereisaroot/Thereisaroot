@@ -87,10 +87,10 @@
       },
     },
     roulette: {
-      title: 'ROULETTE',
+      title: '',
       spinning: 'Spinning...',
       formula: '{before} {op} {value} = {after}',
-      locked: 'Result locked',
+      locked: 'WOW',
     },
     game: {
       fastToggle: 'FAST MODE: {state}',
@@ -336,10 +336,10 @@
       },
     },
     roulette: {
-      title: '룰렛',
+      title: '',
       spinning: '회전 중...',
       formula: '{before} {op} {value} = {after}',
-      locked: '',
+      locked: 'WOW',
     },
     game: {
       fastToggle: 'FAST MODE: {state}',
