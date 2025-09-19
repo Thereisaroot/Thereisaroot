@@ -61,6 +61,10 @@
               .then(function(){ return loadScript("./src/i18n.lang.js"); })
               .then(function(){ return loadScript("./src/items.js"); })
               .then(function(){ return loadScript("./src/chars.js"); })
+              .then(function(){ return loadScript("./src/config.js"); })
+              .then(function(){ return loadScript("./src/init.js"); })
+              .then(function(){ return loadScript("./src/utils.js"); })
+              .then(function(){ return loadScript("./src/classes.js"); })
               .then(function(){ return loadScript("./src/main.js"); })
               .catch(function(err){ console.error('Script load failed', err); });
           });

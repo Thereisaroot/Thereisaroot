@@ -1,343 +1,10 @@
 // WebSwing Prototype (Ropes + Multi-spawn + Catch)
- 
-const CONFIG = {
-  width: 360,
-  height: 640,
-  groundH: 72,
-  gravity: 2400, // px/s^2
-  jumpImpulse: 642, // px/s upward base impulse (~30% stronger than current)
-  baseVx: 208, // reduced base forward carry (20% less)
-  minVx: 200,
-  maxVx: 420,
-  airDragX: 0.5, // stronger horizontal damping while free
-  ceilingY: 84, // rope anchor Y (ceiling line)
 
-  // Rope params
-  Lmin: 84,   // 30% smaller than before
-  Lmax: 338,  // 30% larger than before
-  AminDeg: 6,
-  AmaxDeg: 18,
-  kOmegaMin: 0.85,
-  kOmegaMax: 1.35,
-  Dmin: 180, // wider spacing
-  Dmax: 260,
-  DshortMin: 120, // occasionally allow shorter spacing
-  DshortProb: 0.35, // probability to choose a short spacing
-  catchBase: 22, // px (fixed)
-  catchBonusMax: 10, // unused when velScale=0
-  catchVelScale: 0.0, // fixed radius (no scaling)
-  // Spawn new rope anchors near the right edge of the screen
-  minAnchorX: 300,
-  maxAnchorX: 332,
-  edgeSpawnJitter: 48, // px, randomness from the right edge inward
-  lengthJitterPct: 0.30, // ±30% length jitter after planning
-  shortLChance: 0.10, // 10% chance to shorten rope
-  shortLFactor: 0.70, // shorten to 70% (30% shorter)
-  longLChance: 0.00, // 0% chance to extend rope
-  longLFactor: 1.20, // extend to 120%
-  lowRopeChance: 0.30, // chance to drop anchor lower
-  lowRopeAnchorDropMinPx: 50, // fixed drop range (px)
-  lowRopeAnchorDropMaxPx: 100,
-  lowRopeFloorClearance: 100, // keep rope tip 100px above ground
-  stageRopesPerStage: 5, // ropes per stage transition (test friendly)
-  bossStageTriggers: [3, 7, 10], // 1-based stage numbers that trigger boss fights
-
-  // Extra randomization knobs
-  spacingJitterMin: 0.90, // D *= randRange(min,max)
-  spacingJitterMax: 1.15,
-
-  // Gameplay probabilities
-  ropeBreakProb: 0.10, // when attached (if enabled by gating below)
-  itemSpawnProb: 0.50,
-
-  // Camera follow smoothing (1/s)
-  camFollowAttach: 6.0,
-  camFollowFree: 2.5,
-  // Jump speed scaling (1.0 = 기본)
-  jumpSpeedScale: 1.0,
-  // Game over wait seconds before retry is enabled
-  gameOverWait: 3.0,
-  // Fly control
-  flyHoldThreshold: 0.2, // seconds to differentiate long press
-  flyMaxHold: 1.3,       // seconds of fly per hold
-  flyUpVy: -180,         // upward velocity during fly (1.5x)
-  flyMinFwd: 180,        // minimal forward speed during fly (1.5x)
-  wizardJumpSpeed: 3,    // px/s horizontal speed for wizard detaches
-  wizardJumpImpulse: 500, // upward impulse for wizard detaches
-  wizardGlideTargetSpeed: 150, // px/s target glide speed while float timer active
-  wizardGlideAccel: 300, // px/s^2 acceleration toward glide speed
-  wizardSpinRevolutions: 5, // full rotations during float window
-  // Buds sway (as percentage of body radius)
-  budSwayMinPct: 0.08,
-  budSwayMaxPct: 0.32,
-  // Star (fever) mode rope pattern
-  starDuration: 4.0,
-  starL: 160,           // fixed rope length
-  starAdeg: 10,         // swing amplitude (degrees)
-  starDmin: 70,         // dense spacing min
-  starDmax: 110,        // dense spacing max
-  starEdgeJitter: 10,   // smaller edge jitter for uniform look
-  rouletteSpinDuration: 2.4,
-};
-
-const canvas = document.getElementById('game');
-const ctx = canvas.getContext('2d');
-const I18N_API = typeof window !== 'undefined' ? window.I18N : null;
-
-function t(key, params) {
-  if (I18N_API && typeof I18N_API.t === 'function') {
-    return I18N_API.t(key, params);
-  }
-  return key;
-}
-
-function translateList(key) {
-  const raw = t(key);
-  if (!raw) return [];
-  return String(raw).split('\n');
-}
-
-function itemName(it) {
-  return t(`items.${it.id}.name`);
-}
-
-function itemDescriptionKey(id) {
-  return `items.${id}.description`;
-}
-
-function itemDescription(it) {
-  return t(itemDescriptionKey(it.id));
-}
-
-function characterName(id) {
-  return t(`chars.${id}.name`);
-}
-
-function characterSummaryLines(id) {
-  return translateList(`chars.${id}.summary`);
-}
-
-function commonText(key, params) {
-  return t(`common.${key}`, params);
-}
-
-if (I18N_API && typeof I18N_API.onChange === 'function') {
-  I18N_API.onChange(() => {
-    applyLocalizedAccessibility();
-    if (typeof buildIntroButtons === 'function') buildIntroButtons();
-    if (typeof buildGameOverButtons === 'function') buildGameOverButtons();
-    if (typeof buildShopCards === 'function') buildShopCards();
-    if (shopMsgKey) shopMsg = t(shopMsgKey, shopMsgArgs);
-  });
-}
-
-applyLocalizedAccessibility();
-
-let dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
-
-function setupCanvas() {
-  dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
-  canvas.width = Math.floor(CONFIG.width * dpr);
-  canvas.height = Math.floor(CONFIG.height * dpr);
-  canvas.style.width = CONFIG.width + 'px';
-  canvas.style.height = CONFIG.height + 'px';
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-}
-
-setupCanvas();
-window.addEventListener('resize', setupCanvas);
-
-function applyLocalizedAccessibility() {
-  if (canvas) {
-    canvas.setAttribute('aria-label', t('meta.canvasLabel'));
-  }
-}
-
-const Fonts = {
-  loaded: false,
-  async load() {
-    try {
-      // Attempt to load; browser will no-op if unsupported
-      if (document.fonts && document.fonts.load) {
-        try { await document.fonts.load('12px "GameFont"'); } catch {}
-        try { await document.fonts.load('12px "Press Start 2P"'); } catch {}
-        try { await document.fonts.load('12px "Dalmoori"'); } catch {}
-      } else {
-        // Fallback small delay
-        await new Promise((r) => setTimeout(r, 300));
-      }
-      this.loaded = true;
-    } catch (_) {
-      this.loaded = true;
-    }
-  },
-};
-
-// Ensure Hangul text rendered with Dalmoori reads slightly larger than Latin glyphs.
-(function patchCanvasFontSizing() {
-  if (typeof CanvasRenderingContext2D === 'undefined') return;
-
-  const HANGUL_REGEX = /[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7A3]/;
-  const FONT_DELTA_PX = 3;
-
-  const proto = CanvasRenderingContext2D.prototype;
-  const originals = {
-    fillText: proto.fillText,
-    strokeText: proto.strokeText,
-    measureText: proto.measureText,
-  };
-
-  function adjustFontString(font) {
-    if (!font || typeof font !== 'string') return null;
-    if (!font.includes('GameFont') && !font.includes('Dalmoori')) return null;
-    return font.replace(/(^|\s)(\d+(?:\.\d+)?)px/, (full, prefix, size) => {
-      const adjusted = Math.max(0, parseFloat(size) + FONT_DELTA_PX);
-      return `${prefix}${adjusted}px`;
-    });
-  }
-
-  function withAdjustedFont(ctx, text, fn) {
-    const content = text == null ? '' : String(text);
-    if (!HANGUL_REGEX.test(content)) {
-      return fn();
-    }
-    const originalFont = ctx.font;
-    const adjusted = adjustFontString(originalFont);
-    if (!adjusted || adjusted === originalFont) {
-      return fn();
-    }
-    ctx.font = adjusted;
-    try {
-      return fn();
-    } finally {
-      ctx.font = originalFont;
-    }
-  }
-
-  proto.fillText = function patchedFillText(text, x, y, maxWidth) {
-    return withAdjustedFont(this, text, () => originals.fillText.call(this, text, x, y, maxWidth));
-  };
-
-  proto.strokeText = function patchedStrokeText(text, x, y, maxWidth) {
-    return withAdjustedFont(this, text, () => originals.strokeText.call(this, text, x, y, maxWidth));
-  };
-
-  proto.measureText = function patchedMeasureText(text) {
-    return withAdjustedFont(this, text, () => originals.measureText.call(this, text));
-  };
-})();
+// Note: CONFIG, canvas, ctx, and i18n functions are already defined in config.js and init.js
 
 // Tuning state (can be loaded from server later)
-const TUNING_KEY = 'webswing_tuning_v1';
-const TUNING_DEFAULTS = {
-  jumpImpulse: 541,
-  jumpSpeed: 91,
-  catchR: 22,
-  budSwayMin: 8,
-  budSwayMax: 32,
-  Lmin: 84,
-  Lmax: 338,
-  LjitPct: 30,
-  Dmin: 180,
-  Dmax: 260,
-  SJmin: 78,
-  SJmax: 140,
-  shortProb: 24,
-  shortFactor: 73,
-  longProb: 0,
-  longFactor: 120,
-  breakProb: 10,
-  itemProb: 20,
-  DshortMin: 120,
-  DshortProb: 35,
-};
 let tuning = { ...TUNING_DEFAULTS };
 
-function loadTuningLocal() {
-  try {
-    const raw = localStorage.getItem(TUNING_KEY);
-    if (raw) {
-      const saved = JSON.parse(raw);
-      tuning = { ...tuning, ...saved };
-    }
-  } catch(_) {}
-}
-function saveTuningLocal() {
-  try { localStorage.setItem(TUNING_KEY, JSON.stringify(tuning)); } catch(_) {}
-}
-async function maybeLoadTuningFromServer() {
-  // Placeholder for future server fetch; merge into tuning and apply
-  // Example:
-  // const res = await fetch('/api/tuning');
-  // const remote = await res.json();
-  // tuning = { ...tuning, ...remote };
-}
-function applyTuningToConfig() {
-  CONFIG.jumpImpulse = Number(tuning.jumpImpulse) || CONFIG.jumpImpulse;
-  CONFIG.jumpSpeedScale = Math.max(0.2, (Number(tuning.jumpSpeed) || 100) / 100);
-  CONFIG.catchBase = Number(tuning.catchR) || CONFIG.catchBase;
-  // buds sway percent
-  CONFIG.budSwayMinPct = Math.max(0, (Number(tuning.budSwayMin) || Math.round(CONFIG.budSwayMinPct*100)) / 100);
-  CONFIG.budSwayMaxPct = Math.max(CONFIG.budSwayMinPct, (Number(tuning.budSwayMax) || Math.round(CONFIG.budSwayMaxPct*100)) / 100);
-  CONFIG.Lmin = Number(tuning.Lmin) || CONFIG.Lmin;
-  CONFIG.Lmax = Number(tuning.Lmax) || CONFIG.Lmax;
-  CONFIG.lengthJitterPct = Math.max(0, (Number(tuning.LjitPct) || 0) / 100);
-  CONFIG.Dmin = Number(tuning.Dmin) || CONFIG.Dmin;
-  CONFIG.Dmax = Number(tuning.Dmax) || CONFIG.Dmax;
-  CONFIG.spacingJitterMin = Math.max(0.5, (Number(tuning.SJmin) || Math.round(CONFIG.spacingJitterMin*100)) / 100);
-  CONFIG.spacingJitterMax = Math.max(CONFIG.spacingJitterMin, (Number(tuning.SJmax) || Math.round(CONFIG.spacingJitterMax*100)) / 100);
-  CONFIG.shortLChance = Math.max(0, Math.min(1, (Number(tuning.shortProb) || 0) / 100));
-  CONFIG.shortLFactor = Math.max(0.4, (Number(tuning.shortFactor) || Math.round(CONFIG.shortLFactor*100)) / 100);
-  CONFIG.longLChance = Math.max(0, Math.min(1, (Number(tuning.longProb) || 0) / 100));
-  CONFIG.longLFactor = Math.max(1.0, (Number(tuning.longFactor) || Math.round(CONFIG.longLFactor*100)) / 100);
-  CONFIG.ropeBreakProb = Math.max(0, Math.min(1, (Number(tuning.breakProb) || 0) / 100));
-  CONFIG.itemSpawnProb = Math.max(0, Math.min(1, (Number(tuning.itemProb) || 0) / 100));
-  CONFIG.DshortMin = Number(tuning.DshortMin) || CONFIG.DshortMin;
-  CONFIG.DshortProb = Math.max(0, Math.min(1, (Number(tuning.DshortProb) || 0) / 100));
-}
-function setupDebugUI() {
-  const root = document.getElementById('debug-panel');
-  if (!root) return;
-  // Block game input when interacting with debug UI
-  const blockTypes = ['mousedown','mouseup','mousemove','click','dblclick','touchstart','touchmove','touchend'];
-  for (const tp of blockTypes) {
-    root.addEventListener(tp, (e) => { e.stopPropagation(); }, true);
-  }
-  const get = (id) => document.getElementById(id);
-  const map = [
-    ['dbg-jumpSpeed', 'jumpSpeed'],
-    ['dbg-jumpImpulse', 'jumpImpulse'],
-    ['dbg-catchR', 'catchR'],
-    ['dbg-budSwayMin', 'budSwayMin'],
-    ['dbg-budSwayMax', 'budSwayMax'],
-    ['dbg-Lmin', 'Lmin'],
-    ['dbg-Lmax', 'Lmax'],
-    ['dbg-Ljit', 'LjitPct'],
-    ['dbg-Dmin', 'Dmin'],
-    ['dbg-Dmax', 'Dmax'],
-    ['dbg-SJmin', 'SJmin'],
-    ['dbg-SJmax', 'SJmax'],
-    ['dbg-shortProb', 'shortProb'],
-    ['dbg-shortFactor', 'shortFactor'],
-    ['dbg-longProb', 'longProb'],
-    ['dbg-longFactor', 'longFactor'],
-    ['dbg-breakProb', 'breakProb'],
-    ['dbg-itemProb', 'itemProb'],
-    ['dbg-DshortMin', 'DshortMin'],
-    ['dbg-DshortProb', 'DshortProb'],
-  ];
-  // Initialize slider positions
-  for (const [id, key] of map) {
-    const el = get(id);
-    if (!el) continue;
-    el.value = String(tuning[key]);
-    el.addEventListener('input', () => {
-      tuning[key] = Number(el.value);
-      applyTuningToConfig();
-      saveTuningLocal();
-    });
-  }
-}
 
 // UI helper for intro interactions
 const UI = {
@@ -349,11 +16,6 @@ const UI = {
   reset() { this.clicked = false; this.justReleased = false; this.keyPressed = null; },
 };
 
-function isFromDebug(e) {
-  const t = e && (e.target || e.srcElement);
-  if (!t || typeof t.closest !== 'function') return false;
-  return !!t.closest('#debug-panel');
-}
 
 // Simple input manager
 const Input = {
@@ -522,7 +184,7 @@ window.addEventListener('mousemove', (e) => {
     } else {
       // Item shop help - calculate based on descriptions
       const lvl = getLevelByExp(exp);
-      const visibleItems = availableItems(lvl);
+      const visibleItems = getAllItemsSorted();
       const lineHeight = 14;
       const itemHeight = 36;
       const totalContentHeight = visibleItems.length * itemHeight;
@@ -561,7 +223,7 @@ window.addEventListener('mousemove', (e) => {
       const { cols, cellW, cellH, marginX, top, paddingTop, paddingBottom } = shopGrid();
       const gap = 8;
       const lvl = getLevelByExp(exp);
-      const items = availableItems(lvl);
+      const items = getAllItemsSorted();
       const rows = Math.ceil(items.length / cols) || 1;
       const contentH = paddingTop + rows * (cellH + gap) - gap + paddingBottom;
       const viewportH = CONFIG.height - top - 90;
@@ -602,7 +264,7 @@ window.addEventListener('touchmove', (e) => {
       const { cols, cellW, cellH, marginX, top, paddingTop, paddingBottom } = shopGrid();
       const gap = 8;
       const lvl = getLevelByExp(exp);
-      const items = availableItems(lvl);
+      const items = getAllItemsSorted();
       const rows = Math.ceil(items.length / cols) || 1;
       const contentH = paddingTop + rows * (cellH + gap) - gap + paddingBottom;
       const viewportH = CONFIG.height - top - 90;
@@ -612,438 +274,7 @@ window.addEventListener('touchmove', (e) => {
   }
 }, { passive: false });
 
-// Rope entity
-class Rope {
-  constructor(params) {
-    this.anchorX = params.anchorX;
-    this.anchorY = params.anchorY;
-    this.L = params.L;
-    this.A = params.A; // radians
-    this.omega = params.omega; // rad/s
-    this.phi = params.phi; // phase
-    this.createdAt = params.createdAt || 0;
-    this.id = params.id || Math.random().toString(36).slice(2);
-    this.breakAt = null; // time when rope will snap (if scheduled)
-    this.isWebRope = params.isWebRope || false;
-    this.webTargetL = params.webTargetL || null;
-    this.retractSpeed = params.retractSpeed || 250;
-    this.tailorBonus = params.tailorBonus || 0;
-  }
-  // θ(t) = A cos(ω t + φ)
-  theta(t) {
-    return this.A * Math.cos(this.omega * t + this.phi);
-  }
-  tip(t) {
-    const th = this.theta(t);
-    const x = this.anchorX + this.L * Math.sin(th);
-    const y = this.anchorY + this.L * Math.cos(th);
-    const dth = -this.A * this.omega * Math.sin(this.omega * t + this.phi);
-    const vx = this.L * Math.cos(th) * dth;
-    const vy = -this.L * Math.sin(th) * dth;
-    return { x, y, vx, vy, th };
-  }
-}
 
-// Player entity (shape renderer)
-class Player {
-  constructor() {
-    this.r = 14;
-    this.reset();
-  }
-  reset() {
-    this.x = CONFIG.width * 0.32;
-    this.y = CONFIG.height * 0.45;
-    this.vx = 0;
-    this.vy = 0;
-    this.angle = 0;
-    this.mode = 'attached'; // 'attached' | 'free'
-    this.rope = null; // current attached rope
-    this.sizeScale = 1;
-  }
-  airFlap() {
-    // In-air flap: mainly vertical impulse, minimal horizontal change
-    this.vy = Math.min(this.vy, 0) - CONFIG.jumpImpulse * 0.85 * (CONFIG.jumpSpeedScale || 1);
-  }
-  update(dt, t) {
-    if (this.mode === 'attached' && this.rope) {
-    if (this.rope.isWebRope && this.rope.webTargetL != null && this.rope.L > this.rope.webTargetL) {
-      this.rope.L -= this.rope.retractSpeed * dt; // Retract speed
-      if (this.rope.L < this.rope.webTargetL) {
-          this.rope.L = this.rope.webTargetL;
-      }
-    }
-      if (characterIs('wizard')) {
-        wizardFloatTimer = 0;
-        wizardSpinTimer = 0;
-        wizardSpinRate = 0;
-      }
-      const tip = this.rope.tip(t);
-      this.x = tip.x;
-      this.y = tip.y;
-      // Angle from rope tip velocity
-      const targetAngle = Math.atan2(tip.vy, tip.vx || 1e-6);
-      const maxTilt = Math.PI * 0.6;
-      const clamped = Math.max(-maxTilt, Math.min(maxTilt, targetAngle));
-      this.angle += (clamped - this.angle) * Math.min(1, dt * 10);
-      // vy follows tip vy (for smooth transition on detach)
-      this.vy = tip.vy;
-    } else {
-      // Free flight (flappy-like): vertical physics only; horizontal is via camera
-      const s = (CONFIG.jumpSpeedScale || 1);
-      const wizardFloating = characterIs('wizard') && wizardFloatTimer > 0;
-      const floatFactor = wizardFloating ? 0.3 : 1;
-      this.x += this.vx * dt;
-      // horizontal damping scaled to preserve distance under time dilation
-      this.vx += -this.vx * (CONFIG.airDragX * s * floatFactor) * dt;
-      if (wizardFloating) {
-        const target = Math.min(CONFIG.maxVx, Math.max(CONFIG.minVx, CONFIG.wizardGlideTargetSpeed || CONFIG.baseVx));
-        const accel = Math.max(0, CONFIG.wizardGlideAccel || 0);
-        if (this.vx < target) {
-          this.vx += accel * dt;
-          if (this.vx > target) this.vx = target;
-        }
-      }
-      // gravity scaled by s^2 to preserve trajectory distance while slowing motion
-      this.vy += (CONFIG.gravity * s * s * floatFactor) * dt;
-      this.y += this.vy * dt;
-      const spinning = wizardFloating && wizardSpinRate > 0;
-      if (spinning) {
-        this.angle += wizardSpinRate * dt;
-      } else {
-        const targetAngle = Math.atan2(this.vy, 260);
-        const maxTilt = Math.PI * 0.45;
-        const baseLerp = 12;
-        const spinBoost = wizardFloating ? (Math.abs(this.vy) * 0.005 + Math.abs(this.vx) * 0.003) : 0;
-        const clamped = Math.max(-maxTilt, Math.min(maxTilt, targetAngle));
-        const lerpRate = Math.min(1, dt * (baseLerp + spinBoost));
-        this.angle += (clamped - this.angle) * lerpRate;
-      }
-      if (wizardFloating) {
-        wizardFloatTimer = Math.max(0, wizardFloatTimer - dt);
-        wizardSpinTimer = Math.max(0, wizardSpinTimer - dt);
-        if (wizardFloatTimer <= 0 || wizardSpinTimer <= 0) {
-          wizardSpinTimer = 0;
-          wizardSpinRate = 0;
-        }
-      }
-    }
-  }
-  draw(g) {
-    g.save();
-    g.translate(this.x, this.y);
-    g.rotate(this.angle);
-    const level = getLevelByExp(exp);
-    // Level 1: pure white circle. Level 2+: every 3 levels shape changes; add one color segment per level (max 3)
-    const segCount = (level <= 1) ? 0 : (((level - 2) % 3) + 1);
-    const segColors = ['#e53d3d', '#6aa8ff', '#ffa24d'];
-    const size = this.r * 2 * this.sizeScale;
-    const levelScale = (level > 1) ? 1.3 : 1.0;
-    
-    // Check if using pixel character
-    const isPixelChar = selectedCharacter !== 'default' && PIXEL_CHARACTERS[selectedCharacter];
-
-    function drawPolygonPath(ctx, sides, radius, rotationRad) {
-      const r = radius;
-      ctx.beginPath();
-      for (let i = 0; i < sides; i++) {
-        const a = rotationRad + i * (Math.PI * 2 / sides);
-        const x = Math.cos(a) * r;
-        const y = Math.sin(a) * r;
-        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-      }
-      ctx.closePath();
-    }
-
-    // Glow effect if purchased (3 levels with different colors and alpha)
-    if (shopInv.glowLevel && shopInv.glowLevel > 0) {
-      const glowLv = shopInv.glowLevel;
-      // Level 1: white, fast blink, low alpha
-      // Level 2: yellow, medium blink, medium alpha  
-      // Level 3: sky blue, slow blink, high alpha
-      const colors = ['#ffffff', '#ffff88', '#88ddff'];
-      const speeds = [5.0, 3.5, 2.0]; // Blink speed
-      const minAlphas = [0.05, 0.08, 0.1]; // Lower min alphas for pixel chars
-      const maxAlphas = [0.2, 0.25, 0.3]; // Max alpha 0.3 for level 3
-      
-      const color = colors[Math.min(glowLv - 1, 2)];
-      const speed = speeds[Math.min(glowLv - 1, 2)];
-      const minAlpha = minAlphas[Math.min(glowLv - 1, 2)];
-      const maxAlpha = maxAlphas[Math.min(glowLv - 1, 2)];
-      
-      const pulse = (Math.sin(simTime * speed) + 1) / 2; // 0 to 1
-      const alpha = minAlpha + (maxAlpha - minAlpha) * pulse;
-      
-      g.save();
-      // Use screen blend mode for better glow effect
-      g.globalCompositeOperation = 'screen';
-      g.globalAlpha = alpha;
-      g.fillStyle = color;
-      const bigScale = 1 + 0.025 * (shopInv.bigLevel || 0);
-      const gr = (this.r * this.sizeScale * bigScale) * ((level > 1) ? 1.3 : 1.0) * 1.6;
-      
-      // Draw glow shape
-      if (isPixelChar) {
-        // Sunburst/starburst effect for pixel characters with varying ray sizes
-        const rays = 12;
-        const innerR = gr * 0.5;
-        
-        // Different sizes for each ray for more organic look
-        const rayScales = [1.0, 0.7, 0.9, 0.6, 1.1, 0.8, 0.95, 0.65, 1.05, 0.75, 0.85, 0.7];
-        
-        g.beginPath();
-        for (let i = 0; i < rays; i++) {
-          const angle = (i / rays) * Math.PI * 2;
-          const nextAngle = ((i + 0.5) / rays) * Math.PI * 2;
-          
-          // Vary the outer radius for each ray
-          const outerR = gr * rayScales[i];
-          
-          // Outer point
-          const x1 = Math.cos(angle) * outerR;
-          const y1 = Math.sin(angle) * outerR;
-          
-          // Inner point (also vary slightly)
-          const innerScale = 0.9 + Math.sin(i * 1.7) * 0.1;
-          const x2 = Math.cos(nextAngle) * innerR * innerScale;
-          const y2 = Math.sin(nextAngle) * innerR * innerScale;
-          
-          if (i === 0) {
-            g.moveTo(x1, y1);
-          } else {
-            g.lineTo(x1, y1);
-          }
-          g.lineTo(x2, y2);
-        }
-        g.closePath();
-        g.fill();
-      } else if (level === 1) {
-        // Circle for level 1
-        g.beginPath();
-        g.arc(0, 0, gr, 0, Math.PI * 2);
-        g.fill();
-      } else {
-        // Polygon for level 2+
-        const groupIdx = Math.floor((level - 2) / 3);
-        const sides = 3 + Math.max(0, groupIdx);
-        const rot = Math.PI / 10; // Match player's rotation
-        drawPolygonPath(g, sides, gr, rot);
-        g.fill();
-      }
-      g.restore();
-    }
-    
-    // Draw character (pixel or default)
-    if (isPixelChar) {
-      // Draw pixel character with animation
-      const charData = PIXEL_CHARACTERS[selectedCharacter];
-      const bigScale = 1 + 0.025 * (shopInv.bigLevel || 0);
-      const pixelSize = 3 * this.sizeScale * bigScale * levelScale;
-      
-      // Animation effects based on player state
-      const isSwinging = this.mode === 'attached';
-      const isFalling = this.mode === 'free' && this.vy > 50;
-      const isJumping = this.mode === 'free' && this.vy < -50;
-      
-      // Squash and stretch animation
-      let scaleX = 1;
-      let scaleY = 1;
-      let offsetY = 0;
-      
-      if (isSwinging) {
-        // Subtle swing animation
-        scaleX = 1 + Math.sin(simTime * 8) * 0.05;
-        scaleY = 1 - Math.sin(simTime * 8) * 0.05;
-      } else if (isJumping) {
-        // Stretch when jumping up
-        scaleX = 0.9;
-        scaleY = 1.15;
-      } else if (isFalling) {
-        // Squash when falling down
-        scaleX = 1.1;
-        scaleY = 0.9;
-      }
-      
-      // Eye blink animation
-      const blinkCycle = Math.floor(simTime * 0.3) % 20;
-      const isBlinking = blinkCycle === 0;
-      
-      // Apply animation transforms
-      g.save();
-      g.scale(scaleX, scaleY);
-      
-      // Draw pixels with animation
-      // Robot turns rusty brown after using its ground rescue once per run.
-      const robotRustColors = ['#8B5A2B', '#D9B382', '#5D3A1A'];
-      const activeColors = (characterIs('robot') && robotReviveUsed) ? robotRustColors : charData.colors;
-
-      charData.pixels.forEach((row, ry) => {
-        row.forEach((pixel, rx) => {
-          if (pixel) {
-            // Special handling for eyes (usually pixel value 2)
-            if (pixel === 2 && isBlinking) {
-              // Don't draw eyes when blinking
-              return;
-            }
-            
-            // Add slight wobble for certain characters
-            let pixelOffsetX = 0;
-            let pixelOffsetY = 0;
-            
-            if (selectedCharacter === 'ninja' && isSwinging) {
-              // Ninja's scarf/ribbon effect - animate bottom pixels
-              if (ry >= 6) {
-                pixelOffsetX = Math.sin(simTime * 10 + ry) * 1;
-              }
-            } else if (selectedCharacter === 'wizard' && isSwinging) {
-              // Wizard's robe flutter - animate bottom pixels
-              if (ry >= 5) {
-                pixelOffsetX = Math.cos(simTime * 8 + ry * 0.5) * 0.8;
-              }
-            }
-            
-            g.fillStyle = activeColors[pixel - 1] || '#ffffff';
-            g.fillRect(
-              (rx - charData.pixels[0].length / 2) * pixelSize + pixelOffsetX,
-              (ry - charData.pixels.length / 2) * pixelSize + pixelOffsetY + offsetY,
-              pixelSize,
-              pixelSize
-            );
-          }
-        });
-      });
-      
-      g.restore();
-      
-      // No outline for pixel characters to avoid black border
-      
-    } else if (level === 1) {
-      // Pure white circle (egg)
-      const bigScale = 1 + 0.025 * (shopInv.bigLevel || 0);
-      const r = this.r * this.sizeScale * bigScale * levelScale;
-      g.fillStyle = '#ffffff';
-      g.beginPath();
-      g.arc(0, 0, r, 0, Math.PI * 2);
-      g.fill();
-      // Outline and pointer
-      g.strokeStyle = '#e53d3d';
-      g.lineWidth = 2;
-      g.beginPath();
-      g.arc(0, 0, r, 0, Math.PI * 2);
-      g.stroke();
-      // Direction pointer
-      g.fillStyle = '#e53d3d';
-      g.beginPath();
-      g.moveTo(r * 0.6, 0);
-      g.lineTo(r * 0.1, -5);
-      g.lineTo(r * 0.1, 5);
-      g.closePath();
-      g.fill();
-    } else {
-      // Shape mapping: L2-4 triangle (3), L5-7 square (4), L8-10 pentagon (5), ...
-      const groupIdx = Math.floor((level - 2) / 3); // 0 for L2-4, 1 for L5-7, ...
-      const sides = 3 + groupIdx;
-      const bigScale = 1 + 0.025 * (shopInv.bigLevel || 0);
-      const r = this.r * this.sizeScale * bigScale * levelScale;
-      const rot = Math.PI / 10; // slight rotation
-      // Clip to polygon
-      g.save();
-      drawPolygonPath(g, sides, r, rot);
-      g.clip();
-      // Base
-      g.fillStyle = '#ffffff';
-      g.fillRect(-r, -r, r*2, r*2);
-      // Segments
-      const third = (r * 2) / 3;
-      for (let i = 0; i < segCount; i++) {
-        g.fillStyle = segColors[i % segColors.length];
-        g.fillRect(-r + third * i, -r, third, r*2);
-      }
-      g.restore();
-      // Outline
-      g.strokeStyle = '#e53d3d';
-      g.lineWidth = 2;
-      drawPolygonPath(g, sides, r, rot);
-      g.stroke();
-    }
-
-    // Buds - works with both pixel and polygon characters
-    const budsLevel = shopInv.budsLevel || 0;
-    if (budsLevel > 0) {
-      const budsCount = Math.min(6, budsLevel);
-      const spin = simTime * 0.8;
-      const budPalette = ['#e53d3d', '#6aa8ff', '#ffa24d'];
-
-      if (isPixelChar) {
-        const charData = PIXEL_CHARACTERS[selectedCharacter];
-        const bigScale = 1 + 0.025 * (shopInv.bigLevel || 0);
-        const pixelSize = 3 * this.sizeScale * bigScale * levelScale;
-        const width = (charData.pixels[0].length || 8) * pixelSize;
-        const height = (charData.pixels.length || 8) * pixelSize;
-        const orbitR = Math.max(width, height) * 0.6 + 6;
-        const budRadius = 4.5;
-        for (let i = 0; i < budsCount; i++) {
-          const baseAngle = spin + i * (Math.PI * 2 / budsCount);
-          const wobble = Math.sin(simTime * 1.4 + i) * 0.2;
-          const angle = baseAngle + wobble;
-          const px = Math.cos(angle) * orbitR;
-          const py = Math.sin(angle) * orbitR * 0.9;
-          const pulse = 1 + Math.sin(simTime * 2.5 + i) * 0.1;
-          g.save();
-          g.translate(px, py);
-          const paletteColor = budPalette[i % budPalette.length];
-          g.fillStyle = paletteColor;
-          g.beginPath();
-          g.arc(0, 0, budRadius * pulse, 0, Math.PI * 2);
-          g.fill();
-          g.strokeStyle = '#2d2d2d';
-          g.lineWidth = 1;
-          g.stroke();
-          g.restore();
-        }
-      } else if (level > 1) {
-        const bigScale = 1 + 0.025 * (shopInv.bigLevel || 0);
-        const baseR = this.r * this.sizeScale * bigScale * ((level > 1) ? 1.3 : 1.0);
-        const childR = baseR * 0.32;
-        const orbitR = baseR + childR * 1.6;
-        const third = (baseR * 2) / 3;
-        const segColorsLocal = budPalette;
-        const segCountLocal = (level <= 1) ? 0 : (((level - 2) % 3) + 1);
-        for (let i = 0; i < budsCount; i++) {
-          const baseAngle = spin + i * (Math.PI * 2 / budsCount);
-          const wobble = Math.sin(simTime * 1.6 + i * 0.8) * 0.25;
-          const angle = baseAngle + wobble;
-          const px = Math.cos(angle) * orbitR;
-          const py = Math.sin(angle) * orbitR * 0.92;
-          let col = '#ffffff';
-          if (segCountLocal > 0) {
-            const idx = Math.max(0, Math.min(2, Math.floor((px + baseR) / third)));
-            if (idx < segCountLocal) col = segColorsLocal[idx];
-          }
-          g.save();
-          g.translate(px, py);
-          g.fillStyle = col;
-          g.strokeStyle = '#e53d3d';
-          g.lineWidth = 2;
-          g.beginPath();
-          g.arc(0, 0, childR, 0, Math.PI * 2);
-          g.fill();
-          g.stroke();
-          g.restore();
-        }
-      }
-    }
-
-    g.restore();
-  }
-}
-
-// Effective player collision radius (level-scaled)
-function playerCollisionRadius() {
-  const level = getLevelByExp(exp);
-  const levelScale = (level > 1) ? 1.3 : 1.0;
-  const bigScale = 1 + 0.05 * (shopInv.bigLevel || 0);
-  return player.r * player.sizeScale * bigScale * levelScale;
-}
 
 // Simple game state machine: intro -> run -> gameover -> shop
 const State = {
@@ -1056,37 +287,15 @@ let best = 0;
 let simTime = 0;
 const camera = { x: 0 };
 const SCREEN_TARGET_X = CONFIG.width * 0.22;
-const SAVINGS_KEY = 'webswing_savings_v1';
-const BEST_SCORE_KEY = 'webswing_best_v1';
-const EXP_KEY = 'webswing_exp_v1';
 let savings = 0; // money for shop
 let exp = 0;     // progression EXP for levels
 let lastEarned = 0; // dollars earned in the most recent run
 let lastExpEarned = 0;
-const DEMO_DONE_KEY = 'webswing_demo_done_v1';
-const SHOP_INV_KEY = 'webswing_shop_inv_v1';
 let demoActive = false;
 let lastDemoLoss = false;
 let fastModeEnabled = false;
 let comboCount = 0;
 
-// Level system based on EXP thresholds
-const LEVEL_THRESHOLDS = (() => {
-  const arr = [];
-  let current = 10;
-  for (let lvl = 1; lvl < 99; lvl++) {
-    arr.push(current);
-    current += Math.floor(10 + lvl * 10);
-  }
-  return arr;
-})();
-function getLevelByExp(val) {
-  let lvl = 1;
-  for (let i = 0; i < LEVEL_THRESHOLDS.length; i++) {
-    if (val >= LEVEL_THRESHOLDS[i]) lvl++; else break;
-  }
-  return lvl; // Level 1..13
-}
 
 // Level-up popup state for game over screen
 let gameOverLevelUp = null; // { from, to }
@@ -1103,16 +312,18 @@ let shopCharPage = 0;        // current page for character shop
 let shopCharTotalPages = 1;  // total pages for character shop
 let helpPage = 0;            // current page for item descriptions popup
 let helpTotalPages = 1;      // total pages for item descriptions popup
+let currentItemPageEntries = [];
+let currentCharacterPageEntries = [];
 
 // Layout tuning constants for shop UIs
-const ITEM_CARD_VERTICAL_GAP = 16;
-const ITEM_CARD_PADDING_TOP = 40;
-const ITEM_CARD_PADDING_BOTTOM = 40;
-const ITEM_CARD_EXTRA_PER_PAGE = 0;
-const ITEM_CARD_HEIGHT = 69;
 const CHAR_CARD_ROWS_PER_PAGE = 3;
 const CHAR_CARD_VERTICAL_GAP = 20;
 const CHAR_CARD_CELL_H = 115;
+const ITEM_CARD_VERTICAL_GAP = CHAR_CARD_VERTICAL_GAP;
+const ITEM_CARD_PADDING_TOP = 0;
+const ITEM_CARD_PADDING_BOTTOM = 0;
+const ITEM_CARD_EXTRA_PER_PAGE = 0;
+const ITEM_CARD_HEIGHT = CHAR_CARD_CELL_H;
 
 // Global button system for all UI elements
 let uiButtons = {
@@ -1121,105 +332,6 @@ let uiButtons = {
   shop: { cards: [], buttons: [] }
 };
 
-class UIButton {
-  constructor(x, y, w, h, label, action, state) {
-    this.x = x;
-    this.y = y;
-    this.w = w;
-    this.h = h;
-    this.label = label;
-    this.action = action;
-    this.state = state; // Which state this button belongs to
-  }
-  
-  isClicked(mx, my) {
-    return mx >= this.x && mx <= this.x + this.w && 
-           my >= this.y && my <= this.y + this.h;
-  }
-  
-  labelText() {
-    return typeof this.label === 'function' ? this.label() : this.label;
-  }
-
-  onClick() {
-    console.log(`Button clicked: ${this.labelText()} in ${this.state}`);
-    this.action();
-  }
-}
-
-class ShopCard {
-  constructor(x, y, w, h, item, index, type) {
-    this.x = x;
-    this.baseY = y; // 기본 Y 위치 (스크롤 없을 때)
-    this.y = y; // 실제 Y 위치 (스크롤 반영)
-    this.w = w;
-    this.h = h;
-    this.item = item;
-    this.index = index;
-    this.type = type; // 'item' or 'char'
-  }
-  
-  updateScroll(scrollY) {
-    this.y = this.baseY - scrollY;
-  }
-  
-  isClicked(mx, my) {
-    return mx >= this.x && mx <= this.x + this.w && 
-           my >= this.y && my <= this.y + this.h;
-  }
-  
-  onClick() {
-    // 타입에 따라 다른 처리
-    if (this.type === 'char') {
-      // 캐릭터 구매/선택 처리
-      const charId = typeof this.item === 'string' ? this.item : this.item.id;
-      const char = PIXEL_CHARACTERS[charId];
-      if (!char) return;
-      
-      const charInv = shopInv.characters || [];
-      const lvl = getLevelByExp(exp);
-      const state = characterCardState(charId, char, lvl, charInv, savings);
-
-      if (state.levelLocked) {
-        shopMsgKey = 'shop.error.level';
-        shopMsgArgs = { level: state.minLevel };
-        shopMsg = t(shopMsgKey, shopMsgArgs);
-        shopMsgTimer = 2.0;
-        shopConfirm = null;
-        return;
-      }
-
-      if (state.fundsLocked) {
-        shopMsgKey = 'shop.error.funds';
-        shopMsgArgs = { amount: state.price };
-        shopMsg = t(shopMsgKey, shopMsgArgs);
-        shopMsgTimer = 2.0;
-        shopConfirm = null;
-        return;
-      }
-
-      const isOwned = state.owned;
-      
-      shopConfirm = {
-        id: charId,
-        type: 'character',
-        isOwned: isOwned,
-        price: isOwned ? 0 : char.price
-      };
-    } else {
-      // 일반 아이템 구매 처리
-      if (isItemSoldOut(this.item)) {
-      shopMsgKey = 'shop.error.alreadyPurchased';
-      shopMsgArgs = null;
-      shopMsg = t(shopMsgKey);
-      shopMsgTimer = 1.5;
-      } else {
-        const price = nextPriceForItem(this.item);
-        shopConfirm = { id: this.item.id, price: price };
-      }
-    }
-  }
-}
 
 // Build intro buttons
 function buildIntroButtons() {
@@ -1385,104 +497,7 @@ function characterAirJumpBonus() {
 let rouletteState = null;
 let rouletteSummary = null;
 
-const SHOP_INV_DEFAULTS = {
-  glowLevel: 0,
-  budsLevel: 0,
-  plusJump: false,
-  fly: false,
-  bigLevel: 0,
-  gambleActive: false,
-  webActive: false,
-  magnetLevel: 0,
-  comboLevel: 0,
-  double: false,
-  luckyLevel: 0,
-  feverLevel: 0,
-  characters: [],
-  consumables: {},
-};
 let shopInv = { ...SHOP_INV_DEFAULTS };
-function loadShopInv() {
-  try {
-    const raw = localStorage.getItem(SHOP_INV_KEY);
-    if (raw) shopInv = { ...shopInv, ...JSON.parse(raw) };
-  } catch(_){}
-  shopInv = { ...SHOP_INV_DEFAULTS, ...shopInv };
-  shopInv.consumables = { ...(shopInv.consumables || {}) };
-  // Legacy migration: convert one-time booleans to consumable counts
-  let migrated = false;
-  if (shopInv.shield) {
-    delete shopInv.shield;
-    migrated = true;
-  }
-  if ('rainbow' in shopInv) {
-    delete shopInv.rainbow;
-    migrated = true;
-  }
-  if ('bankLevel' in shopInv) {
-    delete shopInv.bankLevel;
-    migrated = true;
-  }
-  if (shopInv.consumables && shopInv.consumables.shield) {
-    delete shopInv.consumables.shield;
-    migrated = true;
-  }
-  if (shopInv.consumables && shopInv.consumables.rainbow) {
-    delete shopInv.consumables.rainbow;
-    migrated = true;
-  }
-  if (shopInv.slow) {
-    shopInv.consumables.slow = Math.max(1, shopInv.consumables.slow || 0);
-    delete shopInv.slow;
-    migrated = true;
-  }
-  if (shopInv.revival) {
-    shopInv.consumables.revival = Math.max(1, shopInv.consumables.revival || 0);
-    delete shopInv.revival;
-    migrated = true;
-  }
-  if (migrated) saveShopInv();
-}
-function saveShopInv() {
-  try { localStorage.setItem(SHOP_INV_KEY, JSON.stringify(shopInv)); } catch(_){}
-}
-
-function applyRunConsumables() {
-  shopInv.consumables = { ...(shopInv.consumables || {}) };
-  const cons = shopInv.consumables;
-  let dirty = false;
-
-  // Reset runtime flags before applying
-  shopInv.gambleActive = false;
-  shopInv.webActive = false;
-  activeSlowCharges = 0;
-  activeRevivalCharges = 0;
-
-  if ((cons.gamble || 0) > 0) {
-    shopInv.gambleActive = true;
-    cons.gamble = 0;
-    dirty = true;
-  }
-  if ((cons.web || 0) > 0) {
-    shopInv.webActive = true;
-    cons.web = 0;
-    dirty = true;
-  }
-  if ((cons.slow || 0) > 0) {
-    activeSlowCharges = cons.slow;
-    cons.slow = 0;
-    dirty = true;
-    // TODO: trigger auto slow-mo when falling while charges remain.
-  }
-  if ((cons.revival || 0) > 0) {
-    activeRevivalCharges = cons.revival;
-    cons.revival = 0;
-    dirty = true;
-    // TODO: consume charge to revive non-robot characters on ground impact.
-  }
-
-  if (dirty) saveShopInv();
-}
 
 // Ropes and spawning
 const ropes = [];
@@ -1995,7 +1010,7 @@ function initBossBattle() {
       hitGoal: 50,
       jumpCount: 0,
       jumpGoal: 80,
-      jumpPower: 253.5,
+      jumpPower: 320,
       baseGravity: CONFIG.gravity * 1.35,
     };
   } else if (bossState.type === 'collect') {
@@ -2593,26 +1608,6 @@ function drawParticles(g) {
   g.globalAlpha = 1;
 }
 
-function randRange(a, b) {
-  return a + Math.random() * (b - a);
-}
-function deg2rad(d) { return (d * Math.PI) / 180; }
-
-function easeOutCubic(t) {
-  const clamped = Math.max(0, Math.min(1, t));
-  const inv = 1 - clamped;
-  return 1 - inv * inv * inv;
-}
-
-function easeInCubic(t) {
-  const clamped = Math.max(0, Math.min(1, t));
-  return clamped * clamped * clamped;
-}
-
-function easeInOutCubic(t) {
-  const clamped = Math.max(0, Math.min(1, t));
-  return clamped < 0.5 ? 4 * clamped * clamped * clamped : 1 - Math.pow(-2 * clamped + 2, 3) / 2;
-}
 
 function drawPixelSprite(g, cx, cy, sprite, scale = 4, align = 'center') {
   if (!sprite || !sprite.pixels || !sprite.palette) return;
@@ -2635,10 +1630,6 @@ function drawPixelSprite(g, cx, cy, sprite, scale = 4, align = 'center') {
   }
 }
 
-// Effective scaling for level 1 ease (rope position/length/spacing only)
-function lv1Scale() {
-  return getLevelByExp(exp) === 1 ? 0.8 : 1.0;
-}
 
 function spawnInitialRope() {
   // Create a rope whose tip passes through player's screenX at t=0 (attached start)
@@ -2673,7 +1664,7 @@ function planNextRope() {
   const currentTip = player.rope ? player.rope.tip(simTime) : { x: player.x, y: player.y };
   const x0 = currentTip.x;
   const y0 = currentTip.y;
-  const s = lv1Scale();
+  const s = lv1Scale(exp);
   const anchorBaseY = CONFIG.ceilingY;
   // estimate velocities after detach
   const vxEst = (player.mode === 'free') ? Math.max(CONFIG.minVx, Math.min(CONFIG.maxVx, player.vx)) : ((CONFIG.baseVx + 40) * speedMultiplier);
@@ -2798,7 +1789,7 @@ function planNextRope() {
 }
 
 function ensureRopesBuffered() {
-  const s = lv1Scale();
+  const s = lv1Scale(exp);
   // Spawn only when the farthest NORMAL rope is behind the target edge position
   const targetEdgeX = camera.x + (CONFIG.maxAnchorX * s) - 8;
   const fillUntil = targetEdgeX;
@@ -2940,7 +1931,10 @@ function resetRun() {
   // Ensure fever state is cleared on fresh run
   starModeActive = false;
   starModeEndTime = 0;
-  applyRunConsumables();
+  const consumableResult = applyRunConsumables(shopInv);
+  shopInv = consumableResult.shopInv;
+  activeSlowCharges = consumableResult.activeSlowCharges;
+  activeRevivalCharges = consumableResult.activeRevivalCharges;
   spawnInitialRope();
   ensureRopesBuffered();
   airJumpsLeft = 0;
@@ -3208,10 +2202,11 @@ function renderIntro(g, time) {
     g.textAlign = 'left';
     g.textBaseline = 'top';
     g.font = `9px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-    let ly = py + 14;
+    const baseGuideLine = 14;
+    let ly = py + baseGuideLine;
     for (const line of lines) {
       g.fillText(line, px + 12, ly);
-      ly += 14;
+      ly += lineAdvance(baseGuideLine, line);
     }
     g.fillStyle = '#b4c0d9';
     g.font = `8px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
@@ -3430,7 +2425,7 @@ function updateRun(dt) {
         // Web shot (if no fly ability)
         usedWebThisRun = true;
         shopInv.webActive = false;
-        saveShopInv();
+        saveShopInv(shopInv);
         const webAnchorY = player.y - 400;
         const newWebRope = new Rope({
             anchorX: player.x,
@@ -3451,7 +2446,7 @@ function updateRun(dt) {
         // Web shot (after fly is used)
         usedWebThisRun = true;
         shopInv.webActive = false;
-        saveShopInv();
+        saveShopInv(shopInv);
         const webAnchorY = player.y - 400;
         const newWebRope = new Rope({
             anchorX: player.x,
@@ -3866,7 +2861,7 @@ function updateRun(dt) {
       earnedMoney = Math.floor(earnedMoney * 1.5);
       earnedExp = Math.floor(earnedExp * 1.5);
       shopInv.gambleActive = false; // Consume gamble
-      saveShopInv();
+      saveShopInv(shopInv);
     }
 
     if (rouletteState && rouletteState.active) {
@@ -3926,8 +2921,8 @@ function updateRun(dt) {
         exp = 0;
         localStorage.setItem(EXP_KEY, '0');
         shopInv = { ...SHOP_INV_DEFAULTS };
-        saveShopInv();
-        saveShopInv();
+        saveShopInv(shopInv);
+        saveShopInv(shopInv);
       } catch(_){}
     }
     best = Math.max(best, score);
@@ -4438,10 +3433,10 @@ const dt = 1 / 120; // physics step
 async function start() {
   await Fonts.load();
   // Load tuning then apply
-  loadTuningLocal();
+  tuning = loadTuningLocal(tuning);
   await maybeLoadTuningFromServer();
-  applyTuningToConfig();
-  setupDebugUI();
+  applyTuningToConfig(CONFIG, tuning);
+  setupDebugUI(tuning, () => applyTuningToConfig(CONFIG, tuning), () => saveTuningLocal(tuning));
   // Keep panel hidden until toggled by V
   const dbg = document.getElementById('debug-panel'); if (dbg) dbg.hidden = !DEBUG;
   // Load savings and EXP from localStorage
@@ -4485,7 +3480,7 @@ async function start() {
     }
   } catch (_) {}
   // Load shop inventory
-  loadShopInv();
+  shopInv = loadShopInv(shopInv);
   // Demo mode: grant EXP and equip core items so the character looks different
   if (demoActive) {
     try {
@@ -4498,7 +3493,7 @@ async function start() {
     shopInv.glowLevel = 1;
     shopInv.plusJump = true;
     shopInv.fly = true;
-    saveShopInv();
+    saveShopInv(shopInv);
   }
   requestAnimationFrame(tick);
 }
@@ -4540,6 +3535,49 @@ function tick(now) {
 // Shop item definitions provided via external spec
 const SHOP_ITEMS = (typeof window !== 'undefined' ? window.ITEM_SPECS : undefined) || [];
 const SHOP_ITEM_ORDER = new Map(SHOP_ITEMS.map((item, idx) => [item, idx]));
+const ITEM_ART = (typeof window !== 'undefined' ? window.ITEM_ART : undefined) || {};
+
+function getAllItemsSorted() {
+  return sortItemsByMinLevel(SHOP_ITEMS);
+}
+
+function unlockInfoForItem(item) {
+  if (!item) return { type: 'level', value: 1 };
+  return item.unlock || { type: 'level', value: item.minLevel || 1 };
+}
+
+function isItemSpecialUnlocked(item, unlockInfo = unlockInfoForItem(item)) {
+  if (!unlockInfo || unlockInfo.type !== 'special') return true;
+  const key = unlockInfo.key || item.id;
+  const specials = shopInv.specialUnlocks || [];
+  if (Array.isArray(specials)) return specials.includes(key);
+  return Boolean(specials && specials[key]);
+}
+
+function itemCardState(item, lvl, currentSavings) {
+  const unlock = unlockInfoForItem(item);
+  const price = nextPriceForItem(item);
+  let levelLocked = false;
+  let specialLocked = false;
+  let requiredLevel = item.minLevel || 1;
+  if (unlock.type === 'level') {
+    requiredLevel = unlock.value ?? requiredLevel;
+    levelLocked = lvl < requiredLevel;
+  } else if (unlock.type === 'special') {
+    specialLocked = !isItemSpecialUnlocked(item, unlock);
+  }
+  const soldOut = isItemSoldOut(item);
+  const fundsLocked = !soldOut && !levelLocked && !specialLocked && currentSavings < price;
+  return {
+    levelLocked,
+    specialLocked,
+    fundsLocked,
+    soldOut,
+    price,
+    minLevel: requiredLevel,
+    locked: levelLocked || specialLocked || fundsLocked,
+  };
+}
 
 function sortItemsByMinLevel(list) {
   const arr = list.slice();
@@ -4555,7 +3593,21 @@ function sortItemsByMinLevel(list) {
 }
 
 function availableItems(level = getLevelByExp(exp)) {
-  return sortItemsByMinLevel(SHOP_ITEMS.filter((it) => (it.minLevel || 1) <= level));
+  return getAllItemsSorted().filter((it) => {
+    const unlock = unlockInfoForItem(it);
+    if (unlock.type === 'level') {
+      const required = unlock.value ?? it.minLevel ?? 1;
+      return level >= required;
+    }
+    if (unlock.type === 'special') {
+      return isItemSpecialUnlocked(it, unlock);
+    }
+    return true;
+  });
+}
+
+function getItemSprite(id) {
+  return ITEM_ART[id] || null;
 }
 
 function getItemLevel(it) {
@@ -4607,11 +3659,11 @@ function nextPriceForItem(it) {
 }
 
 function shopGrid() {
-  const cols = 3;
-  const cellW = Math.floor((CONFIG.width * 0.86) / cols);
+  const cols = 2;
+  const cellW = CONFIG.width / cols;
   const cellH = ITEM_CARD_HEIGHT;
-  const marginX = Math.floor((CONFIG.width - cols * cellW) / 2);
-  const top = Math.floor(CONFIG.height * 0.20);
+  const marginX = 20;
+  const top = CONFIG.height * 0.12 + 50;
   const paddingTop = ITEM_CARD_PADDING_TOP;
   const paddingBottom = ITEM_CARD_PADDING_BOTTOM;
   const gap = ITEM_CARD_VERTICAL_GAP;
@@ -4621,6 +3673,7 @@ function shopGrid() {
 function shopHelpRect() { return lastShopHelpRect; }
 
 function renderCharacterShop(g) {
+  currentItemPageEntries = [];
   // Character shop UI
   const titleY = CONFIG.height * 0.12;
   const charactersTitle = t('shop.charactersTitle');
@@ -4634,7 +3687,7 @@ function renderCharacterShop(g) {
   g.textAlign = 'right';
   g.textBaseline = 'top';
   g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-  g.fillText(`$ ${savings}`, CONFIG.width - 12, titleY + 24);
+  g.fillText(t('shop.balance', { amount: savings }), CONFIG.width - 12, titleY + 24);
 
   const showShopMsg = shopMsg && shopMsgTimer > 0 && (!shopConfirm || shopConfirm.type === 'character');
   if (showShopMsg) {
@@ -4642,7 +3695,7 @@ function renderCharacterShop(g) {
     g.textBaseline = 'top';
     g.fillStyle = '#ff6666';
     g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-    g.fillText(shopMsg, CONFIG.width / 2, titleY + 40);
+    g.fillText(shopMsg, CONFIG.width / 2, titleY - 50);
   }
   
   // Help button '?' for character shop
@@ -4682,6 +3735,7 @@ function renderCharacterShop(g) {
   if (shopCharPage < 0) shopCharPage = 0;
   const startIdx = shopCharPage * itemsPerPage;
   const endIdx = Math.min(chars.length, startIdx + itemsPerPage);
+  currentCharacterPageEntries = chars.slice(startIdx, endIdx);
 
   // Draw character cards for current page
   for (let i = startIdx; i < endIdx; i++) {
@@ -4794,7 +3848,7 @@ function renderCharacterShop(g) {
   }
 
   // Pagination UI for character shop
-  const byPag = CONFIG.height - 60 - 18 - 25;
+  const byPag = CONFIG.height - 60 - 18 - 20;
   const indicator = `${shopCharPage + 1}/${shopCharTotalPages}`;
   g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#ffffff';
   g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
@@ -4870,9 +3924,9 @@ function renderCharacterShop(g) {
       g.fillText(t('shop.confirmSelectCharacter', { name: characterName(shopConfirm.id) }), px + pw/2, py + 20);
     } else {
       g.fillText(t('shop.confirmPurchase', { name: characterName(shopConfirm.id), amount: char.price }), px + pw/2, py + 10);
-      g.font = `8px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-      g.fillText(t('hud.savings', { amount: savings }), px + pw/2, py + 38);
     }
+    g.font = `8px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+    g.fillText(t('shop.balance', { amount: savings }), px + pw/2, py + 38);
     
     // YES/NO buttons
     const bw2 = 78, bh2 = 26;
@@ -4918,7 +3972,7 @@ function renderCharacterShop(g) {
     const contentY = py + 35;
     const contentBottom = py + ph - 70;
     const contentH = contentBottom - contentY;
-    const chars = visibleCharacters();
+    const chars = (currentCharacterPageEntries && currentCharacterPageEntries.length) ? currentCharacterPageEntries : visibleCharacters();
     const entriesPerPage = 5;
     const totalPages = Math.max(1, Math.ceil(chars.length / entriesPerPage));
     // reuse helpPage/helpTotalPages for consistency when switching menus
@@ -4958,7 +4012,12 @@ function renderCharacterShop(g) {
       g.font = `8px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
       const summary = t(`chars.${id}.help`);
       const descLines = String(summary || '').split('\n');
-      descLines.forEach((line, li) => g.fillText(line, px + 10, yPos + lineHeight + li * 10));
+      let descY = yPos + lineHeight;
+      const baseGap = 10;
+      for (const line of descLines) {
+        g.fillText(line, px + 10, descY);
+        descY += lineAdvance(baseGap, line);
+      }
       yPos += entryH;
       if (yPos > contentY + contentH - 10) break;
     }
@@ -4988,6 +4047,7 @@ function renderCharacterShop(g) {
 }
 
 function renderShop(g) {
+  currentCharacterPageEntries = [];
   // backdrop
   g.fillStyle = 'rgba(0,0,0,0.6)';
   g.fillRect(0, 0, CONFIG.width, CONFIG.height);
@@ -5002,6 +4062,14 @@ function renderShop(g) {
   const titleY = CONFIG.height * 0.12;
   const itemsTitle = t('shop.itemsTitle');
   drawCenteredText(g, itemsTitle, titleY, 14);
+  const showShopMsg = shopMsg && shopMsgTimer > 0 && (!shopConfirm || shopConfirm.type === 'item');
+  if (showShopMsg) {
+    g.textAlign = 'center';
+    g.textBaseline = 'top';
+    g.fillStyle = '#ff6666';
+    g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+    g.fillText(shopMsg, CONFIG.width / 2, titleY - 50);
+  }
   // Show $ at top-right, two lines below the SHOP title
   {
     const headerY = CONFIG.height * 0.12;
@@ -5009,7 +4077,7 @@ function renderShop(g) {
     g.textAlign = 'right';
     g.textBaseline = 'top';
     g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-    g.fillText(t('hud.savings', { amount: savings }), CONFIG.width - 12, headerY + 24);
+    g.fillText(t('shop.balance', { amount: savings }), CONFIG.width - 12, headerY + 24);
   }
   // Help button '?' positioned 20px to the right of the SHOP title
   {
@@ -5033,88 +4101,122 @@ function renderShop(g) {
     g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
     g.fillText('?', x + w/2, y + h/2 + 1);
   }
-  const { cols, cellW, cellH, marginX, top, paddingTop, paddingBottom, gap } = shopGrid();
-  // Filter items by level visibility
+  const { cols, cellW, cellH, marginX, top, gap } = shopGrid();
   const lvl = getLevelByExp(exp);
-  const allItems = availableItems(lvl);
-  const rowsPerPage = 4; // 1페이지 4줄
+  const allItems = getAllItemsSorted();
+  const rowsPerPage = CHAR_CARD_ROWS_PER_PAGE;
   const itemsPerPage = cols * rowsPerPage + ITEM_CARD_EXTRA_PER_PAGE;
   shopItemTotalPages = Math.max(1, Math.ceil(allItems.length / itemsPerPage));
   if (shopItemPage >= shopItemTotalPages) shopItemPage = shopItemTotalPages - 1;
   if (shopItemPage < 0) shopItemPage = 0;
   const startIdx = shopItemPage * itemsPerPage;
   const endIdx = Math.min(allItems.length, startIdx + itemsPerPage);
+  currentItemPageEntries = allItems.slice(startIdx, endIdx);
   for (let i = startIdx; i < endIdx; i++) {
     const local = i - startIdx;
     const r = Math.floor(local / cols);
     const c = local % cols;
-    const x = marginX + c * cellW;
-    const y = top + paddingTop + r * (cellH + gap) + 3;
-    // card with 2px inner margin and solid border
-    const m2 = 2;
+    const shrink = 3;
+    const cardX = marginX + c * cellW + 6 + shrink;
+    const cardY = top + r * (cellH + gap) + shrink;
+    const cardW = cellW - 40 - shrink * 2;
+    const cardH = cellH - shrink * 2;
+    const centerX = cardX + cardW / 2;
+
+    // card background with solid border
     g.fillStyle = '#0f1a2a';
-    g.fillRect(x + 6 + m2, y + m2, (cellW - 12) - m2 * 2, cellH - m2 * 2);
+    g.fillRect(cardX, cardY, cardW, cardH);
     g.save();
     g.strokeStyle = '#8a96ad';
     g.lineWidth = 3;
     g.lineCap = 'butt';
-    g.strokeRect(x + 6 + m2, y + m2, (cellW - 12) - m2 * 2, cellH - m2 * 2);
+    g.strokeRect(cardX, cardY, cardW, cardH);
     g.restore();
     // content
-    // 1) Name
+    const state = itemCardState(allItems[i], lvl, savings);
+
+    // 1) Name top-centered
     g.fillStyle = '#ffffff';
-    g.textAlign = 'left';
+    g.textAlign = 'center';
     g.textBaseline = 'top';
     g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-    g.fillText(itemName(allItems[i]), x + 14, y + 6);
-    // 2) Price (right aligned), dynamic for level-type
+    g.fillText(itemName(allItems[i]), centerX, cardY + 6);
+    // 2) Price (top-right inside card)
     g.textAlign = 'right';
-    const priceText = t('shop.price', { amount: nextPriceForItem(allItems[i]) });
-    g.fillText(priceText, x + cellW - 14, y + 20);
-    // 3) Icon (center)
-    g.textAlign = 'center';
-    g.textBaseline = 'middle';
-    g.font = `12px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-    let label;
-    if (allItems[i].id === 'glow') label = '*';
-    else if (allItems[i].id === 'buds') label = '+';
-    else if (allItems[i].id === 'plusjump') label = 'J';
-    else if (allItems[i].id === 'fly') label = '^';
-    else if (allItems[i].id === 'gamble') label = '$';
-    else if (allItems[i].id === 'web') label = 'W';
-    else if (allItems[i].id === 'big') label = 'B';
-    else if (allItems[i].id === 'magnet') label = 'M';
-    else if (allItems[i].id === 'combo') label = 'C';
-    else if (allItems[i].id === 'slow') label = '~';
-    else if (allItems[i].id === 'double') label = '2';
-    else if (allItems[i].id === 'lucky') label = 'L';
-    else if (allItems[i].id === 'revival') label = 'R';
-    else if (allItems[i].id === 'fever') label = 'F';
-    else label = '?';
-    g.fillText(label, x + cellW/2, y + Math.floor(cellH * 0.60));
-    // 4) Level line (no max display)
-    g.textAlign = 'center';
-    g.textBaseline = 'bottom';
-    g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-    const lvVal = getItemLevel(allItems[i]);
-    g.fillText(t('shop.itemLevel', { level: lvVal }), x + cellW/2, y + cellH - 6);
+    g.fillStyle = '#ffffff';
+    const priceText = t('shop.price', { amount: state.price });
+    g.fillText(priceText, cardX + cardW - 8, cardY + 20);
+    // 3) Pixel art icon (center)
+    const sprite = getItemSprite(allItems[i].id);
+    if (sprite && sprite.pixels && sprite.pixels.length && sprite.pixels[0]) {
+      const rows = sprite.pixels.length;
+      const cols = sprite.pixels[0].length;
+      const availableW = Math.max(8, cardW - 24);
+      const availableH = Math.max(8, cardH * 0.45);
+      let scale = Math.floor(Math.min(availableW / cols, availableH / rows));
+      if (!Number.isFinite(scale) || scale < 1) scale = 1;
+      const spriteCx = centerX;
+      const spriteCy = cardY + cardH * 0.55;
+      drawPixelSprite(g, spriteCx, spriteCy, sprite, scale);
+    } else {
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.font = `12px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+      g.fillText('?', centerX, cardY + Math.floor(cardH * 0.60));
+    }
+    // Lock overlays
+    if (state.levelLocked || state.specialLocked) {
+      g.save();
+      g.fillStyle = 'rgba(8,12,20,0.78)';
+      g.fillRect(cardX, cardY, cardW, cardH);
+      g.translate(centerX, cardY + cardH / 2);
+      g.rotate(-Math.PI / 6);
+      g.fillStyle = state.levelLocked ? '#ff5c5c' : '#f7b731';
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.font = `18px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+      const bannerText = state.levelLocked ? t('shop.lockTag', { level: state.minLevel }) : t('shop.specialTag');
+      g.fillText(bannerText, 0, 0);
+      g.restore();
+    }
     // sold out overlay
-    if (isItemSoldOut(allItems[i])) {
+    if (state.soldOut) {
       g.fillStyle = 'rgba(0,0,0,0.5)';
-      g.fillRect(x + 6 + m2, y + m2, (cellW - 12) - m2 * 2, cellH - m2 * 2);
+      g.fillRect(cardX, cardY, cardW, cardH);
       g.textAlign = 'center';
       g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
       if (allItems[i].type === 'single' || allItems[i].type === 'consumable') {
         g.fillStyle = '#ff6666';
-        g.fillText(t('shop.soldOut'), x + cellW/2, y + cellH/2 + 2);
+        g.fillText(t('shop.soldOut'), centerX, cardY + cardH / 2 + 2);
       } else {
         g.fillStyle = '#a6ffc1';
-        g.fillText(t('shop.maxed'), x + cellW/2, y + cellH/2 + 2);
+        g.fillText(t('shop.maxed'), centerX, cardY + cardH / 2 + 2);
       }
+      g.fillStyle = '#ffffff';
     }
+
+    // 4) Status / level line
+    g.textAlign = 'center';
+    g.textBaseline = 'bottom';
+    g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+    if (state.specialLocked) {
+      g.fillStyle = '#f7b731';
+      g.fillText(t('shop.lockedSpecial'), centerX, cardY + cardH - 6);
+    } else if (state.levelLocked) {
+      g.fillStyle = '#ff6666';
+      g.fillText(t('shop.lockedLevel', { level: state.minLevel }), centerX, cardY + cardH - 6);
+    } else if (state.fundsLocked) {
+      g.fillStyle = '#f7b731';
+      g.fillText(t('shop.lockedFunds', { amount: state.price }), centerX, cardY + cardH - 6);
+    } else {
+      g.fillStyle = '#ffffff';
+      const lvVal = getItemLevel(allItems[i]);
+      g.fillText(t('shop.itemLevel', { level: lvVal }), centerX, cardY + cardH - 6);
+    }
+    g.fillStyle = '#ffffff';
   }
   // Pagination UI: < 1/N > (move 30px up and double button size)
-  const byPag = CONFIG.height - 60 - 18 - 25;
+  const byPag = CONFIG.height - 60 - 18 - 20;
   const indicator = `${shopItemPage + 1}/${shopItemTotalPages}`;
   g.textAlign = 'center';
   g.textBaseline = 'middle';
@@ -5193,7 +4295,7 @@ function renderShop(g) {
     // Current $ centered two lines below, font 2px smaller
     g.textAlign = 'center';
     g.font = `8px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-    g.fillText(t('hud.savings', { amount: savings }), px + pw/2, py + 38);
+    g.fillText(t('shop.balance', { amount: savings }), px + pw/2, py + 38);
     // Message (e.g., insufficient funds)
     if (shopMsg && shopMsgTimer > 0) {
       g.textAlign = 'center';
@@ -5255,10 +4357,10 @@ function renderShop(g) {
     g.textAlign = 'left';
     g.textBaseline = 'top';
     g.font = `9px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-    const allItems = sortItemsByMinLevel(SHOP_ITEMS);
+    const helpItems = (currentItemPageEntries && currentItemPageEntries.length) ? currentItemPageEntries : getAllItemsSorted();
     const leftPad = 10, rightPad = 10, gap = 8;
     let nameColW = 0;
-    for (const it of allItems) {
+    for (const it of helpItems) {
       const w = g.measureText(itemName(it)).width;
       nameColW = Math.max(nameColW, w);
     }
@@ -5282,14 +4384,14 @@ function renderShop(g) {
     }
     // Fixed items per page for help
     const helpItemsPerPage = 7;
-    helpTotalPages = Math.max(1, Math.ceil(allItems.length / helpItemsPerPage));
+    helpTotalPages = Math.max(1, Math.ceil(helpItems.length / helpItemsPerPage));
     if (helpPage >= helpTotalPages) helpPage = helpTotalPages - 1;
     if (helpPage < 0) helpPage = 0;
     const hs = helpPage * helpItemsPerPage;
-    const he = Math.min(allItems.length, hs + helpItemsPerPage);
+    const he = Math.min(helpItems.length, hs + helpItemsPerPage);
     let yy = contentTop + 5;
     for (let i = hs; i < he; i++) {
-      const it = allItems[i];
+      const it = helpItems[i];
       const name = itemName(it);
       const desc = itemDescription(it);
       const wrapped = wrapText(g, desc, descMaxW);
@@ -5300,10 +4402,17 @@ function renderShop(g) {
       // Desc
       g.textAlign = 'left';
       g.fillStyle = '#ffffff';
-      for (let j = 0; j < wrapped.length; j++) {
-        g.fillText(wrapped[j], descX, yy + j * 14);
+      const baseLine = 14;
+      let textY = yy;
+      if (wrapped.length === 0) {
+        textY += baseLine;
+      } else {
+        for (const line of wrapped) {
+          g.fillText(line, descX, textY);
+          textY += lineAdvance(baseLine, line);
+        }
       }
-      yy += Math.max(14, wrapped.length * 14) + 8;
+      yy = textY + 8;
       if (yy > contentBottom - 14) break;
     }
     // Pagination controls for help
@@ -5374,7 +4483,7 @@ function buildShopCards() {
       uiButtons.shop.cards.push(card);
     }
     // Pagination controls first
-    const py = CONFIG.height - 60 - 18 - 25;
+    const py = CONFIG.height - 60 - 18 - 20;
     const btnW = 36, btnH = 36; const cx = CONFIG.width / 2; const offset = 60;
     const leftX = Math.floor(cx - offset - btnW/2);
     const rightX = Math.floor(cx + offset - btnW/2);
@@ -5391,10 +4500,10 @@ function buildShopCards() {
     uiButtons.shop.buttons.push(new UIButton(startX + bw + spacing, by, bw, bh, () => t('common.items'), () => { shopMode = 'items'; shopScroll = 0; shopItemPage = 0; buildShopCards(); }, 'shop'));
   } else {
     // Item cards (pagination)
-    const { cols, cellW, cellH, marginX, top, paddingTop, gap } = shopGrid();
-    const rowsPerPage = 4; // 1페이지에 4줄
+    const { cols, cellW, cellH, marginX, top, gap } = shopGrid();
+    const rowsPerPage = CHAR_CARD_ROWS_PER_PAGE;
     const lvl = getLevelByExp(exp);
-    const allItems = availableItems(lvl);
+    const allItems = getAllItemsSorted();
     const itemsPerPage = cols * rowsPerPage + ITEM_CARD_EXTRA_PER_PAGE;
     shopItemTotalPages = Math.max(1, Math.ceil(allItems.length / itemsPerPage));
     if (shopItemPage >= shopItemTotalPages) shopItemPage = shopItemTotalPages - 1;
@@ -5406,11 +4515,11 @@ function buildShopCards() {
       const local = i - startIdx;
       const r = Math.floor(local / cols);
       const c = local % cols;
-      const borderMargin = 2;
-      const x = marginX + c * cellW + 6 + borderMargin;
-      const baseY = top + paddingTop + r * (cellH + gap) + borderMargin + 3; // 스크롤 제거 + offset
-      const w = (cellW - 12) - borderMargin * 2;
-      const h = cellH - borderMargin * 2;
+      const shrink = 3;
+      const x = marginX + c * cellW + 6 + shrink;
+      const baseY = top + r * (cellH + gap) + shrink;
+      const w = cellW - 40 - shrink * 2;
+      const h = cellH - shrink * 2;
       const card = new ShopCard(x, baseY, w, h, item, i, 'item');
       card.updateScroll(0);
       uiButtons.shop.cards.push(card);
@@ -5614,7 +4723,7 @@ function updateShop(dt) {
     let items;
     if (shopMode === 'items') {
       ({ cols, cellH, paddingTop, paddingBottom, gap } = shopGrid());
-      items = availableItems(lvl);
+      items = getAllItemsSorted();
     } else {
       cols = 2;
       cellH = CHAR_CARD_CELL_H;
@@ -5673,7 +4782,7 @@ function tryPurchase(id) {
     if (!charInv.includes(id)) {
       charInv.push(id);
       shopInv.characters = charInv;
-      saveShopInv();
+      saveShopInv(shopInv);
     }
     
     // Auto-select the purchased character
@@ -5703,18 +4812,18 @@ function tryPurchase(id) {
     savings -= price;
     if (!shopInv.consumables) shopInv.consumables = {};
     shopInv.consumables[id] = current + 1;
-    saveShopInv();
+    saveShopInv(shopInv);
   } else if (id === 'glow') {
     const current = shopInv.glowLevel || 0;
     if (current >= 3) { shopConfirm = null; return; }
-    savings -= price; shopInv.glowLevel = current + 1; saveShopInv();
+    savings -= price; shopInv.glowLevel = current + 1; saveShopInv(shopInv);
   } else if (id === 'buds') {
     const maxLv = currentBodySides();
-    savings -= price; shopInv.budsLevel = Math.min(maxLv, (shopInv.budsLevel || 0) + 1); saveShopInv();
+    savings -= price; shopInv.budsLevel = Math.min(maxLv, (shopInv.budsLevel || 0) + 1); saveShopInv(shopInv);
   } else if (id === 'plusjump') {
-    savings -= price; shopInv.plusJump = true; saveShopInv();
+    savings -= price; shopInv.plusJump = true; saveShopInv(shopInv);
   } else if (id === 'fly') {
-    savings -= price; shopInv.fly = true; saveShopInv();
+    savings -= price; shopInv.fly = true; saveShopInv(shopInv);
   } else if (id === 'big') {
     const maxLv = getLevelByExp(exp);
     const current = shopInv.bigLevel || 0;
@@ -5722,25 +4831,25 @@ function tryPurchase(id) {
     if (savings < dynPrice) { shopMsgKey = 'shop.error.funds'; shopMsgArgs = { amount: dynPrice }; shopMsg = t(shopMsgKey, shopMsgArgs); shopMsgTimer = 2.0; return; }
     savings -= dynPrice;
     shopInv.bigLevel = Math.min(maxLv, current + 1);
-    saveShopInv();
+    saveShopInv(shopInv);
   } else if (id === 'magnet') {
     const current = shopInv.magnetLevel || 0;
     if (current >= 5) { shopConfirm = null; return; }
-    savings -= price; shopInv.magnetLevel = current + 1; saveShopInv();
+    savings -= price; shopInv.magnetLevel = current + 1; saveShopInv(shopInv);
   } else if (id === 'combo') {
     const current = shopInv.comboLevel || 0;
     if (current >= 3) { shopConfirm = null; return; }
-    savings -= price; shopInv.comboLevel = current + 1; saveShopInv();
+    savings -= price; shopInv.comboLevel = current + 1; saveShopInv(shopInv);
   } else if (id === 'double') {
-    savings -= price; shopInv.double = true; saveShopInv();
+    savings -= price; shopInv.double = true; saveShopInv(shopInv);
   } else if (id === 'lucky') {
     const current = shopInv.luckyLevel || 0;
     if (current >= 5) { shopConfirm = null; return; }
-    savings -= price; shopInv.luckyLevel = current + 1; saveShopInv();
+    savings -= price; shopInv.luckyLevel = current + 1; saveShopInv(shopInv);
   } else if (id === 'fever') {
     const current = shopInv.feverLevel || 0;
     if (current >= 3) { shopConfirm = null; return; }
-    savings -= price; shopInv.feverLevel = current + 1; saveShopInv();
+    savings -= price; shopInv.feverLevel = current + 1; saveShopInv(shopInv);
   }
   try { localStorage.setItem(SAVINGS_KEY, String(savings)); } catch(_){}
   shopConfirm = null;

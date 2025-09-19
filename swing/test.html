@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebSwing Module Test</title>
+</head>
+<body>
+  <h1>WebSwing Module Load Test</h1>
+  <div id="status">Loading modules...</div>
+  <ul id="modules"></ul>
+
+  <script>
+    const moduleList = document.getElementById('modules');
+    const status = document.getElementById('status');
+    let loadedCount = 0;
+    const totalModules = 9;
+
+    function addModuleStatus(name, loaded) {
+      const li = document.createElement('li');
+      li.innerHTML = `${name}: <span style="color: ${loaded ? 'green' : 'red'}">${loaded ? '✓ Loaded' : '✗ Failed'}</span>`;
+      moduleList.appendChild(li);
+
+      if (loaded) loadedCount++;
+
+      if (loadedCount === totalModules) {
+        status.innerHTML = '<span style="color: green">All modules loaded successfully!</span>';
+      }
+    }
+
+    function loadScript(path) {
+      return new Promise(function(resolve, reject) {
+        var s = document.createElement("script");
+        s.src = path;
+        s.onload = function() {
+          addModuleStatus(path, true);
+          resolve();
+        };
+        s.onerror = function() {
+          addModuleStatus(path, false);
+          reject(path);
+        };
+        document.body.appendChild(s);
+      });
+    }
+
+    // Create dummy elements for testing
+    const canvas = document.createElement('canvas');
+    canvas.id = 'game';
+    canvas.style.display = 'none';
+    document.body.appendChild(canvas);
+
+    const debugPanel = document.createElement('div');
+    debugPanel.id = 'debug-panel';
+    debugPanel.style.display = 'none';
+    document.body.appendChild(debugPanel);
+
+    // Load modules in order
+    loadScript("./src/i18n.js")
+      .then(function(){ return loadScript("./src/i18n.lang.js"); })
+      .then(function(){ return loadScript("./src/items.js"); })
+      .then(function(){ return loadScript("./src/chars.js"); })
+      .then(function(){ return loadScript("./src/config.js"); })
+      .then(function(){ return loadScript("./src/init.js"); })
+      .then(function(){ return loadScript("./src/utils.js"); })
+      .then(function(){ return loadScript("./src/classes.js"); })
+      .then(function(){ return loadScript("./src/main.js"); })
+      .then(function() {
+        console.log('All modules loaded successfully!');
+        // Test if key objects exist
+        console.log('CONFIG exists:', typeof CONFIG !== 'undefined');
+        console.log('Player class exists:', typeof Player !== 'undefined');
+        console.log('Rope class exists:', typeof Rope !== 'undefined');
+        console.log('UIButton class exists:', typeof UIButton !== 'undefined');
+        console.log('ShopCard class exists:', typeof ShopCard !== 'undefined');
+      })
+      .catch(function(err) {
+        console.error('Script load failed:', err);
+        status.innerHTML = '<span style="color: red">Module loading failed!</span>';
+      });
+  </script>
+</body>
+</html>

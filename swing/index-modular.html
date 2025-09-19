@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebSwing</title>
+  <link rel="stylesheet" href="./style.css">
+  <link rel="stylesheet" href="./fonts.css">
+</head>
+<body>
+  <canvas id="game" width="360" height="640"></canvas>
+  <div id="debug-panel" hidden>
+    <h3>Debug Panel - Press V to toggle</h3>
+    <hr>
+    <label>Jump Speed: <input type="range" id="dbg-jumpSpeed" min="20" max="200" value="100" step="5"> <span id="dbg-jumpSpeed-value">100%</span></label><br>
+    <label>Jump Impulse: <input type="range" id="dbg-jumpImpulse" min="300" max="900" value="541" step="10"> <span id="dbg-jumpImpulse-value">541</span></label><br>
+    <label>Catch Radius: <input type="range" id="dbg-catchR" min="10" max="60" value="22" step="2"> <span id="dbg-catchR-value">22</span></label><br>
+    <label>Bud Sway Min %: <input type="range" id="dbg-budSwayMin" min="0" max="50" value="8" step="1"> <span id="dbg-budSwayMin-value">8</span></label><br>
+    <label>Bud Sway Max %: <input type="range" id="dbg-budSwayMax" min="0" max="100" value="32" step="1"> <span id="dbg-budSwayMax-value">32</span></label><br>
+    <label>Rope L Min: <input type="range" id="dbg-Lmin" min="40" max="150" value="84" step="5"> <span id="dbg-Lmin-value">84</span></label><br>
+    <label>Rope L Max: <input type="range" id="dbg-Lmax" min="200" max="500" value="338" step="10"> <span id="dbg-Lmax-value">338</span></label><br>
+    <label>L Jitter %: <input type="range" id="dbg-Ljit" min="0" max="100" value="30" step="5"> <span id="dbg-Ljit-value">30</span></label><br>
+    <label>Spacing Min: <input type="range" id="dbg-Dmin" min="100" max="300" value="180" step="10"> <span id="dbg-Dmin-value">180</span></label><br>
+    <label>Spacing Max: <input type="range" id="dbg-Dmax" min="150" max="400" value="260" step="10"> <span id="dbg-Dmax-value">260</span></label><br>
+    <label>Spacing Jit Min: <input type="range" id="dbg-SJmin" min="50" max="150" value="90" step="5"> <span id="dbg-SJmin-value">90</span></label><br>
+    <label>Spacing Jit Max: <input type="range" id="dbg-SJmax" min="100" max="200" value="115" step="5"> <span id="dbg-SJmax-value">115</span></label><br>
+    <label>Short L Chance %: <input type="range" id="dbg-shortProb" min="0" max="100" value="10" step="5"> <span id="dbg-shortProb-value">10</span></label><br>
+    <label>Short L Factor %: <input type="range" id="dbg-shortFactor" min="40" max="100" value="70" step="5"> <span id="dbg-shortFactor-value">70</span></label><br>
+    <label>Long L Chance %: <input type="range" id="dbg-longProb" min="0" max="100" value="0" step="5"> <span id="dbg-longProb-value">0</span></label><br>
+    <label>Long L Factor %: <input type="range" id="dbg-longFactor" min="100" max="200" value="120" step="5"> <span id="dbg-longFactor-value">120</span></label><br>
+    <label>Break Prob %: <input type="range" id="dbg-breakProb" min="0" max="100" value="10" step="5"> <span id="dbg-breakProb-value">10</span></label><br>
+    <label>Item Spawn %: <input type="range" id="dbg-itemProb" min="0" max="100" value="50" step="5"> <span id="dbg-itemProb-value">50</span></label><br>
+    <label>Short Spacing Min: <input type="range" id="dbg-DshortMin" min="50" max="200" value="120" step="10"> <span id="dbg-DshortMin-value">120</span></label><br>
+    <label>Short Spacing Prob %: <input type="range" id="dbg-DshortProb" min="0" max="100" value="35" step="5"> <span id="dbg-DshortProb-value">35</span></label><br>
+  </div>
+
+  <!-- Load i18n first (external files) -->
+  <script src="./src/i18n.js"></script>
+  <script src="./src/i18n.lang.js"></script>
+
+  <!-- Load main.js directly - already works with file:// protocol -->
+  <script src="./src/main.js"></script>
+</body>
+</html>
