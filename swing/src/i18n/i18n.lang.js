@@ -148,6 +148,7 @@
       comboCount: '{combo} COMBO',
       tailorBonus: '+{amount}',
       revive: 'REVIVE!',
+      budsProtect: 'BUDS!',
     },
     items: {
       glow: {
@@ -390,6 +391,7 @@
       comboCount: '{combo} COMBO',
       tailorBonus: '+{amount}',
       revive: '부활!',
+      budsProtect: '버즈!',
     },
     items: {
       glow: {

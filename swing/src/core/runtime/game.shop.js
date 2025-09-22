@@ -90,6 +90,7 @@ function getItemLevel(it) {
   if (it.id === 'slow') return shopInv.slowLevel || 0;
   if (it.id === 'lucky') return shopInv.luckyLevel || 0;
   if (it.id === 'fever') return shopInv.feverLevel || 0;
+  if (it.id === 'revival') return shopInv.revival ? 1 : 0;
   return 0;
 }
 function currentBodySides() {
@@ -1321,6 +1322,12 @@ function tryPurchase(id) {
     const current = shopInv.feverLevel || 0;
     if (current >= 3) { shopConfirm = null; return; }
     savings -= price; shopInv.feverLevel = current + 1; saveShopInv(shopInv);
+  } else if (id === 'revival') {
+    // Revival is now a single-purchase item
+    if (shopInv.revival) { shopConfirm = null; return; }
+    savings -= price;
+    shopInv.revival = true;
+    saveShopInv(shopInv);
   }
   try { localStorage.setItem(SAVINGS_KEY, String(savings)); } catch(_){}
   shopConfirm = null;

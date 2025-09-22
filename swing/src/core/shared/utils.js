@@ -207,10 +207,11 @@ function applyRunConsumables(shopInv) {
     dirty = true;
   }
 
+  // Revival is now a single purchase item, not consumable
   let finalRevivalCharges = 0;
-  if (cons.revival && cons.revival > 0) {
-    finalRevivalCharges = cons.revival;
-    hudConsumables.push({ id: 'revival', count: finalRevivalCharges });
+  if (shopInv.revival) {
+    finalRevivalCharges = 1; // Always 1 charge per run if purchased
+    hudConsumables.push({ id: 'revival', count: 1 });
   }
 
   if (dirty) saveShopInv(shopInv);

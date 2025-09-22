@@ -1,7 +1,7 @@
 (function (global) {
   const ITEM_SPECS = [
-    { id: 'glow', type: 'level', maxLevel: 3, price: 20, minLevel: 2, unlock: { type: 'level', value: 2 } },
-    { id: 'buds', type: 'level', maxLevel: 5, price: 10, minLevel: 2, unlock: { type: 'level', value: 2 } },
+    { id: 'glow', type: 'level', maxLevel: 3, price: 50, minLevel: 2, unlock: { type: 'level', value: 2 } },
+    { id: 'buds', type: 'level', maxLevel: 6, price: 50, minLevel: 2, unlock: { type: 'level', value: 2 } },
     { id: 'plusjump', type: 'single', price: 100, minLevel: 2, unlock: { type: 'level', value: 2 } },
     { id: 'fly', type: 'single', price: 100, minLevel: 2, unlock: { type: 'level', value: 2 } },
     { id: 'big', type: 'level', price: 20, minLevel: 5, unlock: { type: 'level', value: 5 } },
@@ -10,7 +10,7 @@
     { id: 'combo', type: 'level', maxLevel: 3, price: 80, minLevel: 6, unlock: { type: 'level', value: 6 } },
     { id: 'slow', type: 'level', maxLevel: 5, price: 100, minLevel: 3, unlock: { type: 'level', value: 3 } },
     { id: 'lucky', type: 'level', maxLevel: 5, price: 40, minLevel: 2, unlock: { type: 'level', value: 2 } },
-    { id: 'revival', type: 'consumable', price: 500, minLevel: 10, unlock: { type: 'level', value: 10 } },
+    { id: 'revival', type: 'single', price: 1000, minLevel: 10, unlock: { type: 'level', value: 10 } },
     { id: 'fever', type: 'level', maxLevel: 3, price: 60, minLevel: 5, unlock: { type: 'level', value: 5 } },
   ];
 

@@ -319,6 +319,96 @@ function updateRun(dt) {
   }
   cleanupRopes();
 
+  // Update stage bullets (after stage 5)
+  const currentStage = Math.floor(score / 20) + 1;
+  if (currentStage > 5 && !starModeActive) {
+    // Calculate bullet interval: starts at 10s, decreases by 1s every 5 stages, minimum 5s
+    const stagesAbove5 = Math.floor((currentStage - 1) / 5);
+    stageBulletInterval = Math.max(5, 10 - stagesAbove5);
+
+    // Spawn bullets
+    stageBulletTimer += baseDt;
+    if (stageBulletTimer >= stageBulletInterval) {
+      stageBulletTimer = 0;
+      // Spawn bullet from random position on right side
+      const fromTop = Math.random() < 0.3; // 30% chance from top
+      const fromBottom = !fromTop && Math.random() < 0.5; // 35% chance from bottom
+      // 35% chance from right side
+
+      let bulletX, bulletY, targetX, targetY;
+
+      if (fromTop) {
+        bulletX = camera.x + CONFIG.width * randRange(0.3, 0.9);
+        bulletY = -20;
+      } else if (fromBottom) {
+        bulletX = camera.x + CONFIG.width * randRange(0.3, 0.9);
+        bulletY = CONFIG.height + 20;
+      } else {
+        bulletX = camera.x + CONFIG.width + 40;
+        bulletY = randRange(50, CONFIG.height - 50);
+      }
+
+      // Target near player with some randomness
+      targetX = player.x + randRange(-30, 30);
+      targetY = player.y + randRange(-30, 30);
+
+      // Calculate velocity to aim at target
+      const dx = targetX - bulletX;
+      const dy = targetY - bulletY;
+      const dist = Math.hypot(dx, dy);
+      const speed = 220;
+
+      stageBullets.push({
+        x: bulletX,
+        y: bulletY,
+        vx: (dx / dist) * speed,
+        vy: (dy / dist) * speed,
+        radius: 12,
+        life: 0
+      });
+    }
+
+    // Update bullets
+    for (let i = stageBullets.length - 1; i >= 0; i--) {
+      const bullet = stageBullets[i];
+      bullet.x += bullet.vx * dt;
+      bullet.y += bullet.vy * dt;
+      bullet.life += dt;
+
+      // Check collision with player
+      if (player.mode !== 'dead') {
+        const dx = bullet.x - player.x;
+        const dy = bullet.y - player.y;
+        const dist = Math.hypot(dx, dy);
+
+        // Check if buds can protect
+        if (activeBudsCount > 0 && dist <= collR + bullet.radius) {
+          // Buds takes the hit
+          activeBudsCount = Math.max(0, activeBudsCount - 1);
+          stageBullets.splice(i, 1);
+          spawnEffect('burst', bullet.x, bullet.y);
+          spawnEffect('combo', player.x, player.y - 24, t('effects.budsProtect'));
+          continue;
+        }
+
+        // Direct hit on player
+        if (dist <= collR + bullet.radius) {
+          player.mode = 'dead';
+          player.vx = 0;
+          player.vy = 100;
+          stageBullets.splice(i, 1);
+          spawnEffect('burst', player.x, player.y);
+          continue;
+        }
+      }
+
+      // Remove off-screen bullets
+      if (bullet.x < camera.x - 100) {
+        stageBullets.splice(i, 1);
+      }
+    }
+  }
+
   // Box pickup
   const magnetLevel = shopInv.magnetLevel || 0;
   const baseCatchR = CONFIG.catchBase;
@@ -650,14 +740,12 @@ function updateRun(dt) {
     }
     if (activeRevivalCharges > 0) {
       activeRevivalCharges = Math.max(0, activeRevivalCharges - 1);
-      shopInv.consumables = { ...(shopInv.consumables || {}) };
-      shopInv.consumables.revival = activeRevivalCharges;
+      // Revival is now a single purchase, not consumable - don't modify shopInv
       hudConsumables = (hudConsumables || []).map((entry) => {
         if (!entry) return entry;
         if (entry.id !== 'revival') return entry;
         return { ...entry, count: activeRevivalCharges };
       }).filter((entry) => entry && (entry.count === undefined || entry.count > 0));
-      saveShopInv(shopInv);
       spawnEffect('combo', player.x, player.y - 30, t('effects.revive'));
       const anchorX = player.x;
       const anchorY = CONFIG.ceilingY;
@@ -877,6 +965,32 @@ function renderRun(g) {
     }
     g.restore();
   }
+
+  // Draw stage bullets
+  if (stageBullets && stageBullets.length > 0) {
+    for (const bullet of stageBullets) {
+      const sx = bullet.x - camera.x;
+      const sy = bullet.y;
+
+      // Draw bullet using the boss bullet sprite
+      const sprite = BOSS_SPRITES && BOSS_SPRITES.bulletProjectile;
+      if (sprite && sprite.pixels) {
+        drawPixelSprite(g, sx, sy, sprite, 3);
+      } else {
+        // Fallback to simple circle
+        g.save();
+        g.fillStyle = '#ff6b6b';
+        g.strokeStyle = '#ff3333';
+        g.lineWidth = 2;
+        g.beginPath();
+        g.arc(sx, sy, bullet.radius, 0, Math.PI * 2);
+        g.fill();
+        g.stroke();
+        g.restore();
+      }
+    }
+  }
+
   // Draw player with camera offset
   ctx.save();
   ctx.translate(-camera.x, 0);
@@ -949,12 +1063,16 @@ function renderRun(g) {
     g.fillStyle = '#ffd966';
     g.fillRect(bx, by, bw * ratio, bh);
   }
-  // Pending item indicators
-  g.textAlign = 'right';
+  // Pending item indicators (move to left side, below level)
+  g.textAlign = 'left';
   g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-  const itemText = `${pendingExtraJump ? '+J ' : ''}${pendingCatchR ? 'R50 ' : ''}${pendingSizeScale ? 'S+ ' : ''}`.trim();
-  if (itemText) g.fillText(itemText, CONFIG.width - 12, 28);
+  const itemText = `${pendingExtraJump ? '+J ' : ''}${pendingCatchR ? 'R+ ' : ''}${pendingSizeScale ? 'S+ ' : ''}`.trim();
+  if (itemText) {
+    g.fillStyle = '#ffd966';  // Yellow color for in-game items
+    g.fillText(itemText, 12, 64);
+  }
   // Level display
+  g.fillStyle = '#ffffff';
   g.textAlign = 'left';
   g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
   g.fillText(t('hud.level', { level: getLevelByExp(exp) }), 12, 46);

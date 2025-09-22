@@ -278,6 +278,12 @@ let pendingExtraJump = false;
 let pendingCatchR = 0;
 let pendingSizeScale = 0;
 
+// Stage bullets system (after stage 5)
+let stageBullets = [];
+let stageBulletTimer = 0;
+let stageBulletInterval = 10; // Start at 10 seconds
+let activeBudsCount = 0; // Runtime buds count (reset per run)
+
 const SLOW_MO_SCALE = 0.65;
 const SLOW_MO_DURATION = 0.9;
 const SLOW_MO_COOLDOWN = 1.5;
@@ -1709,6 +1715,9 @@ function resetRun() {
   camera.x = 0;
   ropes.length = 0;
   boxes.length = 0;
+  stageBullets = [];
+  stageBulletTimer = 0;
+  activeBudsCount = shopInv.budsLevel || 0; // Reset buds count from shop level
   // Ensure fever state is cleared on fresh run
   starModeActive = false;
   starModeEndTime = 0;
