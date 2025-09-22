@@ -71,7 +71,7 @@ const CONFIG = {
   budSwayMinPct: 0.08,
   budSwayMaxPct: 0.32,
   // Star (fever) mode rope pattern
-  starDuration: 4.0,
+  starDuration: 3.0,
   starL: 160,           // fixed rope length
   starAdeg: 10,         // swing amplitude (degrees)
   starDmin: 70,         // dense spacing min

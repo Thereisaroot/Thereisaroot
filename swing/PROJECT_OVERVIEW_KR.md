@@ -5,30 +5,34 @@ HTML5 Canvas 기반의 2D 로프 스윙 러너 게임입니다. 기본 도형 �
 ## 최근 업데이트
 - 스테이지 전환 시스템 추가: 10번째와 11번째 로프 사이에서 배경이 짙은 파스텔 팔레트로 단계적으로 교체되며 `STAGE N` 배너가 로프 위치에 맞춰 함께 이동합니다. 초기 스테이지는 기존 색상을 유지합니다.
 - Tailor 픽셀 캐릭터 도입: 중간 로프를 50% 확률로 이어 붙이고, 해당 로프를 잡으면 추가로 $1을 획득합니다.
-- 다국어(i18n) 모듈 도입: 영어/한국어 리소스를 제공하며, `src/i18n.js`가 DOM과 HUD를 동적으로 갱신합니다.
+- 다국어(i18n) 모듈 도입: 영어/한국어 리소스를 제공하며, `src/i18n/i18n.js`가 DOM과 HUD를 동적으로 갱신합니다.
 - 인트로 `SETTINGS` 메뉴 추가: 언어를 실시간 변경하고 선택값을 `localStorage`(`webswing_lang`)에 저장합니다.
 
 ## 실행 및 배포
 - **웹**: 브라우저에서 `index.html`을 직접 열면 실행됩니다. 별도의 번들링/서버가 필요 없습니다.
 - **모바일 WebView (Capacitor 등)**:
   - `<script src="./save/safeStorage.nomodule.js"></script>` → `<script src="./save/storageBridge.nomodule.js"></script>` 순으로 포함해야 합니다.
-  - `window.setupStorageBridge('webswing')` 초기화 후 `src/main.js`를 로드합니다. Preferences/Filesystem과 `localStorage`를 동기화하여 네이티브에서도 동일한 세이브를 사용합니다.
+  - `window.setupStorageBridge('webswing')` 초기화 후 `src/core/` 하위 런타임 스크립트(최종 `main.js` 포함)를 순차 로드합니다. Preferences/Filesystem과 `localStorage`를 동기화하여 네이티브에서도 동일한 세이브를 사용합니다.
   - 모듈 환경이라면 `save/safeStorage.js`, `save/storageBridge.js`를 `type="module"`로 import 할 수 있습니다.
 - **폰트**: `fonts.css`에서 로컬 `Press Start 2P`, `Dalmoori` 폰트를 등록합니다. `assets/fonts/`에 woff2/ttf 파일을 배치하세요.
 - **배포 스크립트**: `deploy.sh`는 로컬 전용 쉘 스크립트로, 외부 동기화와 캐시 버스터, git 커밋을 수행합니다 (환경 경로 수정 필요).
 
 ## 다국어(i18n) 지원
-- `src/i18n.js`가 `webswing_lang` 키를 통해 현재 언어를 저장/로딩하고, DOM(`data-i18n`)과 HUD 텍스트를 즉시 갱신합니다.
-- `src/i18n.lang.js`에는 영어(en)·한국어(ko) 메시지 테이블이 포함되어 있으며, 필요 시 동일 구조로 새 언어를 추가할 수 있습니다.
+- `src/i18n/i18n.js`가 `webswing_lang` 키를 통해 현재 언어를 저장/로딩하고, DOM(`data-i18n`)과 HUD 텍스트를 즉시 갱신합니다.
+- `src/i18n/i18n.lang.js`에는 영어(en)·한국어(ko) 메시지 테이블이 포함되어 있으며, 필요 시 동일 구조로 새 언어를 추가할 수 있습니다.
 - 인트로 화면 하단의 `SETTINGS` 버튼에서 언어를 변경할 수 있고, 화살표/Enter/클릭 모두를 지원합니다.
 - 번역 키는 `t('namespace.key', params)`로 접근하며, 상점·가이드·보스 HUD 등 대부분의 문자열이 i18n으로 이관되었습니다.
 
 ## 주요 폴더/파일
-- `index.html`: Canvas/디버그 패널 DOM, SafeStorage 브리지 삽입, `src/main.js` 로딩.
+- `index.html`: Canvas/디버그 패널 DOM, SafeStorage 브리지 삽입, `src/i18n/`, `src/data/`, `src/core/` 모듈을 순서대로 로딩.
 - `style.css`: 배경 그라데이션, 캔버스 스타일, 디버그 패널 UI.
 - `fonts.css`: 라틴/한글 폰트 페어링 (`GameFont`).
-- `src/main.js`: 게임 로직 전체 (상태 머신, 물리, 렌더, 상점/캐릭터 UI, 아이템 등) 단일 파일.
-- `src/i18n.js`, `src/i18n.lang.js`: 로컬 저장 기반 언어 선택기 및 en/ko 문자열 리소스.
+- `src/core/setup/`: 환경 설정과 캔버스 초기화(`config.js`, `init.js`).
+- `src/core/shared/`: 공통 유틸리티(`utils.js`).
+- `src/core/entities/`: 게임 엔티티/클래스 정의(`classes.js`).
+- `src/core/runtime/`: 상태 머신·입력·렌더·상점·루프(`game.*.js`, `main.js`).
+- `src/data/`: 아이템/캐릭터 스펙 정의(`items.js`, `chars.js`).
+- `src/i18n/`: 로컬 저장 기반 언어 선택기 및 en/ko 문자열 리소스(`i18n.js`, `i18n.lang.js`).
 - `save/`: 브라우저·네이티브 공용 세이브 모듈.
   - `safeStorage(.mjs/nomodule)`: Capacitor Preferences + Filesystem 백업 + localStorage 미러.
   - `storageBridge(.mjs/nomodule)`: 기존 `localStorage` API를 패치해 SafeStorage와 양방향 동기화.
@@ -95,14 +99,12 @@ HTML5 Canvas 기반의 2D 로프 스윙 러너 게임입니다. 기본 도형 �
 |fly|Fly|단일|Lv ≥2|롱프레스 비행 1회|
 |big|Big|레벨형(상한=플레이어 레벨)|Lv ≥5|크기 +2.5%/레벨|
 |gamble|Gamble|단일|Lv ≥1|다음 런 수익 1.5배|
-|web|Web|단일|Lv ≥1|긴급 웹 샷 1회|
 |magnet|Magnet|레벨형(최대 5)|Lv ≥3|아이템 흡입 범위 +30px/레벨, 상자 끌어당김|
-|combo|Combo+|레벨형(최대 3)|Lv ≥6|콤보 캐치 시 점수·보상 배수 +0.5/레벨|
-|slow|Slow|단일|Lv ≥3|추락 시 자동 슬로모션 (런당 3회)|
-|double|Double|단일|Lv ≥8|로프 점프 힘 1.3배|
+|combo|Combo+|레벨형(최대 3)|Lv ≥6|콤보 유지 시 레벨당 +1 점(배수 아님)|
+|slow|Slow|레벨형(최대 5)|Lv ≥3|점프 시 레벨당 10% 확률로 슬로모션|
 |lucky|Lucky|레벨형(최대 5)|Lv ≥2|상자 스폰 확률 +5%/레벨|
-|revival|Revival|단일|Lv ≥10|추락 시 즉시 복구 부활 1회|
-|fever|Fever+|레벨형(최대 3)|Lv ≥5|스타 모드 지속 +2초/레벨|
+|revival|Revival|단일|Lv ≥10|추락 시 즉시 복구 부활 1회(로봇보다 선행)|
+|fever|Fever+|레벨형(최대 3)|Lv ≥5|스타 모드 지속 +1초/레벨|
 
 > **참고**: Magnet 이후 아이템 효과도 게임 내에 반영되어 있습니다.
 
@@ -137,7 +139,7 @@ SafeStorage/`localStorage`에 사용되는 주요 키:
 
 ## 향후 개선 아이디어
 - 상점 신규 아이템(Magnet 이후)의 실제 게임 플레이 반영 로직 구현.
-- 단일 `src/main.js` 분리(상태, 렌더, 물리, UI 모듈화)로 가독성 향상.
+- 분리된 `src/core/*` 모듈을 ES Module 기반 번들링으로 전환해 의존성 로딩을 자동화.
 - 사운드 효과/배경음 추가, 모바일 롱프레스·포커스 케이스 QA.
 - 로프 스폰/캐치 수학 검증용 단위 테스트 도입.
 - `deploy.sh` 환경 변수화 및 플랫폼별 세이브 초기화/이관 도구.

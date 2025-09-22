@@ -10,7 +10,7 @@
  * <script type="module">
  *   import { setupStorageBridge } from './save/storageBridge.js';
  *   await setupStorageBridge('webswing');
- *   import './src/main.js';
+ *   import './src/core/runtime/main.js';
  * </script>
  */
 export async function setupStorageBridge(namespace) {
@@ -83,4 +83,3 @@ export async function setupStorageBridge(namespace) {
     try { Object.defineProperty(window, 'localStorage', { value: patched, configurable: true }); } catch (_) {}
   }
 }
-

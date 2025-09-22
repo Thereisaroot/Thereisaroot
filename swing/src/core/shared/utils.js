@@ -38,11 +38,10 @@ const SHOP_INV_DEFAULTS = {
   fly: false,
   bigLevel: 0,
   gambleActive: false,
-  webActive: false,
   specialUnlocks: [],
   magnetLevel: 0,
   comboLevel: 0,
-  double: false,
+  slowLevel: 0,
   luckyLevel: 0,
   feverLevel: 0,
   characters: [],
@@ -152,14 +151,35 @@ function loadShopInv(shopInv = {}) {
     delete shopInv.consumables.rainbow;
     migrated = true;
   }
+  let legacySlowLevel = 0;
   if (shopInv.slow) {
-    shopInv.consumables.slow = Math.max(1, shopInv.consumables.slow || 0);
+    legacySlowLevel = Math.max(legacySlowLevel, 1);
     delete shopInv.slow;
     migrated = true;
+  }
+  if (shopInv.consumables && shopInv.consumables.slow) {
+    legacySlowLevel = Math.max(legacySlowLevel, shopInv.consumables.slow || 0);
+    delete shopInv.consumables.slow;
+    migrated = true;
+  }
+  if (legacySlowLevel > 0) {
+    shopInv.slowLevel = Math.max(shopInv.slowLevel || 0, legacySlowLevel);
   }
   if (shopInv.revival) {
     shopInv.consumables.revival = Math.max(1, shopInv.consumables.revival || 0);
     delete shopInv.revival;
+    migrated = true;
+  }
+  if (shopInv.webActive) {
+    delete shopInv.webActive;
+    migrated = true;
+  }
+  if (shopInv.double) {
+    delete shopInv.double;
+    migrated = true;
+  }
+  if (shopInv.consumables && shopInv.consumables.web) {
+    delete shopInv.consumables.web;
     migrated = true;
   }
   if (migrated) saveShopInv(shopInv);
@@ -177,36 +197,28 @@ function applyRunConsumables(shopInv) {
 
   // Reset runtime flags before applying
   shopInv.gambleActive = false;
-  shopInv.webActive = false;
-  const activeSlowCharges = 0;
-  const activeRevivalCharges = 0;
+  const hudConsumables = [];
 
   // Auto-apply certain consumables
   if (cons.gamble && cons.gamble > 0) {
     shopInv.gambleActive = true;
     cons.gamble -= 1;
+    hudConsumables.push({ id: 'gamble', count: 1 });
     dirty = true;
   }
-  if (cons.web && cons.web > 0) {
-    shopInv.webActive = true;
-    cons.web -= 1;
-    dirty = true;
-  }
-  let finalSlowCharges = 0;
+
   let finalRevivalCharges = 0;
-  if (cons.slow && cons.slow > 0) {
-    finalSlowCharges = cons.slow;
-  }
   if (cons.revival && cons.revival > 0) {
     finalRevivalCharges = cons.revival;
+    hudConsumables.push({ id: 'revival', count: finalRevivalCharges });
   }
 
   if (dirty) saveShopInv(shopInv);
 
   return {
     shopInv,
-    activeSlowCharges: finalSlowCharges,
-    activeRevivalCharges: finalRevivalCharges
+    activeRevivalCharges: finalRevivalCharges,
+    hudConsumables,
   };
 }
 

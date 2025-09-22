@@ -14,7 +14,7 @@
     const moduleList = document.getElementById('modules');
     const status = document.getElementById('status');
     let loadedCount = 0;
-    const totalModules = 9;
+    const totalModules = 13;
 
     function addModuleStatus(name, loaded) {
       const li = document.createElement('li');
@@ -56,15 +56,19 @@
     document.body.appendChild(debugPanel);
 
     // Load modules in order
-    loadScript("./src/i18n.js")
-      .then(function(){ return loadScript("./src/i18n.lang.js"); })
-      .then(function(){ return loadScript("./src/items.js"); })
-      .then(function(){ return loadScript("./src/chars.js"); })
-      .then(function(){ return loadScript("./src/config.js"); })
-      .then(function(){ return loadScript("./src/init.js"); })
-      .then(function(){ return loadScript("./src/utils.js"); })
-      .then(function(){ return loadScript("./src/classes.js"); })
-      .then(function(){ return loadScript("./src/main.js"); })
+    loadScript("./src/i18n/i18n.js")
+      .then(function(){ return loadScript("./src/i18n/i18n.lang.js"); })
+      .then(function(){ return loadScript("./src/data/items.js"); })
+      .then(function(){ return loadScript("./src/data/chars.js"); })
+      .then(function(){ return loadScript("./src/core/setup/config.js"); })
+      .then(function(){ return loadScript("./src/core/setup/init.js"); })
+      .then(function(){ return loadScript("./src/core/shared/utils.js"); })
+      .then(function(){ return loadScript("./src/core/entities/classes.js"); })
+      .then(function(){ return loadScript("./src/core/runtime/game.logic.js"); })
+      .then(function(){ return loadScript("./src/core/runtime/game.input.js"); })
+      .then(function(){ return loadScript("./src/core/runtime/game.render.js"); })
+      .then(function(){ return loadScript("./src/core/runtime/game.shop.js"); })
+      .then(function(){ return loadScript("./src/core/runtime/main.js"); })
       .then(function() {
         console.log('All modules loaded successfully!');
         // Test if key objects exist

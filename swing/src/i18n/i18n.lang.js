@@ -142,6 +142,7 @@
     effects: {
       stageBonus: '+${cash}',
       cashPickup: '+$',
+      cashEarned: '+$${cash}',
       pointsEarned: '+{points}P',
       slow: 'SLOW!',
       comboCount: '{combo} COMBO',
@@ -173,25 +174,17 @@
         name: 'Gamble',
         description: 'Next run earns 1.5x money (one-time use).',
       },
-      web: {
-        name: 'Web',
-        description: 'Emergency web shot during free fall (one-time use).',
-      },
       magnet: {
         name: 'Magnet',
         description: 'Pulls nearby boxes and +10px pickup radius per level (max 5).',
       },
       combo: {
         name: 'Combo+',
-        description: 'Combo catches grant +0.5x bonus per level (max 3).',
+        description: 'Combo catches grant +1 score per chain per level (no multiplier).',
       },
       slow: {
         name: 'Slow',
-        description: 'Auto slow motion triggers on falls (up to 3 uses per run).',
-      },
-      double: {
-        name: 'Double',
-        description: 'Rope detach boost becomes 1.3x stronger.',
+        description: 'On detach, 10% × level chance to trigger slow motion instantly.',
       },
       lucky: {
         name: 'Lucky',
@@ -199,11 +192,11 @@
       },
       revival: {
         name: 'Revival',
-        description: 'Revive once when crashing onto the ground.',
+        description: 'Revive once when crashing onto the ground (triggers before Robot repair).',
       },
       fever: {
         name: 'Fever+',
-        description: 'Extends star mode by +2 seconds per level (max 3).',
+        description: 'Extends star mode by +1 second per level (max 3).',
       },
     },
     chars: {
@@ -391,6 +384,7 @@
     effects: {
       stageBonus: '+${cash}',
       cashPickup: '+$',
+      cashEarned: '+$${cash}',
       pointsEarned: '+{points}P',
       slow: '슬로우!',
       comboCount: '{combo} COMBO',
@@ -422,25 +416,17 @@
         name: '갬블',
         description: '다음 런의 수익이 1.5배가 되며 한 번 사용 후 사라집니다.',
       },
-      web: {
-        name: '웹',
-        description: '추락 시 구원의 로프를 한 번 발사합니다.',
-      },
       magnet: {
         name: '마그넷',
         description: '근처 상자를 끌어당기고 레벨당 +10px 범위가 증가합니다 (최대 5).',
       },
       combo: {
         name: '콤보+',
-        description: '콤보 캐치 보너스가 레벨당 +0.5배 증가합니다 (최대 3).',
+        description: '콤보 캐치마다 레벨당 +1 점이 추가됩니다 (배수 아님, 최대 3).',
       },
       slow: {
         name: '슬로',
-        description: '추락 시 자동 슬로모션이 발동합니다 (런당 최대 3회).',
-      },
-      double: {
-        name: '더블',
-        description: '로프 이탈 강화가 1.3배 강해집니다.',
+        description: '점프 시 레벨당 10% 확률로 즉시 슬로모션이 발동합니다.',
       },
       lucky: {
         name: '럭키',
@@ -448,11 +434,11 @@
       },
       revival: {
         name: '리바이벌',
-        description: '땅에 떨어질 때 한 번 즉시 부활합니다.',
+        description: '땅에 떨어질 때 한 번 즉시 부활하며 로봇보다 먼저 발동합니다.',
       },
       fever: {
         name: '피버+',
-        description: '스타 모드 지속 시간이 레벨당 +2초 늘어납니다 (최대 3).',
+        description: '스타 모드 지속 시간이 레벨당 +1초 늘어납니다 (최대 3).',
       },
     },
     chars: {

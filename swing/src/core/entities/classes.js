@@ -15,6 +15,7 @@ class Rope {
     this.webTargetL = params.webTargetL || null;
     this.retractSpeed = params.retractSpeed || 250;
     this.tailorBonus = params.tailorBonus || 0;
+    this.countsForStage = (params.countsForStage !== undefined) ? params.countsForStage : !this.isWebRope;
   }
   // θ(t) = A cos(ω t + φ)
   theta(t) {
@@ -117,7 +118,19 @@ class Player {
   }
   draw(g) {
     g.save();
+
+    // Move to player position first
     g.translate(this.x, this.y);
+
+    // Apply boss fade-in/scale animation if in boss fade-in phase
+    if (typeof bossState !== 'undefined' && bossState && bossState.phase === 'boss_fade_in') {
+      const alpha = bossState.fadeAlpha !== undefined ? bossState.fadeAlpha : 1;
+      const scale = bossState.fadeScale !== undefined ? bossState.fadeScale : 1;
+      g.globalAlpha = alpha;
+      g.scale(scale, scale);
+    }
+
+    // Apply rotation after scale
     g.rotate(this.angle);
     const level = getLevelByExp(exp);
     // Level 1: pure white circle. Level 2+: every 3 levels shape changes; add one color segment per level (max 3)

@@ -41,6 +41,18 @@
       </div>
     </div>
     <canvas id="game" aria-label="WebSwing Canvas" role="img"></canvas>
-    <script src="./src/main.js" defer></script>
+    <script src="./src/i18n/i18n.js"></script>
+    <script src="./src/i18n/i18n.lang.js"></script>
+    <script src="./src/data/items.js"></script>
+    <script src="./src/data/chars.js"></script>
+    <script src="./src/core/setup/config.js"></script>
+    <script src="./src/core/setup/init.js"></script>
+    <script src="./src/core/shared/utils.js"></script>
+    <script src="./src/core/entities/classes.js"></script>
+    <script src="./src/core/runtime/game.logic.js"></script>
+    <script src="./src/core/runtime/game.input.js"></script>
+    <script src="./src/core/runtime/game.render.js"></script>
+    <script src="./src/core/runtime/game.shop.js"></script>
+    <script src="./src/core/runtime/main.js"></script>
   </body>
   </html>

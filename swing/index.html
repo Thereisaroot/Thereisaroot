@@ -57,15 +57,19 @@
                 document.body.appendChild(s);
               });
             }
-            loadScript("./src/i18n.js")
-              .then(function(){ return loadScript("./src/i18n.lang.js"); })
-              .then(function(){ return loadScript("./src/items.js"); })
-              .then(function(){ return loadScript("./src/chars.js"); })
-              .then(function(){ return loadScript("./src/config.js"); })
-              .then(function(){ return loadScript("./src/init.js"); })
-              .then(function(){ return loadScript("./src/utils.js"); })
-              .then(function(){ return loadScript("./src/classes.js"); })
-              .then(function(){ return loadScript("./src/main.js"); })
+            loadScript("./src/i18n/i18n.js")
+              .then(function(){ return loadScript("./src/i18n/i18n.lang.js"); })
+              .then(function(){ return loadScript("./src/data/items.js"); })
+              .then(function(){ return loadScript("./src/data/chars.js"); })
+              .then(function(){ return loadScript("./src/core/setup/config.js"); })
+              .then(function(){ return loadScript("./src/core/setup/init.js"); })
+              .then(function(){ return loadScript("./src/core/shared/utils.js"); })
+              .then(function(){ return loadScript("./src/core/entities/classes.js"); })
+              .then(function(){ return loadScript("./src/core/runtime/game.logic.js"); })
+              .then(function(){ return loadScript("./src/core/runtime/game.input.js"); })
+              .then(function(){ return loadScript("./src/core/runtime/game.render.js"); })
+              .then(function(){ return loadScript("./src/core/runtime/game.shop.js"); })
+              .then(function(){ return loadScript("./src/core/runtime/main.js"); })
               .catch(function(err){ console.error('Script load failed', err); });
           });
       })();
