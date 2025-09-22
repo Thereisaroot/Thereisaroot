@@ -10,7 +10,7 @@
     { id: 'combo', type: 'level', maxLevel: 3, price: 80, minLevel: 6, unlock: { type: 'level', value: 6 } },
     { id: 'slow', type: 'level', maxLevel: 5, price: 100, minLevel: 3, unlock: { type: 'level', value: 3 } },
     { id: 'lucky', type: 'level', maxLevel: 5, price: 40, minLevel: 2, unlock: { type: 'level', value: 2 } },
-    { id: 'revival', type: 'single', price: 1000, minLevel: 10, unlock: { type: 'level', value: 10 } },
+    { id: 'revival', type: 'single', price: 999, minLevel: 10, unlock: { type: 'level', value: 10 } },
     { id: 'fever', type: 'level', maxLevel: 3, price: 60, minLevel: 5, unlock: { type: 'level', value: 5 } },
   ];
 
