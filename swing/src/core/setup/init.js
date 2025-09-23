@@ -41,15 +41,60 @@ function commonText(key, params) {
   return t(`common.${key}`, params);
 }
 
+const CANVAS_MARGIN = 20;
 let dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+let canvasScale = 1;
+let adResizeObserver = null;
+let adMutationObserver = null;
+
+function visibleElementHeight(el) {
+  if (!el) return 0;
+  const style = window.getComputedStyle ? window.getComputedStyle(el) : null;
+  if (style && (style.display === 'none' || style.visibility === 'hidden')) return 0;
+  if (el.offsetParent === null && (!style || style.position !== 'fixed')) return 0;
+  const rect = el.getBoundingClientRect();
+  return Math.max(0, rect.height);
+}
 
 function setupCanvas() {
   dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
-  canvas.width = Math.floor(CONFIG.width * dpr);
-  canvas.height = Math.floor(CONFIG.height * dpr);
-  canvas.style.width = CONFIG.width + 'px';
-  canvas.style.height = CONFIG.height + 'px';
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  const adEl = document.querySelector('.kakao_ad_area');
+  const adHeight = visibleElementHeight(adEl);
+
+  const reservedVertical = CANVAS_MARGIN * 2 + adHeight;
+  const availableWidth = Math.max(1, (window.innerWidth || CONFIG.width) - CANVAS_MARGIN * 2);
+  const availableHeight = Math.max(1, (window.innerHeight || CONFIG.height) - reservedVertical);
+  const nextScale = Math.min(availableWidth / CONFIG.width, availableHeight / CONFIG.height);
+  canvasScale = Number.isFinite(nextScale) && nextScale > 0 ? nextScale : 1;
+
+  const scaledWidth = CONFIG.width * canvasScale;
+  const scaledHeight = CONFIG.height * canvasScale;
+  const renderWidth = Math.max(1, Math.round(scaledWidth * dpr));
+  const renderHeight = Math.max(1, Math.round(scaledHeight * dpr));
+
+  canvas.width = renderWidth;
+  canvas.height = renderHeight;
+  canvas.style.width = scaledWidth + 'px';
+  canvas.style.height = scaledHeight + 'px';
+  canvas.style.margin = `${CANVAS_MARGIN}px`;
+
+  ctx.setTransform(canvasScale * dpr, 0, 0, canvasScale * dpr, 0, 0);
+  if ('imageSmoothingEnabled' in ctx) {
+    ctx.imageSmoothingEnabled = false;
+  }
+}
+
+function observeAdArea() {
+  const adEl = document.querySelector('.kakao_ad_area');
+  if (!adEl) return;
+  if (typeof ResizeObserver !== 'undefined' && !adResizeObserver) {
+    adResizeObserver = new ResizeObserver(() => setupCanvas());
+    adResizeObserver.observe(adEl);
+  } else if (typeof MutationObserver !== 'undefined' && !adMutationObserver) {
+    adMutationObserver = new MutationObserver(() => setupCanvas());
+    adMutationObserver.observe(adEl, { attributes: true, childList: true, subtree: true });
+  }
 }
 
 function applyLocalizedAccessibility() {
@@ -156,4 +201,6 @@ if (I18N_API && typeof I18N_API.onChange === 'function') {
 // Initialize
 setupCanvas();
 window.addEventListener('resize', setupCanvas);
+window.addEventListener('load', setupCanvas, { once: true });
+observeAdArea();
 applyLocalizedAccessibility();

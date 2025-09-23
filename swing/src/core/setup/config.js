@@ -1,7 +1,7 @@
 // WebSwing - Configuration
 
 const CONFIG = {
-  width: 360,
+  width: 390,
   height: 640,
   groundH: 72,
   gravity: 2400, // px/s^2
@@ -27,8 +27,8 @@ const CONFIG = {
   catchBonusMax: 10, // unused when velScale=0
   catchVelScale: 0.0, // fixed radius (no scaling)
   // Spawn new rope anchors near the right edge of the screen
-  minAnchorX: 300,
-  maxAnchorX: 332,
+  minAnchorX: 330,
+  maxAnchorX: 362,
   edgeSpawnJitter: 48, // px, randomness from the right edge inward
   lengthJitterPct: 0.30, // ±30% length jitter after planning
   shortLChance: 0.10, // 10% chance to shorten rope
