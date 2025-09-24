@@ -71,9 +71,11 @@ let lifeAdMessage = null;
 let lifeAdAutoStart = false;
 let lifeSpentThisRun = false;
 
+const REWARDED_AD_UNITS = (typeof window !== 'undefined' && window.WEBSWING_AD_UNITS) || {};
+
 const AD_REWARD_ITEMS = [
-  { key: 'wizard', type: 'character', amount: 0 },
-  { key: 'cash20', type: 'currency', amount: 20 },
+  { key: 'wizard', type: 'character', amount: 0, placement: 'wizard', adUnitId: REWARDED_AD_UNITS.wizard || null },
+  { key: 'cash20', type: 'currency', amount: 20, placement: 'cash20', adUnitId: REWARDED_AD_UNITS.cash20 || null },
 ];
 
 const adRewardState = {};
@@ -262,9 +264,13 @@ function startRewardAd(key) {
   uiButtons.shop.cards = [];
   uiButtons.shop.buttons = [];
   if (typeof buildShopCards === 'function') buildShopCards();
-  console.log('[AdShop] Requesting rewarded ad for key=', key);
+  const request = {};
+  if (item.adUnitId) request.adUnitId = item.adUnitId;
+  if (item.placement) request.placement = item.placement;
+  request.key = key;
+  console.log('[AdShop] Requesting rewarded ad for key=', key, 'payload=', request);
 
-  playGate.showRewardedAd({}).then((res) => {
+  playGate.showRewardedAd(request).then((res) => {
     console.log('[AdShop] showRewardedAd resolved:', res);
     const rewarded = !!(res && res.rewarded);
     if (!rewarded) {

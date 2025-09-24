@@ -28,6 +28,7 @@
   - 보상 지급 로직이 실행되지 않고,
   - 상태를 `error`, 메시지를 `adsShop.adNotCompleted`로 설정한 뒤 즉시 반환합니다.
 - 광고 자체가 실패하거나 예외가 발생하면 `catch` 블록에서 `ads.lifeError` 메시지로 실패 상태를 표기할 뿐, 보상 로직은 호출되지 않습니다.
+- 보상형 광고는 `window.WEBSWING_AD_UNITS`(또는 플랫폼별 `WEBSWING_AD_UNITS_BY_PLATFORM`)에 지정된 광고 단위를 사용합니다. 키 값은 `wizard` / `cash20`와 동일합니다. 지정하지 않으면 Android는 Manifest `admob_rewarded_unit_id` 메타데이터를 사용합니다.
 
 ## 4. UI 피드백
 - `renderAdShop`(`src/core/runtime/game.shop.js:520`)에서 상태별 메시지를 노출합니다.
@@ -45,4 +46,3 @@
 - 광고 보상은 **콜백에서 `res.rewarded`가 참일 때만** 지급됩니다.
 - 중간 취소, 닫기, 실패 상황에서는 보상 함수(`applyAdReward`/`markDailyRewardClaimed`)가 호출되지 않으므로 리워드가 지급되지 않습니다.
 - 일일 보상 추적(`DAILY_AD_REWARD_KEYS`)과 상태 메시지 표기를 통해 사용자에게 현재 상태를 명확히 안내합니다.
-

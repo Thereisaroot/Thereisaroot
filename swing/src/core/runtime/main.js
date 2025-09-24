@@ -99,6 +99,27 @@ async function start() {
     }
     saveShopInv(shopInv);
   }
+
+  let forceGameOver = false;
+  if (typeof IS_NATIVE_APP !== 'undefined' && IS_NATIVE_APP && typeof nativeLivesRemaining === 'function') {
+    try {
+      if (typeof ensureDailyState === 'function') ensureDailyState();
+    } catch (_) {}
+    const livesRemaining = nativeLivesRemaining();
+    if (Number.isFinite(livesRemaining) && livesRemaining <= 0) {
+      forceGameOver = true;
+    }
+  }
+
+  if (forceGameOver) {
+    State.current = 'gameover';
+    const wait = typeof CONFIG !== 'undefined' && CONFIG && Number.isFinite(CONFIG.gameOverWait)
+      ? Math.max(0, CONFIG.gameOverWait)
+      : 5;
+    gameOverTimer = wait;
+    if (uiButtons && uiButtons.gameover) uiButtons.gameover = [];
+  }
+
   requestAnimationFrame(tick);
 }
 

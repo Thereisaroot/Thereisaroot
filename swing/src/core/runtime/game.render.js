@@ -1496,9 +1496,6 @@ function updateGameOver(dt) {
   }
 
   const outOfLives = typeof IS_NATIVE_APP !== 'undefined' && IS_NATIVE_APP && nativeLivesRemaining() <= 0;
-  if (outOfLives && lifeAdStatus === 'idle') {
-    triggerLifeAd(false);
-  }
 
   // Build buttons if not exist
   if (uiButtons.gameover.length === 0) {
