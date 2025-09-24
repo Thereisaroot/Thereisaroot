@@ -2008,15 +2008,16 @@ function ensureRopesBuffered() {
       const maxY = Math.min(CONFIG.height * 0.38, (CONFIG.height - CONFIG.groundH) - 140);
       const by = randRange(minY, maxY);
       // Star 60%, others 10% each
+      // JACK:확률계산
       let kind;
       const rand = Math.random();
-      if (rand < 0.6) {
-        kind = 'slow';
-      } else if (rand < 0.7) {
+      if (rand < 0.2) {
+        kind = 'star';
+      } else if (rand < 0.4) {
         kind = 'roulette';
-      } else if (rand < 0.8) {
+      } else if (rand < 0.6) {
         kind = 'slow';
-      } else if (rand < 0.9) {
+      } else if (rand < 0.8) {
         kind = 'wideCatch';
       } else {
         kind = 'bigSize';

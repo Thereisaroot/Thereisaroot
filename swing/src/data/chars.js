@@ -7,8 +7,8 @@
       colors: [],
     },
     robot: {
-      price: 1000,
-      minLevel: 3,
+      price: 500,
+      minLevel: 5,
       pixels: [
         [0,0,1,1,1,1,0,0],
         [0,1,2,1,1,2,1,0],
@@ -22,8 +22,8 @@
       colors: ['#8B93AF', '#4A90E2', '#2E5266'],
     },
     ninja: {
-      price: 1500,
-      minLevel: 5,
+      price: 750,
+      minLevel: 10,
       pixels: [
         [0,2,2,2,2,2,2,0],
         [0,1,1,1,1,1,1,0],
@@ -37,8 +37,8 @@
       colors: ['#1a1a1a', '#ffffff', '#ff0000', '#333333'],
     },
     pirate: {
-      price: 2000,
-      minLevel: 7,
+      price: 1000,
+      minLevel: 15,
       pixels: [
         [0,1,1,1,1,1,1,0],
         [1,1,1,1,1,1,1,1],
@@ -67,8 +67,8 @@
       colors: ['#4B0082', '#ffffff', '#FFD700', '#C0C0C0'],
     },
     knight: {
-      price: 3000,
-      minLevel: 12,
+      price: 1500,
+      minLevel: 20,
       pixels: [
         [0,1,1,1,1,1,1,0],
         [0,1,1,2,2,1,1,0],
@@ -82,8 +82,8 @@
       colors: ['#C0C0C0', '#808080', '#FF0000', '#FFD700'],
     },
     tailor: {
-      price: 2600,
-      minLevel: 9,
+      price: 2000,
+      minLevel: 25,
       pixels: [
         [0,1,1,1,1,1,1,0],
         [1,1,1,1,1,1,1,1],
@@ -97,8 +97,8 @@
       colors: ['#2c3e50', '#34495e', '#ffdbac', '#ffffff', '#1a1a1a'],
     },
     bird: {
-      price: 2800,
-      minLevel: 8,
+      price: 4000,
+      minLevel: 30,
       pixels: [
         [0,0,0,2,2,0,0,0],
         [0,0,2,2,2,2,0,0],
