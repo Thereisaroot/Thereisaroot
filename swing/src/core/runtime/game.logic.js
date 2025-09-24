@@ -2045,6 +2045,11 @@ function resetRun() {
   gameOverMenuMessageTimer = 0;
   bossOutcomeBanner = null;
   bossOutcomeTimer = 0;
+  showGuide = false;
+  showTutorial = false;
+  tutorialButtonRect = null;
+  tutorialNavButtons = [];
+  tutorialStepIndex = 0;
   rouletteState = null;
   rouletteSummary = null;
 
@@ -2157,6 +2162,10 @@ let showSettings = false;
 let settingsPopupRect = null;
 let settingsOptionRects = [];
 let settingsFocusedIndex = 0;
+let showTutorial = false;
+let tutorialStepIndex = 0;
+let tutorialButtonRect = null;
+let tutorialNavButtons = [];
 
 function footerButtonRects() {
   const w = 92, h = 24;
@@ -2174,6 +2183,9 @@ function pointInRect(px, py, r) { return px >= r.x && px <= r.x + r.w && py >= r
 
 function updateIntro(dt) {
   updateStageTransition(dt);
+  if (showGuide) tutorialButtonRect = tutorialButtonRect || null;
+  if (!showGuide) tutorialButtonRect = null;
+  tutorialNavButtons = [];
   if (introMenuMessageTimer > 0) {
     introMenuMessageTimer = Math.max(0, introMenuMessageTimer - dt);
     if (introMenuMessageTimer <= 0) introMenuMessage = null;
@@ -2193,9 +2205,63 @@ function updateIntro(dt) {
   if (uiButtons.intro.length === 0) {
     buildIntroButtons();
   }
-  
+
+  if (showTutorial) {
+    const steps = tutorialSteps();
+    const total = steps.length || 1;
+    if (UI.keyPressed === 'Escape') {
+      showTutorial = false;
+      UI.reset();
+      return;
+    }
+    if (UI.keyPressed === 'ArrowRight' || UI.keyPressed === 'Enter' || UI.keyPressed === 'Space') {
+      if (tutorialStepIndex < total - 1) {
+        tutorialStepIndex = Math.min(total - 1, tutorialStepIndex + 1);
+      } else {
+        showTutorial = false;
+      }
+      UI.reset();
+      return;
+    }
+    if (UI.keyPressed === 'ArrowLeft') {
+      tutorialStepIndex = Math.max(0, tutorialStepIndex - 1);
+      UI.reset();
+      return;
+    }
+    if (UI.clicked && tutorialNavButtons.length) {
+      for (const nav of tutorialNavButtons) {
+        if (nav && pointInRect(UI.mx, UI.my, nav)) {
+          if (nav.action === 'prev') {
+            tutorialStepIndex = Math.max(0, tutorialStepIndex - 1);
+          } else if (nav.action === 'next') {
+            if (tutorialStepIndex < total - 1) tutorialStepIndex = Math.min(total - 1, tutorialStepIndex + 1);
+            else showTutorial = false;
+          } else if (nav.action === 'close') {
+            showTutorial = false;
+          }
+          UI.reset();
+          return;
+        }
+      }
+      UI.reset();
+    }
+    return;
+  }
+
   if (showGuide) {
-    if (UI.clicked || UI.keyPressed === 'Escape' || UI.keyPressed === 'Space') {
+    if (UI.clicked) {
+      if (tutorialButtonRect && pointInRect(UI.mx, UI.my, tutorialButtonRect)) {
+        showGuide = false;
+        showTutorial = true;
+        tutorialStepIndex = 0;
+        UI.reset();
+        return;
+      }
+      showGuide = false;
+      UI.reset();
+      return;
+    }
+    if (UI.keyPressed === 'Escape' || UI.keyPressed === 'Space') {
       showGuide = false;
       UI.reset();
     }
@@ -2262,4 +2328,10 @@ function updateIntro(dt) {
     resetRun();
     return;
   }
+}
+
+function tutorialSteps() {
+  const raw = t('guide.tutorial.steps');
+  if (!raw) return [];
+  return String(raw).split(/\n\s*\n/);
 }

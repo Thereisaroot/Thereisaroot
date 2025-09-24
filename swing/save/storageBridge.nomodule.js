@@ -7,7 +7,8 @@
 
     const SafeStorage = (typeof window !== 'undefined') ? window.SafeStorage : undefined;
     if (!SafeStorage) {
-      throw new Error('SafeStorage is not loaded. Include safeStorage.nomodule.js first');
+      console.warn('[StorageBridge] SafeStorage missing; skipping native bridge setup');
+      return;
     }
 
     await SafeStorage.init({ namespace, mirrorLocalStorage: false });

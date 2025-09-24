@@ -44,12 +44,37 @@ function translateBossOutcomeReason(reason) {
 }
 
 function renderIntro(g, time) {
+  tutorialButtonRect = null;
+  tutorialNavButtons = [];
   drawBackground(g);
-  drawCenteredText(g, t('intro.title'), CONFIG.height * 0.28, 20);
-  const blink = Math.sin(time * 3) > 0 ? 1 : 0.3;
-  g.globalAlpha = blink;
-  drawCenteredText(g, t('intro.pressStart'), CONFIG.height * 0.52, 14);
-  g.globalAlpha = 1;
+
+  const centerX = CONFIG.width / 2;
+  const titleY = CONFIG.height * 0.26;
+  const pulse = 1 + 0.06 * Math.sin(time * 1.6);
+  const stretch = 1 + 0.04 * Math.cos(time * 1.2);
+  const wobble = 0.03 * Math.sin(time * 2.8);
+
+  g.save();
+  g.translate(centerX, titleY);
+  g.rotate(wobble);
+  g.scale(pulse, stretch);
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.font = `26px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+  g.fillStyle = '#24163f';
+  g.fillText(t('intro.title'), 3, 3);
+  g.fillStyle = '#ffe066';
+  g.fillText(t('intro.title'), 0, 0);
+  g.restore();
+
+  const scanlineAlpha = 0.12 + 0.08 * Math.sin(time * 6.0);
+  g.save();
+  g.fillStyle = `rgba(255,255,255,${scanlineAlpha.toFixed(3)})`;
+  for (let y = 0; y < CONFIG.height; y += 4) {
+    g.fillRect(0, y, CONFIG.width, 1);
+  }
+  g.restore();
+
   if (typeof IS_NATIVE_APP !== 'undefined' && IS_NATIVE_APP) {
     const rawLives = nativeLivesRemaining();
     const maxLives = nativeLivesMax();
@@ -84,8 +109,7 @@ function renderIntro(g, time) {
       drawCenteredText(g, introMenuMessage, msgY, 9, '#ffb347');
     }
   }
-  
-  // Guide button
+
   const footer = footerButtonRects();
   const guideBtn = footer.guide;
   g.fillStyle = '#22334a';
@@ -99,7 +123,6 @@ function renderIntro(g, time) {
   g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
   g.fillText(t('intro.guide'), guideBtn.x + guideBtn.w/2, guideBtn.y + guideBtn.h/2 + 1);
 
-  // Settings button
   const settingsBtn = footer.settings;
   g.fillStyle = '#22334a';
   g.strokeStyle = '#b4c0d9';
@@ -109,13 +132,12 @@ function renderIntro(g, time) {
   g.fillStyle = '#ffffff';
   g.fillText(t('intro.settings'), settingsBtn.x + settingsBtn.w/2, settingsBtn.y + settingsBtn.h/2 + 1);
 
-  // Popup overlay
   if (showGuide) {
     g.save();
     g.fillStyle = 'rgba(0,0,0,0.55)';
     g.fillRect(0, 0, CONFIG.width, CONFIG.height);
     const pw = CONFIG.width * 0.86;
-    const ph = 150;
+    const ph = 190;
     const px = (CONFIG.width - pw) / 2;
     const py = CONFIG.height * 0.34;
     g.fillStyle = '#0f1a2a';
@@ -134,11 +156,100 @@ function renderIntro(g, time) {
       g.fillText(line, px + 12, ly);
       ly += lineAdvance(baseGuideLine, line);
     }
+    const btnW = 150;
+    const btnH = 26;
+    const btnX = px + (pw - btnW) / 2;
+    const btnY = py + ph - 60;
+    tutorialButtonRect = { x: btnX, y: btnY, w: btnW, h: btnH };
+    g.fillStyle = '#22334a';
+    g.strokeStyle = '#b4c0d9';
+    g.fillRect(btnX, btnY, btnW, btnH);
+    g.strokeRect(btnX, btnY, btnW, btnH);
+    g.fillStyle = '#ffffff';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+    g.fillText(t('guide.tutorialButton'), btnX + btnW / 2, btnY + btnH / 2 + 1);
     g.fillStyle = '#b4c0d9';
     g.font = `8px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
     g.textAlign = 'center';
     g.fillText(t('common.clickAnywhereToClose'), px + pw/2, py + ph - 18);
     g.restore();
+    return;
+  }
+
+  if (showTutorial) {
+    g.save();
+    g.fillStyle = 'rgba(0,0,0,0.65)';
+    g.fillRect(0, 0, CONFIG.width, CONFIG.height);
+    const pw = CONFIG.width * 0.82;
+    const ph = Math.min(CONFIG.height * 0.66, 240);
+    const px = (CONFIG.width - pw) / 2;
+    const py = CONFIG.height * 0.20;
+    g.fillStyle = '#0f1a2a';
+    g.strokeStyle = '#b4c0d9';
+    g.lineWidth = 2;
+    g.fillRect(px, py, pw, ph);
+    g.strokeRect(px, py, pw, ph);
+
+    const steps = tutorialSteps();
+    const total = steps.length || 1;
+    tutorialStepIndex = Math.max(0, Math.min(tutorialStepIndex, total - 1));
+    const stepRaw = steps[tutorialStepIndex] || '';
+    const lines = String(stepRaw).split('\n');
+
+    g.fillStyle = '#ffe066';
+    g.textAlign = 'center';
+    g.textBaseline = 'top';
+    g.font = `12px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+    g.fillText(t('guide.tutorialTitle'), px + pw / 2, py + 14);
+    g.fillStyle = '#b4c0d9';
+    g.font = `9px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+    g.fillText(t('guide.tutorialStep', { current: tutorialStepIndex + 1, total }), px + pw / 2, py + 32);
+
+    g.fillStyle = '#ffffff';
+    g.textAlign = 'left';
+    g.textBaseline = 'top';
+    g.font = `9px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+    let ly = py + 56;
+    const lineGap = 14;
+    for (const line of lines) {
+      g.fillText(line, px + 18, ly);
+      ly += lineGap;
+    }
+
+    tutorialNavButtons = [];
+    const btnY = py + ph - 44;
+    const btnH = 26;
+    const btnW = 110;
+    const spacing = 20;
+    const buttons = [];
+    if (total > 1) {
+      buttons.push({ key: 'prev', label: t('guide.tutorialPrev'), disabled: tutorialStepIndex === 0 });
+      const isLast = tutorialStepIndex >= total - 1;
+      buttons.push({ key: 'next', label: isLast ? t('guide.tutorialFinish') : t('guide.tutorialNext'), disabled: false });
+    }
+    buttons.push({ key: 'close', label: t('guide.tutorialClose'), disabled: false });
+
+    const totalWidth = buttons.length * btnW + (buttons.length - 1) * spacing;
+    let bx = px + (pw - totalWidth) / 2;
+    for (const btn of buttons) {
+      const rect = { x: bx, y: btnY, w: btnW, h: btnH, action: btn.key };
+      g.fillStyle = btn.disabled ? '#182234' : '#22334a';
+      g.strokeStyle = '#b4c0d9';
+      g.fillRect(rect.x, rect.y, rect.w, rect.h);
+      g.strokeRect(rect.x, rect.y, rect.w, rect.h);
+      g.fillStyle = btn.disabled ? '#5f6a87' : '#ffffff';
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.font = `9px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+      g.fillText(btn.label, rect.x + rect.w / 2, rect.y + rect.h / 2 + 1);
+      if (!btn.disabled) tutorialNavButtons.push(rect);
+      bx += btnW + spacing;
+    }
+
+    g.restore();
+    return;
   }
 
   if (showSettings) {
@@ -193,7 +304,26 @@ function renderIntro(g, time) {
     settingsPopupRect = null;
     settingsOptionRects = [];
   }
+
+  if (!showSettings) {
+    const hasMenu = introMenuButtons && introMenuButtons.length;
+    const pressY = hasMenu
+      ? Math.min(CONFIG.height * 0.82, introMenuButtons[introMenuButtons.length - 1].y + introMenuButtons[introMenuButtons.length - 1].h + 40)
+      : CONFIG.height * 0.62;
+    const blink = Math.sin(time * 3) > 0 ? 1 : 0.2;
+    g.save();
+    g.globalAlpha = blink;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.font = `12px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+    g.fillStyle = '#0f1a2a';
+    g.fillText(t('intro.pressStart'), centerX, pressY + 2);
+    g.fillStyle = '#ffd966';
+    g.fillText(t('intro.pressStart'), centerX, pressY);
+    g.restore();
+  }
 }
+
 
 function drawRope(g, rope) {
   const tip = rope.tip(simTime);
@@ -1267,6 +1397,10 @@ function renderBoss(g) {
     }
   }
   g.restore();
+}
+
+if (typeof globalThis !== 'undefined') {
+  globalThis.renderIntro = renderIntro;
 }
 
 function renderRouletteOverlay(g) {

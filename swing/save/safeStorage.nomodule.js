@@ -15,15 +15,14 @@ const SafeStorage = (() => {
   let cache = {};
   let pendingWrite = null;
 
-  const Cap = (typeof window !== 'undefined' ? window.Capacitor : undefined) || undefined;
+  const Cap = (typeof window !== 'undefined' ? window.Capacitor : undefined) || {};
   const isNative = !!(Cap && typeof Cap.isNativePlatform === 'function' && Cap.isNativePlatform());
   const Plugins = Cap.Plugins || {};
   const Pref = Plugins && Plugins.Preferences;
   const FS = Plugins && Plugins.Filesystem;
 
   async function init(opts) {
-    console.log('[SafeStorage] platform', PLATFORM, 'isNative', isNative);
-    console.log('[SafeStorage] init start', opts);
+    console.log('[SafeStorage] platform', Cap.platform || 'web', 'isNative', isNative);
     ns = opts && opts.namespace || ns;
     file = (opts && opts.fileName) || file;
     mirrorLS = (opts && typeof opts.mirrorLocalStorage === 'boolean') ? opts.mirrorLocalStorage : mirrorLS;
@@ -259,4 +258,3 @@ if (typeof window !== 'undefined') {
   window.saveExport = () => SafeStorage.exportAll();
   window.saveImport = (data, overwrite = true) => SafeStorage.importAll(data, overwrite);
 }
-
