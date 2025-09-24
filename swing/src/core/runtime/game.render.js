@@ -458,39 +458,15 @@ function updateRun(dt) {
     stageBulletTimer += baseDt;
     if (stageBulletTimer >= stageBulletInterval) {
       stageBulletTimer = 0;
-      // Spawn bullet from random position on right side
-      const fromTop = Math.random() < 0.3; // 30% chance from top
-      const fromBottom = !fromTop && Math.random() < 0.5; // 35% chance from bottom
-      // 35% chance from right side
-
-      let bulletX, bulletY, targetX, targetY;
-
-      if (fromTop) {
-        bulletX = camera.x + CONFIG.width * randRange(0.3, 0.9);
-        bulletY = -20;
-      } else if (fromBottom) {
-        bulletX = camera.x + CONFIG.width * randRange(0.3, 0.9);
-        bulletY = CONFIG.height + 20;
-      } else {
-        bulletX = camera.x + CONFIG.width + 40;
-        bulletY = randRange(50, CONFIG.height - 50);
-      }
-
-      // Target near player with some randomness
-      targetX = player.x + randRange(-30, 30);
-      targetY = player.y + randRange(-30, 30);
-
-      // Calculate velocity to aim at target
-      const dx = targetX - bulletX;
-      const dy = targetY - bulletY;
-      const dist = Math.hypot(dx, dy);
       const speed = 220;
-
+      const angleOffset = ((Math.random() * 20) - 10) * (Math.PI / 180);
+      const baseAngle = Math.PI; // shoot from right to left
+      const angle = baseAngle + angleOffset;
       stageBullets.push({
-        x: bulletX,
-        y: bulletY,
-        vx: (dx / dist) * speed,
-        vy: (dy / dist) * speed,
+        x: camera.x + CONFIG.width + 40,
+        y: (CONFIG.height * 0.5) + randRange(-50, 50),
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
         radius: 12,
         life: 0
       });
@@ -1356,14 +1332,15 @@ function renderBoss(g) {
   if (bossState && bossState.battle) {
     if (bossState.type === 'bullet') {
       const b = bossState.battle;
-      g.fillText(t('boss.bulletHud', { shots: b.shotsFired, total: b.totalShots, dodged: b.dodged, required: b.requiredDodges }), CONFIG.width / 2, 40);
+      g.fillText(t('boss.bulletHud', { shots: b.shotsFired, total: b.totalShots, hits: b.hitsTaken || 0, limit: b.hitLimit || 4 }), CONFIG.width / 2, 40);
     } else if (bossState.type === 'slam') {
       const b = bossState.battle;
-      const remain = Math.max(0, b.duration - b.bossTimer).toFixed(1);
-      g.font = `26px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-      g.fillText(t('boss.slamHudProgress', { current: b.jumpCount || 0, goal: b.jumpGoal ?? 50 }), CONFIG.width / 2, CONFIG.height * 0.42);
-      g.font = `12px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-      g.fillText(t('boss.slamHudTime', { seconds: remain }), CONFIG.width / 2, 40);
+      const jumpCount = b ? (b.jumpCount || 0) : 0;
+      g.save();
+      g.textBaseline = 'middle';
+      g.font = `36px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+      g.fillText(String(jumpCount), CONFIG.width / 2, CONFIG.height * 0.42);
+      g.restore();
     } else if (bossState.type === 'collect') {
       const b = bossState.battle;
       g.fillText(t('boss.collectHud', { collected: b.collected, total: b.totalShots, missed: b.missed, allowed: b.missLimit }), CONFIG.width / 2, 40);

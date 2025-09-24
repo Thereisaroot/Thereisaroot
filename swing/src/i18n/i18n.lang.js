@@ -89,14 +89,14 @@
     boss: {
       stageWithNumber: 'BOSS STAGE {stage}',
       stage: 'BOSS STAGE',
-      bulletHud: 'Shots {shots}/{total} | Dodged {dodged}/{required}',
+      bulletHud: 'Shots {shots}/{total} | Hits {hits}/{limit}',
       slamHudProgress: '{current} JUMPS (goal {goal})',
       slamHudTime: 'Time {seconds}s',
       collectHud: 'Collected {collected}/{total} | Missed {missed}/{allowed}',
       hud: {
-        bullet: 'Dodge 6 bullets with infinite jumps!',
-        slam: 'Hit the boss 50 times with infinite jumps!',
-        collect: 'Collect 10 falling $ crates before they escape!',
+        bullet: 'Survive 15 shots',
+        slam: 'Keep jumping! 50+ clears',
+        collect: 'Collect 10 falling $ crates',
       },
     },
     bossOutcome: {
@@ -409,14 +409,14 @@
     boss: {
       stageWithNumber: '스테이지 {stage} : 보스전',
       stage: '보스 스테이지',
-      bulletHud: '발사 {shots}/{total} | 회피 {dodged}/{required}',
+      bulletHud: '발사 {shots}/{total} | 피격 {hits}/{limit}',
       slamHudProgress: '{current}회 점프 (목표 {goal})',
       slamHudTime: '남은 시간 {seconds}초',
       collectHud: '획득 {collected}/{total} | 놓침 {missed}/{allowed}',
       hud: {
-        bullet: '무한 점프로 탄환 6발을 피하세요!',
-        slam: '무한 점프로 보스를 50번 가격하세요!',
-        collect: '떨어지는 상자 10개를 놓치지 말고 모으세요!',
+        bullet: '15발을 버티세요!',
+        slam: '계속 점프하세요!',
+        collect: '떨어지는 상자를 모으세요!',
       },
     },
     bossOutcome: {

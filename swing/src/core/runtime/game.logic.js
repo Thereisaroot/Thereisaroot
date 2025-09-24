@@ -1087,14 +1087,16 @@ function initBossBattle() {
       bossMinY: 60,
       bossMaxY: CONFIG.height * 0.65,
       shotsFired: 0,
-      totalShots: 10,
+      totalShots: 15,
       shotInterval: 1.0,
       shotCooldown: 0.6,
       bullets: [],
       dodged: 0,
-      requiredDodges: 6,
+      hitsTaken: 0,
+      hitLimit: 4,
       bulletSpeed: 220,
-      failOnHit: true,
+      failOnHit: false,
+      nextVolleySize: 1,
     };
   } else if (bossState.type === 'slam') {
     bossState.battle = {
@@ -1105,9 +1107,9 @@ function initBossBattle() {
       bossRadius: 70,
       hitCount: 0,
       hitCooldown: 0,
-      hitGoal: 50,
       jumpCount: 0,
-      jumpGoal: 50,
+      successThreshold: 50,
+      maxScoreJumps: 80,
       jumpPower: 320,
       baseGravity: CONFIG.gravity * 1.35,
     };
@@ -1255,8 +1257,15 @@ function updateBossTypeBullet(dt, battle) {
       const dy = bullet.y - player.y;
       const dist = Math.hypot(dx, dy);
       if (dist <= player.r + bullet.radius) {
-        triggerBossFailure('hit');
-        return;
+        bullet.hit = true;
+        battle.hitsTaken = (battle.hitsTaken || 0) + 1;
+        spawnEffect('burst', bullet.x, bullet.y);
+        battle.bullets.splice(i, 1);
+        if (battle.hitsTaken >= (battle.hitLimit || 1)) {
+          triggerBossFailure('hit');
+          return;
+        }
+        continue;
       }
     }
 
@@ -1267,35 +1276,40 @@ function updateBossTypeBullet(dt, battle) {
   }
 
   if (battle.shotsFired >= battle.totalShots && battle.bullets.length === 0) {
-    if (battle.dodged >= battle.requiredDodges) {
-      const reward = battle.dodged * 2;
+    if ((battle.hitsTaken || 0) < (battle.hitLimit || 1)) {
+      const reward = Math.max(0, battle.dodged * 2);
       triggerBossSuccess({ score: reward, cash: reward });
-      return;
     } else {
-      triggerBossFailure('not_enough_dodge');
-      return;
+      triggerBossFailure('hit');
     }
+    return;
   }
 }
 
 function spawnBossBullet(battle) {
-  battle.shotsFired += 1;
+  const desiredVolley = battle.nextVolleySize || 1;
+  const remaining = Math.max(0, battle.totalShots - battle.shotsFired);
+  const volleySize = Math.min(desiredVolley, remaining);
   battle.shotCooldown = battle.shotInterval;
-  const aimY = randRange(battle.bossMinY, battle.bossMaxY);
-  const dy = aimY - battle.bossY;
-  const dx = (camera.x + CONFIG.width + 40) - player.x;
-  const ang = Math.atan2(dy, Math.abs(dx));
-  const vx = -battle.bulletSpeed;
-  const vy = Math.tan(ang) * Math.abs(vx);
-  battle.bullets.push({
-    x: camera.x + CONFIG.width + 24,
-    y: battle.bossY,
-    vx,
-    vy,
-    radius: 10,
-    life: 0,
-    hit: false,
-  });
+  if (volleySize <= 0) {
+    return;
+  }
+  const speed = battle.bulletSpeed || 220;
+  for (let i = 0; i < volleySize; i += 1) {
+    const angleOffset = randRange(-10, 10) * (Math.PI / 180);
+    const angle = Math.PI + angleOffset;
+    battle.shotsFired += 1;
+    battle.bullets.push({
+      x: camera.x + CONFIG.width + 24,
+      y: (CONFIG.height * 0.5) + randRange(-50, 50),
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      radius: 10,
+      life: 0,
+      hit: false,
+    });
+  }
+  battle.nextVolleySize = desiredVolley === 1 ? 2 : 1;
 }
 
 function updateBossTypeSlam(dt, battle) {
@@ -1307,16 +1321,14 @@ function updateBossTypeSlam(dt, battle) {
   }
 
   const jumps = battle.jumpCount || 0;
-  const goal = battle.jumpGoal ?? 50;
-  if (jumps >= goal) {
-    const reward = Math.floor(jumps / 10) * 4;
-    triggerBossSuccess({ score: reward, cash: reward });
-    return;
-  }
-
+  const successThreshold = battle.successThreshold ?? 50;
+  const maxScoreJumps = Math.max(successThreshold, battle.maxScoreJumps || successThreshold);
   if (battle.bossTimer >= battle.duration) {
-    const reward = Math.floor(jumps / 10) * 4;
-    triggerBossOutcome({ success: jumps >= goal, score: reward, cash: reward });
+    const clamped = Math.min(jumps, maxScoreJumps);
+    const span = Math.max(1, maxScoreJumps - successThreshold);
+    const rawReward = (clamped - successThreshold) / span * 20;
+    const reward = jumps >= successThreshold ? Math.max(0, Math.min(20, Math.round(rawReward))) : 0;
+    triggerBossOutcome({ success: jumps >= successThreshold, score: reward, cash: reward });
     return;
   }
 }
