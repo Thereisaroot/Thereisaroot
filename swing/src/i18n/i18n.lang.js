@@ -230,11 +230,11 @@
     items: {
       glow: {
         name: 'Glow',
-        description: 'Glow effect and +5% catch range per level (max 3).',
+        description: 'Glow effect and +10% catch radius per level (max 3).',
       },
       buds: {
         name: 'Buds',
-        description: 'Adds trailing orbs to vertices (max equals sides).',
+        description: 'Adds rotating orbs that auto-catch ropes, boxes, and block bullets (max 6).',
       },
       plusjump: {
         name: '+Jump',
@@ -246,11 +246,11 @@
       },
       big: {
         name: 'Big',
-        description: 'Increases body size by 2.5% per level (cap = player level).',
+        description: 'Increases body size by 2.5% per level (max 5).',
       },
       gamble: {
         name: 'Gamble',
-        description: 'Next run earns 1.5x money (one-time use).',
+        description: 'Next run earns 1.5x money and EXP (one-time use).',
       },
       magnet: {
         name: 'Magnet',
@@ -262,7 +262,7 @@
       },
       slow: {
         name: 'Slow',
-        description: 'On detach, 10% × level chance to trigger slow motion instantly.',
+        description: 'On detach, 10% × level chance to trigger slow motion after a short delay.',
       },
       lucky: {
         name: 'Lucky',
@@ -270,7 +270,7 @@
       },
       revival: {
         name: 'Revival',
-        description: 'Revive once when crashing onto the ground (triggers before Robot repair).',
+        description: 'Revive once after the Robot rescue fails when you hit the ground.',
       },
       fever: {
         name: 'Fever+',
@@ -498,11 +498,11 @@
     items: {
       glow: {
         name: '글로우',
-        description: '레벨마다 캐치 범위가 5% 증가하고 빛나는 효과가 생깁니다 (최대 3).',
+        description: '레벨마다 캐치 반경이 10% 늘고 빛나는 효과가 생깁니다 (최대 3).',
       },
       buds: {
         name: '버즈',
-        description: '몸체 꼭짓점에 꼬리 구슬을 추가합니다 (최대 = 변의 수).',
+        description: '회전 구슬이 로프·아이템을 대신 잡아주고 탄환을 막아 줍니다 (최대 6개).',
       },
       plusjump: {
         name: '+점프',
@@ -514,11 +514,11 @@
       },
       big: {
         name: '빅',
-        description: '레벨당 몸집이 2.5% 커집니다 (상한 = 플레이어 레벨).',
+        description: '레벨당 몸집이 2.5% 커집니다 (최대 5레벨).',
       },
       gamble: {
         name: '갬블',
-        description: '다음 런의 수익이 1.5배가 되며 한 번 사용 후 사라집니다.',
+        description: '다음 런의 돈과 경험치가 1.5배가 되고 한 번 사용 후 사라집니다.',
       },
       magnet: {
         name: '마그넷',
@@ -530,7 +530,7 @@
       },
       slow: {
         name: '슬로',
-        description: '점프 시 레벨당 10% 확률로 즉시 슬로모션이 발동합니다.',
+        description: '점프 시 레벨당 10% 확률로 잠시 뒤 슬로모션이 발동합니다.',
       },
       lucky: {
         name: '럭키',
@@ -538,7 +538,7 @@
       },
       revival: {
         name: '부활',
-        description: '땅에 떨어질 때 한 번 즉시 부활하며 로봇보다 먼저 발동합니다.',
+        description: '땅에 떨어질 때 로봇 구조가 실패하면 한 번 더 부활합니다.',
       },
       fever: {
         name: '피버+',

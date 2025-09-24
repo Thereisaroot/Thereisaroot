@@ -292,7 +292,7 @@ function drawRope(g, rope) {
   g.fill();
   // Debug: tip-only catch radius and distance readout
   if (DEBUG) {
-    const glowBonus = shopInv.glowLevel ? (shopInv.glowLevel * 0.167 * CONFIG.catchBase) : 0;
+    const glowBonus = shopInv.glowLevel ? (shopInv.glowLevel * 0.1 * CONFIG.catchBase) : 0;
     const catchR = CONFIG.catchBase + glowBonus;
     g.save();
     g.fillStyle = 'rgba(255,105,180,0.12)';
@@ -709,7 +709,7 @@ function updateRun(dt) {
       const bx = tip.x, by = tip.y;
       const dx = bx - player.x;
       const dy = by - player.y;
-      const glowBonus = shopInv.glowLevel ? (shopInv.glowLevel * 0.167 * CONFIG.catchBase) : 0;
+      const glowBonus = shopInv.glowLevel ? (shopInv.glowLevel * 0.1 * CONFIG.catchBase) : 0;
       let catchR = (pendingCatchR > 0 ? pendingCatchR : CONFIG.catchBase) + glowBonus;
       if (starModeActive) catchR *= 1.5;
       let withinCatch = Math.hypot(dx, dy) <= catchR;

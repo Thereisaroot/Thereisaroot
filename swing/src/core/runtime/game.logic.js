@@ -1277,7 +1277,8 @@ function updateBossTypeBullet(dt, battle) {
 
   if (battle.shotsFired >= battle.totalShots && battle.bullets.length === 0) {
     if ((battle.hitsTaken || 0) < (battle.hitLimit || 1)) {
-      const reward = Math.max(0, battle.dodged * 2);
+      const accuracy = battle.totalShots > 0 ? Math.max(0, Math.min(1, battle.dodged / battle.totalShots)) : 0;
+      const reward = Math.max(0, Math.round(accuracy * 20));
       triggerBossSuccess({ score: reward, cash: reward });
     } else {
       triggerBossFailure('hit');
@@ -1442,6 +1443,7 @@ function applyBossReturn(payload) {
 
   if (rewardScore > 0) {
     score += rewardScore;
+    baseScoreForRewards += rewardScore;
     spawnEffect('combo', player.x, player.y - 24, t('effects.pointsEarned', { points: rewardScore }));
   }
   if (rewardCash > 0) {

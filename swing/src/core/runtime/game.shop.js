@@ -702,6 +702,7 @@ function renderShop(g) {
   const endIdx = Math.min(allItems.length, startIdx + itemsPerPage);
   currentItemPageEntries = allItems.slice(startIdx, endIdx);
   for (let i = startIdx; i < endIdx; i++) {
+    const item = allItems[i];
     const local = i - startIdx;
     const r = Math.floor(local / cols);
     const c = local % cols;
@@ -722,21 +723,21 @@ function renderShop(g) {
     g.strokeRect(cardX, cardY, cardW, cardH);
     g.restore();
     // content
-    const state = itemCardState(allItems[i], lvl, savings);
+    const state = itemCardState(item, lvl, savings);
 
     // 1) Name top-centered
     g.fillStyle = '#ffffff';
     g.textAlign = 'center';
     g.textBaseline = 'top';
     g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-    g.fillText(itemName(allItems[i]), centerX, cardY + 6);
+    g.fillText(itemName(item), centerX, cardY + 6);
     // 2) Price (top-right inside card)
     g.textAlign = 'right';
     g.fillStyle = '#ffffff';
     const priceText = t('shop.price', { amount: state.price });
     g.fillText(priceText, cardX + cardW - 8, cardY + 20);
     // 3) Pixel art icon (center)
-    const sprite = getItemSprite(allItems[i].id);
+    const sprite = getItemSprite(item.id);
     if (sprite && sprite.pixels && sprite.pixels.length && sprite.pixels[0]) {
       const rows = sprite.pixels.length;
       const cols = sprite.pixels[0].length;
@@ -774,7 +775,7 @@ function renderShop(g) {
       g.fillRect(cardX, cardY, cardW, cardH);
       g.textAlign = 'center';
       g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-      if (allItems[i].type === 'single' || allItems[i].type === 'consumable') {
+      if (item.type === 'single' || item.type === 'consumable') {
         g.fillStyle = '#ff6666';
         g.fillText(t('shop.soldOut'), centerX, cardY + cardH / 2 + 2);
       } else {
@@ -799,8 +800,11 @@ function renderShop(g) {
       g.fillText(t('shop.lockedFunds', { amount: state.price }), centerX, cardY + cardH - 6);
     } else {
       g.fillStyle = '#ffffff';
-      const lvVal = getItemLevel(allItems[i]);
-      g.fillText(t('shop.itemLevel', { level: lvVal }), centerX, cardY + cardH - 6);
+      const lvlValue = getItemLevel(item);
+      const showLevel = item.type === 'level' && lvlValue > 0;
+      if (showLevel) {
+        g.fillText(t('shop.itemLevel', { level: lvlValue }), centerX, cardY + cardH - 6);
+      }
     }
     g.fillStyle = '#ffffff';
   }

@@ -53,7 +53,7 @@
     },
     wizard: {
       price: 1000000,
-      minLevel: 22,
+      minLevel: 2,
       pixels: [
         [0,0,0,1,0,0,0,0],
         [0,0,1,1,1,0,0,0],
