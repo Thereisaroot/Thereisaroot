@@ -611,6 +611,7 @@ const SLOW_MO_TRIGGER_DELAY = 0.5;
 const COMBO_BONUS_PER_LEVEL = 1;
 const LUCKY_BONUS_PER_LEVEL = 0.05;
 const FEVER_BONUS_SECONDS = 1;
+const TUTORIAL_STEP_DURATION = 4;
 const TAILOR_EXTRA_ROPE_CHANCE = 0.5;
 
 const STAGE_COLORS = [
@@ -2046,10 +2047,9 @@ function resetRun() {
   bossOutcomeBanner = null;
   bossOutcomeTimer = 0;
   showGuide = false;
-  showTutorial = false;
   tutorialButtonRect = null;
-  tutorialNavButtons = [];
   tutorialStepIndex = 0;
+  tutorialStepTimer = 0;
   rouletteState = null;
   rouletteSummary = null;
 
@@ -2162,10 +2162,23 @@ let showSettings = false;
 let settingsPopupRect = null;
 let settingsOptionRects = [];
 let settingsFocusedIndex = 0;
-let showTutorial = false;
-let tutorialStepIndex = 0;
+const TUTORIAL_ENABLED_KEY = 'webswing_tutorial_enabled';
+
+function loadTutorialPreference() {
+  try {
+    const stored = localStorage.getItem(TUTORIAL_ENABLED_KEY);
+    if (stored === '1') return { value: true, stored: true };
+    if (stored === '0') return { value: false, stored: true };
+  } catch (_) {}
+  return { value: false, stored: false };
+}
+
+const tutorialPref = loadTutorialPreference();
+let tutorialEnabled = tutorialPref.value;
+let tutorialPreferenceStored = tutorialPref.stored;
 let tutorialButtonRect = null;
-let tutorialNavButtons = [];
+let tutorialStepIndex = 0;
+let tutorialStepTimer = 0;
 
 function footerButtonRects() {
   const w = 92, h = 24;
@@ -2181,11 +2194,28 @@ function footerButtonRects() {
 }
 function pointInRect(px, py, r) { return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h; }
 
+function persistTutorialPreference(flag) {
+  try { localStorage.setItem(TUTORIAL_ENABLED_KEY, flag ? '1' : '0'); } catch (_) {}
+}
+
+function setTutorialEnabled(flag, persist = true) {
+  const next = !!flag;
+  tutorialEnabled = next;
+  tutorialStepIndex = 0;
+  tutorialStepTimer = 0;
+  if (persist) {
+    persistTutorialPreference(next);
+    tutorialPreferenceStored = true;
+  }
+}
+
+function hasTutorialPreference() {
+  return tutorialPreferenceStored;
+}
+
 function updateIntro(dt) {
   updateStageTransition(dt);
-  if (showGuide) tutorialButtonRect = tutorialButtonRect || null;
-  if (!showGuide) tutorialButtonRect = null;
-  tutorialNavButtons = [];
+  tutorialButtonRect = null;
   if (introMenuMessageTimer > 0) {
     introMenuMessageTimer = Math.max(0, introMenuMessageTimer - dt);
     if (introMenuMessageTimer <= 0) introMenuMessage = null;
@@ -2206,54 +2236,10 @@ function updateIntro(dt) {
     buildIntroButtons();
   }
 
-  if (showTutorial) {
-    const steps = tutorialSteps();
-    const total = steps.length || 1;
-    if (UI.keyPressed === 'Escape') {
-      showTutorial = false;
-      UI.reset();
-      return;
-    }
-    if (UI.keyPressed === 'ArrowRight' || UI.keyPressed === 'Enter' || UI.keyPressed === 'Space') {
-      if (tutorialStepIndex < total - 1) {
-        tutorialStepIndex = Math.min(total - 1, tutorialStepIndex + 1);
-      } else {
-        showTutorial = false;
-      }
-      UI.reset();
-      return;
-    }
-    if (UI.keyPressed === 'ArrowLeft') {
-      tutorialStepIndex = Math.max(0, tutorialStepIndex - 1);
-      UI.reset();
-      return;
-    }
-    if (UI.clicked && tutorialNavButtons.length) {
-      for (const nav of tutorialNavButtons) {
-        if (nav && pointInRect(UI.mx, UI.my, nav)) {
-          if (nav.action === 'prev') {
-            tutorialStepIndex = Math.max(0, tutorialStepIndex - 1);
-          } else if (nav.action === 'next') {
-            if (tutorialStepIndex < total - 1) tutorialStepIndex = Math.min(total - 1, tutorialStepIndex + 1);
-            else showTutorial = false;
-          } else if (nav.action === 'close') {
-            showTutorial = false;
-          }
-          UI.reset();
-          return;
-        }
-      }
-      UI.reset();
-    }
-    return;
-  }
-
   if (showGuide) {
     if (UI.clicked) {
       if (tutorialButtonRect && pointInRect(UI.mx, UI.my, tutorialButtonRect)) {
-        showGuide = false;
-        showTutorial = true;
-        tutorialStepIndex = 0;
+        setTutorialEnabled(!tutorialEnabled);
         UI.reset();
         return;
       }
@@ -2334,4 +2320,10 @@ function tutorialSteps() {
   const raw = t('guide.tutorial.steps');
   if (!raw) return [];
   return String(raw).split(/\n\s*\n/);
+}
+
+if (typeof globalThis !== 'undefined') {
+  globalThis.setTutorialEnabled = setTutorialEnabled;
+  globalThis.getTutorialEnabled = () => tutorialEnabled;
+  globalThis.hasTutorialPreference = hasTutorialPreference;
 }

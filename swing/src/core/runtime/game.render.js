@@ -45,7 +45,6 @@ function translateBossOutcomeReason(reason) {
 
 function renderIntro(g, time) {
   tutorialButtonRect = null;
-  tutorialNavButtons = [];
   drawBackground(g);
 
   const centerX = CONFIG.width / 2;
@@ -67,7 +66,7 @@ function renderIntro(g, time) {
   g.fillText(t('intro.title'), 0, 0);
   g.restore();
 
-  const scanlineAlpha = 0.12 + 0.08 * Math.sin(time * 6.0);
+  const scanlineAlpha = Math.min(0.2, 0.08 + 0.05 * Math.sin(time * 3.0));
   g.save();
   g.fillStyle = `rgba(255,255,255,${scanlineAlpha.toFixed(3)})`;
   for (let y = 0; y < CONFIG.height; y += 4) {
@@ -165,89 +164,15 @@ function renderIntro(g, time) {
     g.strokeStyle = '#b4c0d9';
     g.fillRect(btnX, btnY, btnW, btnH);
     g.strokeRect(btnX, btnY, btnW, btnH);
-    g.fillStyle = '#ffffff';
+    g.fillStyle = tutorialEnabled ? '#9cffc7' : '#ffffff';
     g.textAlign = 'center';
     g.textBaseline = 'middle';
     g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-    g.fillText(t('guide.tutorialButton'), btnX + btnW / 2, btnY + btnH / 2 + 1);
+    g.fillText(t(tutorialEnabled ? 'guide.tutorialButtonOn' : 'guide.tutorialButtonOff'), btnX + btnW / 2, btnY + btnH / 2 + 1);
     g.fillStyle = '#b4c0d9';
     g.font = `8px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
     g.textAlign = 'center';
     g.fillText(t('common.clickAnywhereToClose'), px + pw/2, py + ph - 18);
-    g.restore();
-    return;
-  }
-
-  if (showTutorial) {
-    g.save();
-    g.fillStyle = 'rgba(0,0,0,0.65)';
-    g.fillRect(0, 0, CONFIG.width, CONFIG.height);
-    const pw = CONFIG.width * 0.82;
-    const ph = Math.min(CONFIG.height * 0.66, 240);
-    const px = (CONFIG.width - pw) / 2;
-    const py = CONFIG.height * 0.20;
-    g.fillStyle = '#0f1a2a';
-    g.strokeStyle = '#b4c0d9';
-    g.lineWidth = 2;
-    g.fillRect(px, py, pw, ph);
-    g.strokeRect(px, py, pw, ph);
-
-    const steps = tutorialSteps();
-    const total = steps.length || 1;
-    tutorialStepIndex = Math.max(0, Math.min(tutorialStepIndex, total - 1));
-    const stepRaw = steps[tutorialStepIndex] || '';
-    const lines = String(stepRaw).split('\n');
-
-    g.fillStyle = '#ffe066';
-    g.textAlign = 'center';
-    g.textBaseline = 'top';
-    g.font = `12px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-    g.fillText(t('guide.tutorialTitle'), px + pw / 2, py + 14);
-    g.fillStyle = '#b4c0d9';
-    g.font = `9px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-    g.fillText(t('guide.tutorialStep', { current: tutorialStepIndex + 1, total }), px + pw / 2, py + 32);
-
-    g.fillStyle = '#ffffff';
-    g.textAlign = 'left';
-    g.textBaseline = 'top';
-    g.font = `9px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-    let ly = py + 56;
-    const lineGap = 14;
-    for (const line of lines) {
-      g.fillText(line, px + 18, ly);
-      ly += lineGap;
-    }
-
-    tutorialNavButtons = [];
-    const btnY = py + ph - 44;
-    const btnH = 26;
-    const btnW = 110;
-    const spacing = 20;
-    const buttons = [];
-    if (total > 1) {
-      buttons.push({ key: 'prev', label: t('guide.tutorialPrev'), disabled: tutorialStepIndex === 0 });
-      const isLast = tutorialStepIndex >= total - 1;
-      buttons.push({ key: 'next', label: isLast ? t('guide.tutorialFinish') : t('guide.tutorialNext'), disabled: false });
-    }
-    buttons.push({ key: 'close', label: t('guide.tutorialClose'), disabled: false });
-
-    const totalWidth = buttons.length * btnW + (buttons.length - 1) * spacing;
-    let bx = px + (pw - totalWidth) / 2;
-    for (const btn of buttons) {
-      const rect = { x: bx, y: btnY, w: btnW, h: btnH, action: btn.key };
-      g.fillStyle = btn.disabled ? '#182234' : '#22334a';
-      g.strokeStyle = '#b4c0d9';
-      g.fillRect(rect.x, rect.y, rect.w, rect.h);
-      g.strokeRect(rect.x, rect.y, rect.w, rect.h);
-      g.fillStyle = btn.disabled ? '#5f6a87' : '#ffffff';
-      g.textAlign = 'center';
-      g.textBaseline = 'middle';
-      g.font = `9px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-      g.fillText(btn.label, rect.x + rect.w / 2, rect.y + rect.h / 2 + 1);
-      if (!btn.disabled) tutorialNavButtons.push(rect);
-      bx += btnW + spacing;
-    }
-
     g.restore();
     return;
   }
@@ -417,6 +342,17 @@ function updateRun(dt) {
   }
   if (slowMoTimer > 0) slowMoTimer = Math.max(0, slowMoTimer - baseDt);
   if (slowMoCooldown > 0) slowMoCooldown = Math.max(0, slowMoCooldown - baseDt);
+  if (tutorialEnabled) {
+    const steps = tutorialSteps();
+    const total = steps.length || 0;
+    if (total > 0 && tutorialStepIndex < total) {
+      tutorialStepTimer += baseDt;
+      if (tutorialStepTimer >= TUTORIAL_STEP_DURATION) {
+        tutorialStepTimer -= TUTORIAL_STEP_DURATION;
+        tutorialStepIndex += 1;
+      }
+    }
+  }
   if (bossOutcomeTimer > 0) {
     bossOutcomeTimer = Math.max(0, bossOutcomeTimer - baseDt);
     if (bossOutcomeTimer <= 0) bossOutcomeBanner = null;
@@ -1039,6 +975,7 @@ function updateRun(dt) {
     if (demoActive && exp > 110) {
       lastDemoLoss = true;
       demoActive = false;
+      if (typeof setTutorialEnabled === 'function') setTutorialEnabled(false);
       savings = 0;
       try {
         localStorage.setItem(SAVINGS_KEY, '0');
@@ -1083,6 +1020,18 @@ function updateRun(dt) {
 
 function renderRun(g) {
   drawBackground(g);
+  let tutorialOverlayLines = null;
+  let tutorialOverlayIndex = 0;
+  let tutorialOverlayTotal = 0;
+  if (tutorialEnabled) {
+    const steps = tutorialSteps();
+    tutorialOverlayTotal = steps.length || 0;
+    if (tutorialOverlayTotal > 0 && tutorialStepIndex < tutorialOverlayTotal) {
+      const stepRaw = steps[tutorialStepIndex] || '';
+      tutorialOverlayLines = String(stepRaw).split('\n');
+      tutorialOverlayIndex = tutorialStepIndex;
+    }
+  }
   const rouletteGlint = rouletteState && rouletteState.active && rouletteState.spinning;
   // Fever overlay (star mode) or roulette glint
   if (starModeActive || rouletteGlint) {
@@ -1209,6 +1158,37 @@ function renderRun(g) {
   // Draw catch effects on top
   drawParticles(g);
   renderRouletteOverlay(g);
+
+  if (tutorialOverlayLines) {
+    const px = 18;
+    const py = CONFIG.height * 0.38 + 100;
+    const lineGap = 14;
+    const bodyHeight = tutorialOverlayLines.length * lineGap;
+    const panelWidth = Math.min(CONFIG.width - 36, 320);
+    const panelHeight = 60 + bodyHeight;
+    g.save();
+    g.fillStyle = 'rgba(15,26,42,0.78)';
+    g.strokeStyle = '#ffe066';
+    g.lineWidth = 2;
+    g.fillRect(px, py, panelWidth, panelHeight);
+    g.strokeRect(px, py, panelWidth, panelHeight);
+    g.textAlign = 'left';
+    g.textBaseline = 'top';
+    g.fillStyle = '#ffe066';
+    g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+    g.fillText(t('guide.tutorialTitle'), px + 12, py + 10);
+    g.fillStyle = '#b4c0d9';
+    g.font = `8px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+    g.fillText(t('guide.tutorialStep', { current: tutorialOverlayIndex + 1, total: tutorialOverlayTotal }), px + 12, py + 24);
+    g.fillStyle = '#ffffff';
+    g.font = `9px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+    let ty = py + 48;
+    for (const line of tutorialOverlayLines) {
+      g.fillText(line, px + 12, ty);
+      ty += lineGap;
+    }
+    g.restore();
+  }
 
   if (bossOutcomeBanner && bossOutcomeTimer > 0) {
     const lines = [];

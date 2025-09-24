@@ -29,6 +29,8 @@
       itemProb: 'Item Spawn Prob',
       shortDistanceMin: 'Short Distance Min',
       shortDistanceProb: 'Short Distance Prob',
+      savings: 'Savings ($)',
+      exp: 'EXP',
     },
     intro: {
       title: 'Boing! Boing!',
@@ -38,15 +40,12 @@
     },
     guide: {
       lines: 'Game Guide\n\n- Go as far as possible\n- Use multiple jumps each run\n- Catch the rope tip to attach',
-      tutorialButton: 'Tutorial',
+      tutorialButtonOn: 'Tutorial: ON',
+      tutorialButtonOff: 'Tutorial: OFF',
       tutorialTitle: 'HOW TO PLAY',
       tutorialStep: 'STEP {current}/{total}',
-      tutorialPrev: 'Prev',
-      tutorialNext: 'Next',
-      tutorialFinish: 'Finish',
-      tutorialClose: 'Close',
       tutorial: {
-        steps: '1. Tap or press Space to jump from the starting rope.\nAim for the next rope tip.\n\n2. Jump again while in the air to chain momentum.\nKeep rhythm to stay fast.\n\n3. Buy the Fly item to glide. Hold the button to cross long gaps.\nUse it to recover when ropes are far apart.\n\n4. Collect items, learn timings, and press Start when you are ready!'
+        steps: '1. Tap or press Space to jump \nfrom the starting rope.\nAim for the next rope tip.\n\n2. Jump again while in the air\nto chain additional jumps.\nMultiple jumps depend on your\nitems or character.\nKeep rhythm to stay fast.\n\n3. Buy the Fly item to glide.\nHold the button to \ncross long gaps.\nUse it to recover \nwhen ropes are far apart.'
       },
     },
     settings: {
@@ -350,6 +349,8 @@
       itemProb: '아이템 확률',
       shortDistanceMin: '짧은 거리 최소',
       shortDistanceProb: '짧은 거리 확률',
+      savings: '소지금 ($)',
+      exp: '경험치 (EXP)',
     },
     intro: {
       title: '짬푸! 짬푸!',
@@ -359,15 +360,12 @@
     },
     guide: {
       lines: '게임 가이드\n\n- 가능한 멀리 이동하세요\n- 한 번의 런에서 여러 번 점프하세요\n- 로프 끝을 잡아 매달리세요',
-      tutorialButton: '튜토리얼',
+      tutorialButtonOn: '튜토리얼: ON',
+      tutorialButtonOff: '튜토리얼: OFF',
       tutorialTitle: '조작 튜토리얼',
       tutorialStep: '{current}/{total} 단계',
-      tutorialPrev: '이전',
-      tutorialNext: '다음',
-      tutorialFinish: '끝내기',
-      tutorialClose: '닫기',
       tutorial: {
-        steps: '1. 시작 로프에서 점프하세요.\n다음 로프 끝을 노리면 됩니다.\n\n2. 공중에서도 한 번 더 점프할 수 있습니다.\n연속 점프를 이용해 속도를 유지하세요.\n\n3. 플라이 아이템을 구매하면 버튼을 누른 채로 활강할 수 있습니다.\n멀리 떨어진 로프를 이어 갈 때 활용하세요.\n\n4. 아이템을 모으고 타이밍을 익힌 뒤 PRESS START로 게임을 시작하세요!'
+        steps: '1. 시작 로프에서 점프하세요.\n다음 로프 끝을 노리면 됩니다.\n\n2. 공중에서 추가 점프가 가능합니다.\n아이템과 캐릭터에 따라 횟수가 달라집니다. \n연속 점프를 이용해 속도를 유지하세요.\n \n\n3. 플라이 아이템을 구매하면 \n버튼을 누른 채로 활강할 수 있습니다.\n멀리 떨어진 로프를 이어 갈 때 활용하세요.'
       },
     },
     settings: {

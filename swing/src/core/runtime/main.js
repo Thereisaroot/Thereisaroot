@@ -3,7 +3,21 @@ let last = performance.now();
 let acc = 0;
 const dt = 1 / 120; // physics step
 
+function applyStoredLanguagePreference() {
+  const api = (typeof window !== 'undefined') ? window.I18N : null;
+  if (!api || typeof api.setLanguage !== 'function') return;
+  const stored = (typeof loadLanguagePreference === 'function') ? loadLanguagePreference() : null;
+  if (!stored) return;
+  const available = typeof api.getAvailableLanguages === 'function'
+    ? api.getAvailableLanguages()
+    : null;
+  if (Array.isArray(available) && available.length > 0 && !available.includes(stored)) return;
+  if (typeof api.getLanguage === 'function' && api.getLanguage() === stored) return;
+  api.setLanguage(stored);
+}
+
 async function start() {
+  applyStoredLanguagePreference();
   await Fonts.load();
   // Load tuning then apply
   tuning = loadTuningLocal(tuning);
@@ -52,6 +66,10 @@ async function start() {
       }
       selectedCharacter = 'wizard';
       try { localStorage.setItem('webswing_selected_char_v1', 'wizard'); } catch (_) {}
+    }
+    const hasPref = (typeof hasTutorialPreference === 'function') && hasTutorialPreference();
+    if (!demoDone && !hasPref) {
+      if (typeof setTutorialEnabled === 'function') setTutorialEnabled(true, false);
     }
   } catch (_) {}
   // Load shop inventory

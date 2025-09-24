@@ -42,12 +42,40 @@
     });
   }
 
+  function readStoredLanguage() {
+    try {
+      if (!global.localStorage) return null;
+      const raw = global.localStorage.getItem(STORAGE_KEY);
+      if (!raw) return null;
+      if (languages[raw]) return raw;
+      if (typeof raw === 'string') {
+        const trimmed = raw.trim();
+        if (!trimmed) return null;
+        if (languages[trimmed]) return trimmed;
+        try {
+          const parsed = JSON.parse(trimmed);
+          if (typeof parsed === 'string' && languages[parsed]) return parsed;
+        } catch (_) {}
+        if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+          const unwrapped = trimmed.slice(1, -1);
+          if (languages[unwrapped]) return unwrapped;
+        }
+        return trimmed;
+      }
+      return raw;
+    } catch (_) {
+      return null;
+    }
+  }
+
   function resolveLang(preferred) {
     if (preferred && languages[preferred]) return preferred;
-    try {
-      const stored = global.localStorage && global.localStorage.getItem(STORAGE_KEY);
-      if (stored && languages[stored]) return stored;
-    } catch (_) {}
+    const stored = readStoredLanguage();
+    if (stored && languages[stored]) return stored;
+    if (stored && typeof stored === 'string' && stored.includes('-')) {
+      const baseStored = stored.split('-')[0];
+      if (languages[baseStored]) return baseStored;
+    }
     if (preferred && preferred.includes('-')) {
       const base = preferred.split('-')[0];
       if (languages[base]) return base;

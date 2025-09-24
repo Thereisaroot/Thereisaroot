@@ -17,7 +17,7 @@ const SafeStorage = (() => {
 
   const Cap = (typeof window !== 'undefined' ? window.Capacitor : undefined) || undefined;
   const isNative = !!(Cap && typeof Cap.isNativePlatform === 'function' && Cap.isNativePlatform());
-  const Plugins = Cap.Plugins || {};
+  const Plugins = (Cap && Cap.Plugins) || {};
   const Pref = Plugins && Plugins.Preferences;
   const FS = Plugins && Plugins.Filesystem;
 
@@ -259,4 +259,3 @@ if (typeof window !== 'undefined') {
   window.saveExport = () => SafeStorage.exportAll();
   window.saveImport = (data, overwrite = true) => SafeStorage.importAll(data, overwrite);
 }
-

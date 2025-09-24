@@ -7,6 +7,7 @@ const BEST_SCORE_KEY = 'webswing_best_v1';
 const EXP_KEY = 'webswing_exp_v1';
 const DEMO_DONE_KEY = 'webswing_demo_done_v1';
 const SHOP_INV_KEY = 'webswing_shop_inv_v1';
+const LANG_KEY = 'webswing_lang';
 
 // Daily system (UTC reset) for native builds
 const DAILY_STATE_KEY = 'webswing_daily_state_v1';
@@ -248,6 +249,27 @@ function saveTuningLocal(tuning) {
   try { localStorage.setItem(TUNING_KEY, JSON.stringify(tuning)); } catch(_) {}
 }
 
+function loadLanguagePreference() {
+  try {
+    const raw = localStorage.getItem(LANG_KEY);
+    if (!raw) return null;
+    if (typeof raw !== 'string') return raw;
+    const trimmed = raw.trim();
+    if (!trimmed) return null;
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (typeof parsed === 'string' && parsed) return parsed;
+    } catch (_) {}
+    if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+      const unwrapped = trimmed.slice(1, -1);
+      if (unwrapped) return unwrapped;
+    }
+    return trimmed;
+  } catch (_) {
+    return null;
+  }
+}
+
 async function maybeLoadTuningFromServer() {
   // Placeholder for future server fetch; merge into tuning and apply
   // Example:
@@ -426,6 +448,40 @@ function setupDebugUI(tuning, applyTuningCallback, saveTuningCallback) {
         saveTuningCallback();
       });
     }
+  }
+
+  function clampSliderValue(elem, value) {
+    let next = Number(value);
+    if (!Number.isFinite(next)) next = 0;
+    const min = Number(elem.min);
+    if (Number.isFinite(min)) next = Math.max(min, next);
+    const max = Number(elem.max);
+    if (Number.isFinite(max)) next = Math.min(max, next);
+    return Math.round(next);
+  }
+
+  const savingsInput = get('dbg-savings');
+  if (savingsInput) {
+    const current = clampSliderValue(savingsInput, typeof savings === 'number' ? savings : Number(savings) || 0);
+    savingsInput.value = current;
+    savingsInput.addEventListener('input', () => {
+      const next = clampSliderValue(savingsInput, savingsInput.value);
+      savings = next;
+      savingsInput.value = next;
+      try { localStorage.setItem(SAVINGS_KEY, String(next)); } catch (_) {}
+    });
+  }
+
+  const expInput = get('dbg-exp');
+  if (expInput) {
+    const current = clampSliderValue(expInput, typeof exp === 'number' ? exp : Number(exp) || 0);
+    expInput.value = current;
+    expInput.addEventListener('input', () => {
+      const next = clampSliderValue(expInput, expInput.value);
+      exp = next;
+      expInput.value = next;
+      try { localStorage.setItem(EXP_KEY, String(next)); } catch (_) {}
+    });
   }
 }
 
