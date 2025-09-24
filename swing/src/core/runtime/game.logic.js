@@ -1995,7 +1995,7 @@ function ensureRopesBuffered() {
         r.stageGateRewarded = false;
       }
     }
-
+ 
     if (midRope) ropes.push(midRope);
     ropes.push(r);
     if (r.countsForStage !== false) registerMainRopeSpawn(r.anchorX, prev ? prev.anchorX : undefined);
