@@ -8,6 +8,17 @@ const EXP_KEY = 'webswing_exp_v1';
 const DEMO_DONE_KEY = 'webswing_demo_done_v1';
 const SHOP_INV_KEY = 'webswing_shop_inv_v1';
 
+// Daily system (UTC reset) for native builds
+const DAILY_STATE_KEY = 'webswing_daily_state_v1';
+const DAILY_BASE_LIVES = 20;
+const DAILY_INTERSTITIAL_LIMIT = 3;
+const DAILY_AD_REWARD_KEYS = {
+  wizard: 'wizard',
+  cash20: 'cash20',
+};
+
+let dailyStateCache = null;
+
 const TUNING_DEFAULTS = {
   jumpImpulse: 541,
   jumpSpeed: 91,
@@ -47,6 +58,132 @@ const SHOP_INV_DEFAULTS = {
   characters: [],
   consumables: {},
 };
+
+function defaultDailyState(dateStamp = currentUtcDateStamp()) {
+  const rewards = {};
+  for (const key of Object.values(DAILY_AD_REWARD_KEYS)) rewards[key] = false;
+  return {
+    date: dateStamp,
+    lives: DAILY_BASE_LIVES,
+    interstitialViews: 0,
+    rewards,
+  };
+}
+
+function currentUtcDateStamp() {
+  try { return new Date().toISOString().slice(0, 10); } catch (_) { return '1970-01-01'; }
+}
+
+function loadDailyState() {
+  if (dailyStateCache) {
+    const today = currentUtcDateStamp();
+    if (dailyStateCache.date !== today) {
+      dailyStateCache = defaultDailyState(today);
+    }
+    return dailyStateCache;
+  }
+  const today = currentUtcDateStamp();
+  let parsed = null;
+  try {
+    const raw = localStorage.getItem(DAILY_STATE_KEY);
+    if (raw) parsed = JSON.parse(raw);
+  } catch (_) {
+    parsed = null;
+  }
+  if (!parsed || typeof parsed !== 'object') {
+    dailyStateCache = defaultDailyState(today);
+    return dailyStateCache;
+  }
+  const rewards = {};
+  const storedRewards = (parsed.rewards && typeof parsed.rewards === 'object') ? parsed.rewards : {};
+  for (const key of Object.values(DAILY_AD_REWARD_KEYS)) rewards[key] = Boolean(storedRewards[key]);
+  const storedDate = (typeof parsed.date === 'string') ? parsed.date : today;
+  if (storedDate !== today) {
+    dailyStateCache = defaultDailyState(today);
+    return dailyStateCache;
+  }
+  const lives = Number.isFinite(parsed.lives) ? Math.max(0, Math.floor(parsed.lives)) : DAILY_BASE_LIVES;
+  const interstitialViews = Number.isFinite(parsed.interstitialViews) ? Math.max(0, Math.floor(parsed.interstitialViews)) : 0;
+  dailyStateCache = {
+    date: storedDate,
+    lives,
+    interstitialViews,
+    rewards,
+  };
+  return dailyStateCache;
+}
+
+function saveDailyState() {
+  if (!dailyStateCache) return;
+  try { localStorage.setItem(DAILY_STATE_KEY, JSON.stringify(dailyStateCache)); } catch (_) {}
+}
+
+function ensureDailyState() {
+  const state = loadDailyState();
+  if (state.date !== currentUtcDateStamp()) {
+    dailyStateCache = defaultDailyState();
+    saveDailyState();
+    return dailyStateCache;
+  }
+  return state;
+}
+
+function dailyLivesRemaining() {
+  return ensureDailyState().lives;
+}
+
+function consumeDailyLife() {
+  const state = ensureDailyState();
+  if (state.lives <= 0) return false;
+  state.lives = Math.max(0, state.lives - 1);
+  saveDailyState();
+  return true;
+}
+
+function grantDailyLives(amount) {
+  if (!Number.isFinite(amount) || amount <= 0) return ensureDailyState().lives;
+  const state = ensureDailyState();
+  state.lives = Math.max(0, Math.min(999, state.lives + Math.floor(amount)));
+  saveDailyState();
+  return state.lives;
+}
+
+function dailyInterstitialViews() {
+  return ensureDailyState().interstitialViews;
+}
+
+function incrementDailyInterstitial() {
+  const state = ensureDailyState();
+  state.interstitialViews = Math.max(0, Math.min(DAILY_INTERSTITIAL_LIMIT, state.interstitialViews + 1));
+  saveDailyState();
+  return state.interstitialViews;
+}
+
+function resetDailyInterstitial() {
+  const state = ensureDailyState();
+  state.interstitialViews = 0;
+  saveDailyState();
+}
+
+function canWatchDailyInterstitial() {
+  return dailyInterstitialViews() < DAILY_INTERSTITIAL_LIMIT;
+}
+
+function markDailyRewardClaimed(key) {
+  if (!key) return;
+  const normKey = DAILY_AD_REWARD_KEYS[key] || key;
+  const state = ensureDailyState();
+  if (!state.rewards) state.rewards = {};
+  state.rewards[normKey] = true;
+  saveDailyState();
+}
+
+function isDailyRewardClaimed(key) {
+  if (!key) return false;
+  const normKey = DAILY_AD_REWARD_KEYS[key] || key;
+  const state = ensureDailyState();
+  return Boolean(state.rewards && state.rewards[normKey]);
+}
 
 // Level system based on EXP thresholds
 const LEVEL_THRESHOLDS = (() => {

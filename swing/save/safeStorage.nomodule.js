@@ -15,13 +15,15 @@ const SafeStorage = (() => {
   let cache = {};
   let pendingWrite = null;
 
-  const Cap = (typeof window !== 'undefined' ? window.Capacitor : undefined) || {};
+  const Cap = (typeof window !== 'undefined' ? window.Capacitor : undefined) || undefined;
   const isNative = !!(Cap && typeof Cap.isNativePlatform === 'function' && Cap.isNativePlatform());
   const Plugins = Cap.Plugins || {};
   const Pref = Plugins && Plugins.Preferences;
   const FS = Plugins && Plugins.Filesystem;
 
   async function init(opts) {
+    console.log('[SafeStorage] platform', PLATFORM, 'isNative', isNative);
+    console.log('[SafeStorage] init start', opts);
     ns = opts && opts.namespace || ns;
     file = (opts && opts.fileName) || file;
     mirrorLS = (opts && typeof opts.mirrorLocalStorage === 'boolean') ? opts.mirrorLocalStorage : mirrorLS;
@@ -55,6 +57,7 @@ const SafeStorage = (() => {
 
   async function set(key, value) {
     const k = prefKey(key);
+    console.log(`[SafeStorage] set ${k} ${JSON.stringify(value)}`);
     cache[key] = value;
     await preferencesSet(k, value);
     if (mirrorLS) await localSet(k, value);
@@ -66,9 +69,14 @@ const SafeStorage = (() => {
     if (Object.prototype.hasOwnProperty.call(cache, key)) return cache[key];
     const k = prefKey(key);
     const p = await preferencesGet(k);
-    if (p !== undefined) { cache[key] = p; return p; }
+    if (p !== undefined) {
+      console.log(`[SafeStorage] hit pref ${k} ${JSON.stringify(p)}`);
+      cache[key] = p;
+      return p;
+    }
     const l = await localGet(k);
     if (l !== undefined) {
+      console.log(`[SafeStorage] hit local ${k} ${JSON.stringify(l)}`);
       cache[key] = l;
       await preferencesSet(k, l);
       await addToIndex(key);
@@ -95,7 +103,7 @@ const SafeStorage = (() => {
   }
 
   // Internals
-  function prefKey(key) { return `${ns}:${key}`; }
+  function prefKey(key) { return key.includes(':') ? key : `${ns}:${key}`; }
 
   async function addToIndex(key) {
     const idx = new Set(await getIndex());

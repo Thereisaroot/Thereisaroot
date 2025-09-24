@@ -40,11 +40,28 @@
         <label><span data-i18n="debug.shortDistanceProb">Short Distance Prob</span> <input type="range" id="dbg-DshortProb" min="0" max="100" step="1"></label>
       </div>
     </div>
-    <ins class="kakao_ad_area" style="display:none;"
-    data-ad-unit = "DAN-hlU9IMzS3yFXaqY5"
-    data-ad-width = "320"
-    data-ad-height = "100"></ins>
-    <script type="text/javascript" src="//t1.daumcdn.net/kas/static/ba.min.js" async></script>
+    <ins id="kakao-ad-slot" class="kakao_ad_area" style="display:none;"
+      data-ad-unit="DAN-hlU9IMzS3yFXaqY5"
+      data-ad-width="320"
+      data-ad-height="100"></ins>
+    <script>
+      (function(){
+        var Cap = (typeof window !== 'undefined' && window.Capacitor) ? window.Capacitor : {};
+        var platform = typeof Cap.getPlatform === 'function' ? Cap.getPlatform() : Cap.platform;
+        var isNativeApp = platform && platform !== 'web';
+        if (isNativeApp) {
+          var slot = document.getElementById('kakao-ad-slot');
+          if (slot && slot.parentNode) {
+            slot.parentNode.removeChild(slot);
+          }
+          return;
+        }
+        var script = document.createElement('script');
+        script.src = '//t1.daumcdn.net/kas/static/ba.min.js';
+        script.async = true;
+        document.head.appendChild(script);
+      })();
+    </script>
     <canvas id="game" aria-label="Boing! Boing! Canvas" role="img"></canvas>
     <script src="./save/safeStorage.nomodule.js"></script>
     <script src="./save/storageBridge.nomodule.js"></script>

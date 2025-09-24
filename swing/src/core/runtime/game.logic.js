@@ -22,6 +22,83 @@ const State = {
   current: 'intro', // 'intro' | 'run' | 'gameover' | 'shop' | 'boss_pending' | 'boss'
 };
 
+const CapacitorRef = (typeof window !== 'undefined' ? window.Capacitor : undefined);
+const CapacitorPlatform = (() => {
+  if (!CapacitorRef) return 'web';
+  try {
+    if (typeof CapacitorRef.getPlatform === 'function') return CapacitorRef.getPlatform();
+    if (typeof CapacitorRef.platform === 'string') return CapacitorRef.platform;
+  } catch (_) {}
+  return 'web';
+})();
+const IS_NATIVE_APP = Boolean(
+  CapacitorRef && (
+    (typeof CapacitorRef.isNativePlatform === 'function' && CapacitorRef.isNativePlatform()) ||
+    (CapacitorPlatform && CapacitorPlatform !== 'web')
+  )
+);
+function ensurePlayGateStub() {
+  const Cap = (typeof window !== 'undefined') ? window.Capacitor : undefined;
+  if (!Cap) return null;
+  Cap.Plugins = Cap.Plugins || {};
+  if (!Cap.Plugins.PlayGate) {
+    const invoke = (method, options) => {
+      if (typeof Cap.nativePromise === 'function') {
+        return Cap.nativePromise('PlayGate', method, options || {});
+      }
+      if (typeof Cap.nativeCallback === 'function') {
+        return new Promise((resolve, reject) => {
+          Cap.nativeCallback('PlayGate', method, options || {}, resolve, reject);
+        });
+      }
+      console.warn('[PlayGate] Native bridge unavailable');
+      return Promise.reject(new Error('PlayGate bridge unavailable'));
+    };
+    Cap.Plugins.PlayGate = {
+      showRewardedAd(options) { return invoke('showRewardedAd', options); },
+      showLifeAd(options) { return invoke('showLifeAd', options); },
+    };
+  }
+  return Cap.Plugins.PlayGate;
+}
+
+function getPlayGatePlugin() {
+  return ensurePlayGateStub();
+}
+
+let lifeAdStatus = 'idle'; // 'idle' | 'loading' | 'rewarded' | 'partial' | 'limit' | 'error'
+let lifeAdMessage = null;
+let lifeAdAutoStart = false;
+let lifeSpentThisRun = false;
+
+const AD_REWARD_ITEMS = [
+  { key: 'wizard', type: 'character', amount: 0 },
+  { key: 'cash20', type: 'currency', amount: 20 },
+];
+
+const adRewardState = {};
+
+const MENU_TOAST_DURATION = 2.5;
+let introMenuMessage = null;
+let introMenuMessageTimer = 0;
+let gameOverMenuMessage = null;
+let gameOverMenuMessageTimer = 0;
+let introMenuButtons = [];
+let gameOverMenuButtons = [];
+let bossOutcomeBanner = null;
+let bossOutcomeTimer = 0;
+
+function showMenuMessage(context, message) {
+  if (!message) return;
+  if (context === 'intro') {
+    introMenuMessage = message;
+    introMenuMessageTimer = MENU_TOAST_DURATION;
+  } else if (context === 'gameover') {
+    gameOverMenuMessage = message;
+    gameOverMenuMessageTimer = MENU_TOAST_DURATION;
+  }
+}
+
 const player = new Player();
 let score = 0;
 let best = 0;
@@ -43,7 +120,7 @@ let gameOverLevelUp = null; // { from, to }
 let levelUpPopupTimer = 0;
 
 // Shop state
-let shopMode = 'items'; // 'items' or 'chars'
+let shopMode = 'items'; // 'items' | 'chars' | 'ads'
 let shopScroll = 0; // used only for character shop scrolling now
 let shopDrag = { active: false, y0: 0, scroll0: 0 };
 // Pagination states
@@ -55,6 +132,200 @@ let helpPage = 0;            // current page for item descriptions popup
 let helpTotalPages = 1;      // total pages for item descriptions popup
 let currentItemPageEntries = [];
 let currentCharacterPageEntries = [];
+
+function nativeLivesRemaining() {
+  if (!IS_NATIVE_APP) return Number.POSITIVE_INFINITY;
+  const lives = dailyLivesRemaining();
+  if (lives > 0 && lifeAdStatus === 'limit') {
+    lifeAdStatus = 'idle';
+    lifeAdMessage = null;
+  }
+  return lives;
+}
+
+function nativeLivesMax() {
+  return IS_NATIVE_APP ? DAILY_BASE_LIVES : Number.POSITIVE_INFINITY;
+}
+
+function triggerLifeAd(autoStart = false) {
+  if (!IS_NATIVE_APP) return false;
+  if (typeof ensureDailyState === 'function') ensureDailyState();
+  if (lifeAdStatus === 'loading') return true;
+  if (uiButtons && uiButtons.gameover) uiButtons.gameover = [];
+  if (!canWatchDailyInterstitial()) {
+    lifeAdStatus = 'limit';
+    lifeAdMessage = t('ads.lifeLimit', { limit: DAILY_INTERSTITIAL_LIMIT });
+    lifeAdAutoStart = false;
+    if (uiButtons && uiButtons.gameover) uiButtons.gameover = [];
+    return false;
+  }
+  const playGate = getPlayGatePlugin();
+  if (!playGate) console.log('[LifeAd] PlayGate plugin not available', window.Capacitor);
+  if (!playGate || typeof playGate.showLifeAd !== 'function') {
+    lifeAdStatus = 'error';
+    lifeAdMessage = t('ads.lifeUnavailable');
+    lifeAdAutoStart = false;
+    if (uiButtons && uiButtons.gameover) uiButtons.gameover = [];
+    return false;
+  }
+  lifeAdStatus = 'loading';
+  lifeAdMessage = null;
+  lifeAdAutoStart = autoStart;
+  console.log('[LifeAd] Requesting life ad, autoStart=', autoStart);
+  playGate.showLifeAd({}).then((res) => {
+    console.log('[LifeAd] showLifeAd resolved:', res);
+    incrementDailyInterstitial();
+    const rewarded = !!(res && res.rewarded);
+    const gain = rewarded ? 15 : 2;
+    grantDailyLives(gain);
+    lifeAdStatus = rewarded ? 'rewarded' : 'partial';
+    lifeAdMessage = t(rewarded ? 'ads.lifeRewarded' : 'ads.lifePartial', { lives: gain });
+    if (uiButtons && uiButtons.gameover) uiButtons.gameover = [];
+    if (lifeAdAutoStart && nativeLivesRemaining() > 0) {
+      lifeAdAutoStart = false;
+      setTimeout(() => resetRun(), 0);
+    }
+  }).catch((_err) => {
+    console.log('[LifeAd] showLifeAd failed:', _err);
+    lifeAdStatus = 'error';
+    lifeAdMessage = t('ads.lifeError');
+    lifeAdAutoStart = false;
+    if (uiButtons && uiButtons.gameover) uiButtons.gameover = [];
+  });
+  return true;
+}
+
+function getAdRewardItems() {
+  return AD_REWARD_ITEMS;
+}
+
+function getAdRewardState(key) {
+  if (!adRewardState[key]) {
+    adRewardState[key] = { status: 'idle', message: null };
+  }
+  const state = adRewardState[key];
+  if (state.status !== 'loading' && !isDailyRewardClaimed(key)) {
+    state.status = 'idle';
+    state.message = null;
+  }
+  return state;
+}
+
+function startRewardAd(key) {
+  const item = AD_REWARD_ITEMS.find((it) => it.key === key);
+  if (!item) return;
+  const state = getAdRewardState(key);
+  if (state.status === 'loading') return;
+
+  if (!IS_NATIVE_APP) {
+    state.status = 'error';
+    state.message = t('adsShop.nativeOnly');
+    uiButtons.shop.cards = [];
+    uiButtons.shop.buttons = [];
+    if (typeof buildShopCards === 'function') buildShopCards();
+    return;
+  }
+
+  if (typeof ensureDailyState === 'function') ensureDailyState();
+
+  if (item.key === 'wizard' && shopInv.characters && shopInv.characters.includes('wizard')) {
+    state.status = 'done';
+    state.message = t('adsShop.alreadyOwned');
+    uiButtons.shop.cards = [];
+    uiButtons.shop.buttons = [];
+    if (typeof buildShopCards === 'function') buildShopCards();
+    return;
+  }
+
+  if (isDailyRewardClaimed(key)) {
+    state.status = 'done';
+    state.message = t('adsShop.claimedToday');
+    uiButtons.shop.cards = [];
+    uiButtons.shop.buttons = [];
+    if (typeof buildShopCards === 'function') buildShopCards();
+    return;
+  }
+
+  const playGate = getPlayGatePlugin();
+  if (!playGate) console.log('[AdShop] PlayGate plugin not available', window.Capacitor);
+  if (!playGate || typeof playGate.showRewardedAd !== 'function') {
+    state.status = 'error';
+    state.message = t('ads.lifeUnavailable');
+    uiButtons.shop.cards = [];
+    uiButtons.shop.buttons = [];
+    if (typeof buildShopCards === 'function') buildShopCards();
+    return;
+  }
+
+  state.status = 'loading';
+  state.message = null;
+  uiButtons.shop.cards = [];
+  uiButtons.shop.buttons = [];
+  if (typeof buildShopCards === 'function') buildShopCards();
+  console.log('[AdShop] Requesting rewarded ad for key=', key);
+
+  playGate.showRewardedAd({}).then((res) => {
+    console.log('[AdShop] showRewardedAd resolved:', res);
+    const rewarded = !!(res && res.rewarded);
+    if (!rewarded) {
+      state.status = 'error';
+      state.message = t('adsShop.adNotCompleted');
+      uiButtons.shop.cards = [];
+      uiButtons.shop.buttons = [];
+      if (typeof buildShopCards === 'function') buildShopCards();
+      return;
+    }
+
+    applyAdReward(item);
+    markDailyRewardClaimed(key);
+    state.status = 'done';
+    state.message = item.type === 'character'
+      ? t('adsShop.wizardUnlocked')
+      : t('adsShop.cashGranted', { amount: item.amount });
+    uiButtons.shop.cards = [];
+    uiButtons.shop.buttons = [];
+    if (typeof buildShopCards === 'function') buildShopCards();
+  }).catch((_err) => {
+    console.log('[AdShop] showRewardedAd failed:', _err);
+    state.status = 'error';
+    state.message = t('ads.lifeError');
+    uiButtons.shop.cards = [];
+    uiButtons.shop.buttons = [];
+    if (typeof buildShopCards === 'function') buildShopCards();
+  });
+}
+
+function applyAdReward(item) {
+  if (!item) return;
+  if (item.type === 'character' && item.key === 'wizard') {
+    if (!shopInv.characters) shopInv.characters = [];
+    if (!shopInv.characters.includes('wizard')) {
+      shopInv.characters.push('wizard');
+      saveShopInv(shopInv);
+    }
+  } else if (item.type === 'currency') {
+    const gain = Number.isFinite(item.amount) ? item.amount : 0;
+    if (gain > 0) {
+      savings += gain;
+      try { localStorage.setItem(SAVINGS_KEY, String(savings)); } catch (_) {}
+    }
+  }
+}
+
+function switchShopMode(mode) {
+  if (mode !== 'items' && mode !== 'chars' && mode !== 'ads') return;
+  shopMode = mode;
+  shopScroll = 0;
+  shopHelp = false;
+  if (mode === 'items') {
+    shopItemPage = 0;
+  } else if (mode === 'chars') {
+    shopCharPage = 0;
+  }
+  uiButtons.shop.cards = [];
+  uiButtons.shop.buttons = [];
+  if (typeof buildShopCards === 'function') buildShopCards();
+}
 
 // Layout tuning constants for shop UIs
 const CHAR_CARD_ROWS_PER_PAGE = 3;
@@ -77,9 +348,61 @@ let uiButtons = {
 // Build intro buttons
 function buildIntroButtons() {
   uiButtons.intro = [];
+  introMenuButtons = [];
+
   const lvl = getLevelByExp(exp);
-  
-  // Guide button
+  const requiredLevel = 2;
+  const menuWidth = 180;
+  const menuHeight = 40;
+  const menuSpacing = 12;
+  const menuSpecs = [
+    {
+      key: 'items',
+      label: 'common.items',
+      shopMode: 'items',
+      requiredLevel,
+    },
+    {
+      key: 'chars',
+      label: 'common.chars',
+      shopMode: 'chars',
+      requiredLevel,
+    },
+  ];
+  if (IS_NATIVE_APP) {
+    menuSpecs.push({
+      key: 'ads',
+      label: 'common.ads',
+      shopMode: 'ads',
+      requiredLevel,
+    });
+  }
+
+  if (menuSpecs.length) {
+    const totalHeight = menuSpecs.length * menuHeight + (menuSpecs.length - 1) * menuSpacing;
+    const startX = Math.floor((CONFIG.width - menuWidth) / 2);
+    const startY = Math.floor(CONFIG.height * 0.58 - totalHeight / 2);
+
+    menuSpecs.forEach((spec, idx) => {
+      const y = startY + idx * (menuHeight + menuSpacing);
+      const disabled = lvl < spec.requiredLevel;
+      const onDisabled = () => showMenuMessage('intro', t('menu.unlockAtLevel', { level: spec.requiredLevel }));
+      const action = () => {
+        previousState = State.current;
+        State.current = 'shop';
+        switchShopMode(spec.shopMode);
+      };
+      const button = new UIButton(startX, y, menuWidth, menuHeight, () => t(spec.label), action, 'intro', {
+        disabled,
+        onDisabled,
+        meta: { ...spec },
+      });
+      introMenuButtons.push(button);
+      uiButtons.intro.push(button);
+    });
+  }
+
+  // Guide & Settings buttons remain at footer
   const footer = footerButtonRects();
   uiButtons.intro.push(new UIButton(footer.guide.x, footer.guide.y, footer.guide.w, footer.guide.h, () => t('intro.guide'), () => {
     showGuide = true;
@@ -92,81 +415,78 @@ function buildIntroButtons() {
     const idx = langs.indexOf(current);
     settingsFocusedIndex = idx >= 0 ? idx : 0;
   }, 'intro'));
-  
-  // Shop buttons (if level >= 2)
-  if (lvl >= 2) {
-    const bw = 100, bh = 36;
-    const spacing = 10;
-    const totalWidth = bw * 2 + spacing;
-    const startX = (CONFIG.width - totalWidth) / 2;
-    const by = CONFIG.height * 0.65;
-    
-    // ITEMS button
-    uiButtons.intro.push(new UIButton(startX, by, bw, bh, () => t('common.items'), () => {
-      previousState = State.current;
-      State.current = 'shop';
-      shopMode = 'items';
-      shopScroll = 0;
-      shopItemPage = 0;
-    }, 'intro'));
-    
-    // CHARS button
-    uiButtons.intro.push(new UIButton(startX + bw + spacing, by, bw, bh, () => t('common.chars'), () => {
-      previousState = State.current;
-      State.current = 'shop';
-      shopMode = 'chars';
-      shopScroll = 0;
-      shopCharPage = 0;
-    }, 'intro'));
-  }
 }
 
 // Build game over buttons
 function buildGameOverButtons() {
   uiButtons.gameover = [];
+  gameOverMenuButtons = [];
   const lvl = getLevelByExp(exp);
-  
-  if (lvl >= 2) {
-    const bw = 100, bh = 36;
-    const spacing = 10;
-    const totalWidth = bw * 2 + spacing;
-    const startX = (CONFIG.width - totalWidth) / 2;
-    const by = CONFIG.height * 0.80;
-    
-    // ITEMS button
-    uiButtons.gameover.push(new UIButton(startX, by, bw, bh, () => t('common.items'), () => {
-      previousState = 'gameover';
-      State.current = 'shop';
-      shopMode = 'items';
-      shopScroll = 0;
-      shopItemPage = 0;
-      uiButtons.gameover = []; // Clear gameover buttons
-      buildShopCards(); // Build shop cards
-    }, 'gameover'));
-    
-    // CHARS button
-    uiButtons.gameover.push(new UIButton(startX + bw + spacing, by, bw, bh, () => t('common.chars'), () => {
-      previousState = 'gameover';
-      State.current = 'shop';
-      shopMode = 'chars';
-      shopScroll = 0;
-      shopCharPage = 0;
-      uiButtons.gameover = []; // Clear gameover buttons
-      buildShopCards(); // Build shop cards
-    }, 'gameover'));
+  const requiredLevel = 2;
+  const menuWidth = 180;
+  const menuHeight = 40;
+  const menuSpacing = 12;
+  const menuSpecs = [
+    {
+      key: 'items',
+      label: 'common.items',
+      shopMode: 'items',
+      requiredLevel,
+    },
+    {
+      key: 'chars',
+      label: 'common.chars',
+      shopMode: 'chars',
+      requiredLevel,
+    },
+  ];
+  if (IS_NATIVE_APP) {
+    menuSpecs.push({
+      key: 'ads',
+      label: 'common.ads',
+      shopMode: 'ads',
+      requiredLevel,
+    });
   }
-  
-  // Fast mode toggle (if level >= 8)
+
+  const activeSpecs = menuSpecs.filter(Boolean);
+  if (activeSpecs.length) {
+    const totalHeight = activeSpecs.length * menuHeight + (activeSpecs.length - 1) * menuSpacing;
+    const startX = Math.floor((CONFIG.width - menuWidth) / 2);
+    const baseY = Math.floor(CONFIG.height * 0.82 - totalHeight);
+    activeSpecs.forEach((spec, idx) => {
+      const y = baseY + idx * (menuHeight + menuSpacing);
+      const disabled = lvl < spec.requiredLevel;
+      const onDisabled = () => showMenuMessage('gameover', t('menu.unlockAtLevel', { level: spec.requiredLevel }));
+      const action = () => {
+        previousState = 'gameover';
+        State.current = 'shop';
+        switchShopMode(spec.shopMode);
+        uiButtons.gameover = [];
+      };
+      const button = new UIButton(startX, y, menuWidth, menuHeight, () => t(spec.label), action, 'gameover', {
+        disabled,
+        onDisabled,
+        meta: { ...spec },
+      });
+      gameOverMenuButtons.push(button);
+      uiButtons.gameover.push(button);
+    });
+  }
+
   if (lvl >= 8) {
-    const fw = 160, fh = 24;
-    const fx = (CONFIG.width - fw) / 2;
-    const fy = CONFIG.height * 0.80 + 80;
-    
-    uiButtons.gameover.push(new UIButton(fx, fy, fw, fh, () => t('game.fastToggle', { state: commonText(fastModeEnabled ? 'on' : 'off') }), () => {
+    const fw = 200;
+    const fh = 32;
+    const fx = Math.floor((CONFIG.width - fw) / 2);
+    const fy = (gameOverMenuButtons.length > 0)
+      ? gameOverMenuButtons[gameOverMenuButtons.length - 1].y + menuHeight + 28
+      : Math.floor(CONFIG.height * 0.82);
+    const fastButton = new UIButton(fx, fy, fw, fh, () => t('game.fastToggle', { state: commonText(fastModeEnabled ? 'on' : 'off') }), () => {
       fastModeEnabled = !fastModeEnabled;
       localStorage.setItem('webswing_fastmode_v1', fastModeEnabled ? '1' : '0');
-      buildGameOverButtons(); // Rebuild to update label
-    }, 'gameover'));
+      buildGameOverButtons();
+    }, 'gameover', { meta: { type: 'fast-toggle' } });
+    uiButtons.gameover.push(fastButton);
   }
 }
 let previousState = 'intro'; // 상점 진입 전 상태 저장
@@ -287,6 +607,7 @@ let activeBudsCount = 0; // Runtime buds count (reset per run)
 const SLOW_MO_SCALE = 0.65;
 const SLOW_MO_DURATION = 0.9;
 const SLOW_MO_COOLDOWN = 1.5;
+const SLOW_MO_TRIGGER_DELAY = 0.5;
 const COMBO_BONUS_PER_LEVEL = 1;
 const LUCKY_BONUS_PER_LEVEL = 0.05;
 const FEVER_BONUS_SECONDS = 1;
@@ -387,6 +708,8 @@ const BOSS_SPRITES = {
 
 let slowMoTimer = 0;
 let slowMoCooldown = 0;
+let slowMoPendingTimer = 0;
+let slowMoPendingEffect = null;
 
 let totalMainRopesSpawned = 0;
 let currentStageIndex = 0;
@@ -783,7 +1106,7 @@ function initBossBattle() {
       hitCooldown: 0,
       hitGoal: 50,
       jumpCount: 0,
-      jumpGoal: 80,
+      jumpGoal: 50,
       jumpPower: 320,
       baseGravity: CONFIG.gravity * 1.35,
     };
@@ -983,7 +1306,7 @@ function updateBossTypeSlam(dt, battle) {
   }
 
   const jumps = battle.jumpCount || 0;
-  const goal = battle.jumpGoal || 80;
+  const goal = battle.jumpGoal ?? 50;
   if (jumps >= goal) {
     const reward = Math.floor(jumps / 10) * 4;
     triggerBossSuccess({ score: reward, cash: reward });
@@ -1097,7 +1420,9 @@ function triggerBossOutcome({ success, score: rewardScore = 0, cash: rewardCash 
 }
 
 function applyBossReturn(payload) {
-  const { success, rewardScore = 0, rewardCash = 0 } = payload || {};
+  const { success, rewardScore = 0, rewardCash = 0, reason = null } = payload || {};
+  bossOutcomeBanner = { success, rewardScore, rewardCash, reason };
+  bossOutcomeTimer = 2.0;
   bossProgress.active = false;
   if (bossState) bossState.active = false;
   applyBossBackground(false);
@@ -1698,10 +2023,28 @@ function cleanupRopes() {
 }
 
 function resetRun() {
+  if (IS_NATIVE_APP) {
+    if (typeof ensureDailyState === 'function') ensureDailyState();
+    if (nativeLivesRemaining() <= 0) {
+      lifeSpentThisRun = false;
+      triggerLifeAd(true);
+      return;
+    }
+    // clear status for a fresh run
+    lifeAdStatus = 'idle';
+    lifeAdMessage = null;
+    lifeAdAutoStart = false;
+  }
+  lifeSpentThisRun = false;
   // Clear all UI buttons when resetting
   uiButtons.gameover = [];
   uiButtons.shop.cards = [];
   uiButtons.shop.buttons = [];
+  gameOverMenuButtons = [];
+  gameOverMenuMessage = null;
+  gameOverMenuMessageTimer = 0;
+  bossOutcomeBanner = null;
+  bossOutcomeTimer = 0;
   rouletteState = null;
   rouletteSummary = null;
 
@@ -1831,6 +2174,18 @@ function pointInRect(px, py, r) { return px >= r.x && px <= r.x + r.w && py >= r
 
 function updateIntro(dt) {
   updateStageTransition(dt);
+  if (introMenuMessageTimer > 0) {
+    introMenuMessageTimer = Math.max(0, introMenuMessageTimer - dt);
+    if (introMenuMessageTimer <= 0) introMenuMessage = null;
+  }
+  const lvl = getLevelByExp(exp);
+  if (introMenuButtons && introMenuButtons.length) {
+    for (const button of introMenuButtons) {
+      if (!button || !button.meta || typeof button.meta.requiredLevel !== 'number') continue;
+      const shouldDisable = lvl < button.meta.requiredLevel;
+      button.disabled = shouldDisable;
+    }
+  }
   // Debounce to ensure we show intro at least a moment after transitions
   if (simTime < inputLockUntil) { UI.reset && UI.reset(); return; }
   

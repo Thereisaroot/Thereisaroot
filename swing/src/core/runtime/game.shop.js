@@ -334,33 +334,7 @@ function renderCharacterShop(g) {
     g.fillStyle = '#ffffff'; g.fillText('>', rightX + btnW/2, byPag);
   }
   
-  // Buttons at bottom
-  const bw = 100, bh = 36;
-  const spacing = 10;
-  const totalWidth = bw * 2 + spacing;
-  const startX = (CONFIG.width - totalWidth) / 2;
-  const by = CONFIG.height - 60;
-  
-  // BACK button
-  g.fillStyle = '#22334a';
-  g.strokeStyle = '#b4c0d9';
-  g.lineWidth = 2;
-  g.fillRect(startX, by, bw, bh);
-  g.strokeRect(startX, by, bw, bh);
-  g.fillStyle = '#ffffff';
-  g.textAlign = 'center';
-  g.textBaseline = 'middle';
-  g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-  g.fillText(t('common.back'), startX + bw/2, by + bh/2 + 1);
-  
-  // ITEMS button  
-  const itemsX = startX + bw + spacing;
-  g.fillStyle = '#22334a';
-  g.fillRect(itemsX, by, bw, bh);
-  g.strokeStyle = '#b4c0d9';
-  g.strokeRect(itemsX, by, bw, bh);
-  g.fillStyle = '#ffffff';
-  g.fillText(t('common.items'), itemsX + bw/2, by + bh/2 + 1);
+  drawShopNavButtons(g);
   
   // Character purchase/selection confirmation
   if (shopConfirm && shopConfirm.type === 'character') {
@@ -513,6 +487,150 @@ function renderCharacterShop(g) {
   }
 }
 
+function wrapTextLines(g, text, maxWidth, maxLines = Infinity) {
+  if (!text) return [''];
+  const words = String(text).split(/\s+/).filter(Boolean);
+  if (!words.length) return [''];
+  const lines = [];
+  let index = 0;
+  while (index < words.length) {
+    let line = words[index];
+    index += 1;
+    while (index < words.length) {
+      const candidate = `${line} ${words[index]}`;
+      if (g.measureText(candidate).width <= maxWidth) {
+        line = candidate;
+        index += 1;
+      } else {
+        break;
+      }
+    }
+    lines.push(line);
+    if (lines.length === maxLines) break;
+  }
+  const consumedAll = index >= words.length;
+  if (!consumedAll && lines.length) {
+    const ellipsis = '…';
+    let last = lines[lines.length - 1];
+    if (g.measureText(`${last} ${ellipsis}`).width <= maxWidth) {
+      lines[lines.length - 1] = `${last} ${ellipsis}`.trim();
+    } else {
+      let trimmed = last;
+      while (trimmed.length && g.measureText(`${trimmed}${ellipsis}`).width > maxWidth) {
+        trimmed = trimmed.replace(/\s*\S+$/, '').trim();
+      }
+      lines[lines.length - 1] = trimmed ? `${trimmed}${ellipsis}` : ellipsis;
+    }
+  }
+  return lines;
+}
+
+function renderAdShop(g) {
+  currentCharacterPageEntries = [];
+  currentItemPageEntries = [];
+  const titleY = CONFIG.height * 0.12;
+  drawCenteredText(g, t('adsShop.title'), titleY, 14);
+
+  g.fillStyle = '#ffffff';
+  g.textAlign = 'right';
+  g.textBaseline = 'top';
+  g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+  g.fillText(t('shop.balance', { amount: savings }), CONFIG.width - 12, titleY + 24);
+
+  lastShopHelpRect = null;
+
+  const items = getAdRewardItems();
+  const cardW = CONFIG.width * 0.86;
+  const cardH = 120;
+  const startY = titleY + 50;
+
+  items.forEach((item, idx) => {
+    const cardX = (CONFIG.width - cardW) / 2;
+    const cardY = startY + idx * (cardH + 24);
+    const centerX = cardX + cardW / 2;
+
+    g.fillStyle = '#0f1a2a';
+    g.fillRect(cardX, cardY, cardW, cardH);
+    g.strokeStyle = '#8a96ad';
+    g.lineWidth = 3;
+    g.strokeRect(cardX, cardY, cardW, cardH);
+
+    const titleKey = item.key === 'wizard' ? 'adsShop.wizardTitle' : 'adsShop.cashTitle';
+    const descKey = item.key === 'wizard' ? 'adsShop.wizardDesc' : 'adsShop.cashDesc';
+
+    g.fillStyle = '#ffffff';
+    g.textAlign = 'left';
+    g.textBaseline = 'top';
+    g.font = `12px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+    g.fillText(t(titleKey), cardX + 16, cardY + 12);
+
+    g.fillStyle = '#b4c0d9';
+    g.font = `9px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+    const desc = t(descKey);
+    const descLines = wrapTextLines(g, desc, cardW - 32, 2);
+    let descY = cardY + 36;
+    descLines.forEach((line) => {
+      g.fillText(line, cardX + 16, descY);
+      descY += 12;
+    });
+
+    const state = getAdRewardState(item.key);
+    const claimed = isDailyRewardClaimed(item.key);
+    const alreadyOwned = item.key === 'wizard' && shopInv.characters && shopInv.characters.includes('wizard');
+
+    let message = state.message || null;
+    let messageColor = '#b4c0d9';
+
+    if (!message) {
+      if (state.status === 'loading') {
+        message = t('adsShop.loading');
+        messageColor = '#b4c0d9';
+      } else if (alreadyOwned) {
+        message = t('adsShop.alreadyOwned');
+        messageColor = '#88ff88';
+      } else if (claimed) {
+        message = t('adsShop.claimedToday');
+        messageColor = '#ffb347';
+      }
+    }
+
+    const buttonWidth = cardW - 32;
+    const buttonHeight = 32;
+    const buttonX = cardX + 16;
+    const buttonY = cardY + cardH - buttonHeight - 12;
+
+    const actionAvailable = !alreadyOwned && !claimed && state.status !== 'loading';
+
+    if (actionAvailable) {
+      g.fillStyle = '#22334a';
+      g.strokeStyle = '#b4c0d9';
+      g.lineWidth = 2;
+      g.fillRect(buttonX, buttonY, buttonWidth, buttonHeight);
+      g.strokeRect(buttonX, buttonY, buttonWidth, buttonHeight);
+      g.fillStyle = '#ffffff';
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+      g.fillText(t('adsShop.watch'), buttonX + buttonWidth / 2, buttonY + buttonHeight / 2 + 1);
+    } else {
+      g.strokeStyle = '#444d66';
+      g.lineWidth = 2;
+      g.strokeRect(buttonX, buttonY, buttonWidth, buttonHeight);
+    }
+
+    if (message) {
+      g.fillStyle = messageColor;
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.font = `9px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+      const textY = actionAvailable ? buttonY - 12 : buttonY + buttonHeight / 2;
+      g.fillText(message, centerX, textY);
+    }
+  });
+
+  drawShopNavButtons(g);
+}
+
 function renderShop(g) {
   currentCharacterPageEntries = [];
   // backdrop
@@ -522,6 +640,10 @@ function renderShop(g) {
   // Render based on shop mode
   if (shopMode === 'chars') {
     renderCharacterShop(g);
+    return;
+  }
+  if (shopMode === 'ads') {
+    renderAdShop(g);
     return;
   }
   
@@ -713,33 +835,7 @@ function renderShop(g) {
     g.fillStyle = '#ffffff';
     g.fillText('>', rightX + btnW/2, byPag);
   }
-  // Bottom buttons (START GAME and CHARS)
-  const bw = 100, bh = 36;
-  const spacing = 10;
-  const totalWidth = bw * 2 + spacing;
-  const startX = (CONFIG.width - totalWidth) / 2;
-  const by = CONFIG.height - 60;
-  
-  // BACK button
-  g.fillStyle = '#22334a';
-  g.strokeStyle = '#b4c0d9';
-  g.lineWidth = 2;
-  g.fillRect(startX, by, bw, bh);
-  g.strokeRect(startX, by, bw, bh);
-  g.fillStyle = '#ffffff';
-  g.textAlign = 'center';
-  g.textBaseline = 'middle';
-  g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-  g.fillText(t('common.back'), startX + bw/2, by + bh/2 + 1);
-  
-  // CHARS button
-  const charsX = startX + bw + spacing;
-  g.fillStyle = '#22334a';
-  g.fillRect(charsX, by, bw, bh);
-  g.strokeStyle = '#b4c0d9';
-  g.strokeRect(charsX, by, bw, bh);
-  g.fillStyle = '#ffffff';
-  g.fillText(t('common.chars'), charsX + bw/2, by + bh/2 + 1);
+  drawShopNavButtons(g);
 
   // Confirm popup
   if (shopConfirm) {
@@ -915,10 +1011,75 @@ function renderShop(g) {
   }
 }
 
+function shopNavSpecs() {
+  return [
+    {
+      key: 'back',
+      label: 'common.back',
+      action: () => {
+        const targetState = previousState || 'intro';
+        State.current = targetState;
+        shopHelp = false;
+      },
+    },
+  ];
+}
+
+function registerShopNavButtons() {
+  const specs = shopNavSpecs();
+  if (!specs.length) return;
+  const bw = 160;
+  const bh = 40;
+  const y = CONFIG.height - 60;
+  const x = Math.floor((CONFIG.width - bw) / 2);
+  specs.forEach((spec) => {
+    uiButtons.shop.buttons.push(new UIButton(x, y, bw, bh, () => t(spec.label), () => {
+      spec.action();
+    }, 'shop'));
+  });
+}
+
+function drawShopNavButtons(g) {
+  const specs = shopNavSpecs();
+  if (!specs.length) return;
+  const bw = 160;
+  const bh = 40;
+  const y = CONFIG.height - 60;
+  const x = Math.floor((CONFIG.width - bw) / 2);
+  specs.forEach((spec) => {
+    g.fillStyle = '#22334a';
+    g.strokeStyle = '#b4c0d9';
+    g.lineWidth = 2;
+    g.fillRect(x, y, bw, bh);
+    g.strokeRect(x, y, bw, bh);
+    g.fillStyle = '#ffffff';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+    g.fillText(t(spec.label), x + bw / 2, y + bh / 2 + 1);
+  });
+}
+
 function buildShopCards() {
   uiButtons.shop.cards = [];
   uiButtons.shop.buttons = [];
   
+  if (shopMode === 'ads') {
+    const items = getAdRewardItems();
+    const cardW = CONFIG.width * 0.86;
+    const cardH = 120;
+    const startY = CONFIG.height * 0.22;
+    items.forEach((item, idx) => {
+      const cardX = (CONFIG.width - cardW) / 2;
+      const cardY = startY + idx * (cardH + 24);
+      const card = new ShopCard(cardX, cardY, cardW, cardH, item, idx, 'ad');
+      card.updateScroll(0);
+      uiButtons.shop.cards.push(card);
+    });
+    registerShopNavButtons();
+    return;
+  }
+
   if (shopMode === 'chars') {
     // Character cards (pagination)
     const chars = visibleCharacters();
@@ -957,14 +1118,7 @@ function buildShopCards() {
     if (shopCharPage > 0) uiButtons.shop.buttons.push(new UIButton(leftX, py - btnH/2, btnW, btnH, () => t('pagination.prev'), () => { shopCharPage = Math.max(0, shopCharPage - 1); buildShopCards(); }, 'shop'));
     if (shopCharPage < shopCharTotalPages - 1) uiButtons.shop.buttons.push(new UIButton(rightX, py - btnH/2, btnW, btnH, () => t('pagination.next'), () => { shopCharPage = Math.min(shopCharTotalPages - 1, shopCharPage + 1); buildShopCards(); }, 'shop'));
 
-    // Character shop nav buttons after pagination
-    const bw = 86, bh = 26;
-    const spacing = 10;
-    const totalWidth = bw * 2 + spacing;
-    const startX = (CONFIG.width - totalWidth) / 2;
-    const by = CONFIG.height - 50;
-    uiButtons.shop.buttons.push(new UIButton(startX, by, bw, bh, () => t('common.back'), () => { State.current = previousState; }, 'shop'));
-    uiButtons.shop.buttons.push(new UIButton(startX + bw + spacing, by, bw, bh, () => t('common.items'), () => { shopMode = 'items'; shopScroll = 0; shopItemPage = 0; buildShopCards(); }, 'shop'));
+    registerShopNavButtons();
   } else {
     // Item cards (pagination)
     const { cols, cellW, cellH, marginX, top, gap } = shopGrid();
@@ -1023,16 +1177,7 @@ function buildShopCards() {
       }, 'shop'));
     }
 
-    // Navigation buttons after pagination
-    uiButtons.shop.buttons.push(new UIButton(startX, by, bw, bh, () => t('common.back'), () => {
-      State.current = previousState;
-    }, 'shop'));
-    uiButtons.shop.buttons.push(new UIButton(startX + bw + spacing, by, bw, bh, () => t('common.chars'), () => {
-      shopMode = 'chars';
-      shopScroll = 0;
-      shopCharPage = 0;
-      buildShopCards();
-    }, 'shop'));
+    registerShopNavButtons();
   }
 }
 
@@ -1150,13 +1295,19 @@ function updateShop(dt) {
     }
     
     // 현재 모드에 맞는 카드만 클릭 검사
-    const { top } = shopGrid();
+    let viewportTop = 0;
+    if (shopMode === 'items') {
+      viewportTop = shopGrid().top;
+    } else if (shopMode === 'chars') {
+      viewportTop = CONFIG.height * 0.12 + 50;
+    }
     const viewportBottom = CONFIG.height - 90;
     
     for (const card of uiButtons.shop.cards) {
       // 현재 모드와 카드 타입이 일치하는지 확인
       const correctType = (shopMode === 'items' && card.type === 'item') ||
-                         (shopMode === 'chars' && card.type === 'char');
+                         (shopMode === 'chars' && card.type === 'char') ||
+                         (shopMode === 'ads' && card.type === 'ad');
       
       if (!correctType) continue; // 타입이 맞지 않으면 건너뛰기
       
@@ -1165,7 +1316,7 @@ function updateShop(dt) {
       const cardBottom = card.y + card.h;
       
       // 카드가 뷰포트 내에 있는지 확인
-      if (cardBottom >= top && cardTop <= viewportBottom) {
+      if (cardBottom >= viewportTop && cardTop <= viewportBottom) {
         if (card.isClicked(UI.mx, UI.my)) {
           card.onClick();
           UI.reset();

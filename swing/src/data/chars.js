@@ -52,8 +52,8 @@
       colors: ['#8B4513', '#ffffff', '#000000', '#FFD700'],
     },
     wizard: {
-      price: 10,
-      minLevel: 2,
+      price: 1000000,
+      minLevel: 22,
       pixels: [
         [0,0,0,1,0,0,0,0],
         [0,0,1,1,1,0,0,0],

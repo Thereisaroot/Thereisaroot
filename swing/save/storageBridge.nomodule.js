@@ -53,11 +53,15 @@
         try { rawLS.setItem(key, value); } catch (_) {}
         let v = value;
         try { v = JSON.parse(value); } catch (_) {}
-        SafeStorage.set(key, v).catch(() => {});
+        SafeStorage.set(key, v)
+          .then(() => console.log('[StorageBridge] mirrored set', key))
+          .catch((err) => console.warn('[StorageBridge] set failed', key, err));
       },
       removeItem(key) {
         try { rawLS.removeItem(key); } catch (_) {}
-        SafeStorage.remove(key).catch(() => {});
+        SafeStorage.remove(key)
+          .then(() => console.log('[StorageBridge] mirrored remove', key))
+          .catch((err) => console.warn('[StorageBridge] remove failed', key, err));
       },
     };
 
@@ -69,4 +73,3 @@
 
   window.setupStorageBridge = setupStorageBridge;
 })();
-

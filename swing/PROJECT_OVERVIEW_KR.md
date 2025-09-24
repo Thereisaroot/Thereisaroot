@@ -13,7 +13,7 @@ HTML5 Canvas 기반의 2D 로프 스윙 러너 게임입니다. 기본 도형 �
 - **모바일 WebView (Capacitor 등)**:
   - `<script src="./save/safeStorage.nomodule.js"></script>` → `<script src="./save/storageBridge.nomodule.js"></script>` 순으로 포함해야 합니다.
   - `window.setupStorageBridge('webswing')` 초기화 후 `src/core/` 하위 런타임 스크립트(최종 `main.js` 포함)를 순차 로드합니다. Preferences/Filesystem과 `localStorage`를 동기화하여 네이티브에서도 동일한 세이브를 사용합니다.
-  - 모듈 환경이라면 `save/safeStorage.js`, `save/storageBridge.js`를 `type="module"`로 import 할 수 있습니다.
+- 모듈 번들용 JS 지원은 중단되었으며, 네이티브/웹 모두 `save/safeStorage.nomodule.js`, `save/storageBridge.nomodule.js` 스크립트를 사용하세요.
 - **폰트**: `fonts.css`에서 로컬 `Press Start 2P`, `Dalmoori` 폰트를 등록합니다. `assets/fonts/`에 woff2/ttf 파일을 배치하세요.
 - **배포 스크립트**: `deploy.sh`는 로컬 전용 쉘 스크립트로, 외부 동기화와 캐시 버스터, git 커밋을 수행합니다 (환경 경로 수정 필요).
 

@@ -446,7 +446,7 @@ function playerCollisionRadius() {
 }
 
 class UIButton {
-  constructor(x, y, w, h, label, action, state) {
+  constructor(x, y, w, h, label, action, state, options = {}) {
     this.x = x;
     this.y = y;
     this.w = w;
@@ -454,6 +454,9 @@ class UIButton {
     this.label = label;
     this.action = action;
     this.state = state; // Which state this button belongs to
+    this.disabled = Boolean(options.disabled);
+    this.onDisabled = typeof options.onDisabled === 'function' ? options.onDisabled : null;
+    this.meta = options.meta || null;
   }
 
   isClicked(mx, my) {
@@ -467,6 +470,10 @@ class UIButton {
 
   onClick() {
     console.log(`Button clicked: ${this.labelText()} in ${this.state}`);
+    if (this.disabled) {
+      if (this.onDisabled) this.onDisabled(this);
+      return;
+    }
     this.action();
   }
 }
@@ -530,6 +537,15 @@ class ShopCard {
         isOwned: isOwned,
         price: isOwned ? 0 : char.price
       };
+    } else if (this.type === 'ad') {
+      const key = this.item && this.item.key;
+      if (!key) return;
+      const state = (typeof getAdRewardState === 'function') ? getAdRewardState(key) : null;
+      const claimed = (typeof isDailyRewardClaimed === 'function') ? isDailyRewardClaimed(key) : false;
+      const alreadyOwned = key === 'wizard' && shopInv.characters && shopInv.characters.includes('wizard');
+      if (alreadyOwned || claimed) return;
+      if (state && state.status === 'loading') return;
+      if (typeof startRewardAd === 'function') startRewardAd(key);
     } else {
       // 일반 아이템 구매 처리
       const lvl = getLevelByExp(exp);

@@ -50,10 +50,19 @@ async function start() {
         savings = 100;
         localStorage.setItem(SAVINGS_KEY, String(savings));
       }
+      selectedCharacter = 'wizard';
+      try { localStorage.setItem('webswing_selected_char_v1', 'wizard'); } catch (_) {}
     }
   } catch (_) {}
   // Load shop inventory
   shopInv = loadShopInv(shopInv);
+  if (selectedCharacter === 'wizard') {
+    const ownsWizard = shopInv.characters && shopInv.characters.includes('wizard');
+    if (!ownsWizard && !demoActive) {
+      selectedCharacter = 'default';
+      try { localStorage.setItem('webswing_selected_char_v1', 'default'); } catch (_) {}
+    }
+  }
   // Demo mode: grant EXP and equip core items so the character looks different
   if (demoActive) {
     try {
@@ -66,6 +75,10 @@ async function start() {
     shopInv.glowLevel = 1;
     shopInv.plusJump = true;
     shopInv.fly = true;
+    shopInv.characters = Array.isArray(shopInv.characters) ? shopInv.characters.slice() : [];
+    if (!shopInv.characters.includes('wizard')) {
+      shopInv.characters.push('wizard');
+    }
     saveShopInv(shopInv);
   }
   requestAnimationFrame(tick);

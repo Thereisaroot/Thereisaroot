@@ -1,3 +1,48 @@
+function drawUIButtonRect(g, button, options = {}) {
+  if (!button) return;
+  const disabled = options.disabled ?? button.disabled;
+  const labelRaw = typeof button.labelText === 'function'
+    ? button.labelText()
+    : (typeof button.label === 'function' ? button.label() : button.label);
+  const label = labelRaw != null ? String(labelRaw) : '';
+  const font = options.font || `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+  const fill = options.fill || (disabled ? '#192235' : '#22334a');
+  const stroke = options.stroke || (disabled ? '#3a4358' : '#b4c0d9');
+  const textColor = options.textColor || (disabled ? '#7a849c' : '#ffffff');
+  g.fillStyle = fill;
+  g.strokeStyle = stroke;
+  g.lineWidth = options.lineWidth || 2;
+  g.fillRect(button.x, button.y, button.w, button.h);
+  g.strokeRect(button.x, button.y, button.w, button.h);
+  g.fillStyle = textColor;
+  g.textAlign = options.textAlign || 'center';
+  g.textBaseline = options.textBaseline || 'middle';
+  g.font = font;
+  const textX = button.x + (options.textOffsetX || button.w / 2);
+  const textY = button.y + (options.textOffsetY || button.h / 2 + 1);
+  if (label) g.fillText(label, textX, textY);
+}
+
+function triggerSlowMoImmediate(effectX, effectY, cooldown = SLOW_MO_COOLDOWN) {
+  slowMoPendingTimer = 0;
+  slowMoPendingEffect = null;
+  slowMoTimer = SLOW_MO_DURATION;
+  slowMoCooldown = cooldown;
+  spawnEffect('combo', effectX, effectY, t('effects.slow'));
+}
+
+const BOSS_FAIL_REASON_KEYS = {
+  hit: 'bossOutcome.reason.hit',
+  not_enough_dodge: 'bossOutcome.reason.notEnoughDodge',
+  missed_boxes: 'bossOutcome.reason.missedBoxes',
+};
+
+function translateBossOutcomeReason(reason) {
+  if (!reason) return null;
+  const key = BOSS_FAIL_REASON_KEYS[reason];
+  return key ? t(key) : null;
+}
+
 function renderIntro(g, time) {
   drawBackground(g);
   drawCenteredText(g, t('intro.title'), CONFIG.height * 0.28, 20);
@@ -5,36 +50,39 @@ function renderIntro(g, time) {
   g.globalAlpha = blink;
   drawCenteredText(g, t('intro.pressStart'), CONFIG.height * 0.52, 14);
   g.globalAlpha = 1;
-  
-  // Shop buttons (if level >= 2)
-  const lvl = getLevelByExp(exp);
-  if (lvl >= 2) {
-    const bw = 100, bh = 36;
-    const spacing = 10;
-    const totalWidth = bw * 2 + spacing;
-    const startX = (CONFIG.width - totalWidth) / 2;
-    const by = CONFIG.height * 0.65;
-    
-    // ITEMS button
-    g.fillStyle = '#22334a';
-    g.strokeStyle = '#b4c0d9';
-    g.lineWidth = 2;
-    g.fillRect(startX, by, bw, bh);
-    g.strokeRect(startX, by, bw, bh);
-    g.fillStyle = '#ffffff';
-    g.textAlign = 'center';
-    g.textBaseline = 'middle';
+  if (typeof IS_NATIVE_APP !== 'undefined' && IS_NATIVE_APP) {
+    const rawLives = nativeLivesRemaining();
+    const maxLives = nativeLivesMax();
+    const lives = Math.max(0, rawLives);
+    const displayCurrent = (rawLives === Number.POSITIVE_INFINITY) ? '∞' : lives;
+    const maxText = (maxLives === Number.POSITIVE_INFINITY) ? '∞' : maxLives;
+    g.fillStyle = '#b4c0d9';
+    g.textAlign = 'right';
+    g.textBaseline = 'top';
     g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-    g.fillText(t('common.items'), startX + bw/2, by + bh/2 + 1);
-    
-    // CHARS button
-    const charsX = startX + bw + spacing;
-    g.fillStyle = '#22334a';
-    g.fillRect(charsX, by, bw, bh);
-    g.strokeStyle = '#b4c0d9';
-    g.strokeRect(charsX, by, bw, bh);
-    g.fillStyle = '#ffffff';
-    g.fillText(t('common.chars'), charsX + bw/2, by + bh/2 + 1);
+    g.fillText(t('ads.lifeCounter', { current: displayCurrent, max: maxText }), CONFIG.width - 12, 12);
+    if (lives <= 0) {
+      const msg = lifeAdStatus === 'loading'
+        ? t('ads.lifeLoading')
+        : (lifeAdMessage || t('ads.lifePrompt'));
+      drawCenteredText(g, msg, CONFIG.height * 0.58, 10, '#ffb347');
+      if (lifeAdStatus !== 'loading' && lifeAdStatus !== 'limit') {
+        drawCenteredText(g, t('ads.lifeTapToWatch'), CONFIG.height * 0.62, 9, '#b4c0d9');
+      }
+    } else if (lifeAdStatus === 'loading') {
+      drawCenteredText(g, t('ads.lifeLoading'), CONFIG.height * 0.58, 10, '#b4c0d9');
+    } else if (lifeAdMessage) {
+      drawCenteredText(g, lifeAdMessage, CONFIG.height * 0.58, 10, '#b4c0d9');
+    }
+  }
+
+  if (introMenuButtons && introMenuButtons.length) {
+    introMenuButtons.forEach((button) => drawUIButtonRect(g, button));
+    if (introMenuMessage) {
+      const lastButton = introMenuButtons[introMenuButtons.length - 1];
+      const msgY = lastButton ? lastButton.y + lastButton.h + 18 : CONFIG.height * 0.58;
+      drawCenteredText(g, introMenuMessage, msgY, 9, '#ffb347');
+    }
   }
   
   // Guide button
@@ -227,8 +275,22 @@ function updateRun(dt) {
     dt *= SLOW_MO_SCALE;
   }
   simTime += dt;
+  if (slowMoPendingTimer > 0) {
+    slowMoPendingTimer = Math.max(0, slowMoPendingTimer - baseDt);
+    if (slowMoPendingTimer <= 0) {
+      triggerSlowMoImmediate(
+        (slowMoPendingEffect && slowMoPendingEffect.x != null) ? slowMoPendingEffect.x : player.x,
+        (slowMoPendingEffect && slowMoPendingEffect.y != null) ? slowMoPendingEffect.y : (player.y - 24)
+      );
+      slowMoPendingEffect = null;
+    }
+  }
   if (slowMoTimer > 0) slowMoTimer = Math.max(0, slowMoTimer - baseDt);
   if (slowMoCooldown > 0) slowMoCooldown = Math.max(0, slowMoCooldown - baseDt);
+  if (bossOutcomeTimer > 0) {
+    bossOutcomeTimer = Math.max(0, bossOutcomeTimer - baseDt);
+    if (bossOutcomeTimer <= 0) bossOutcomeBanner = null;
+  }
   updateStageTransition(baseDt);
   const groundY = CONFIG.height - CONFIG.groundH;
   const collR = playerCollisionRadius();
@@ -291,12 +353,12 @@ function updateRun(dt) {
         wizardSpinRate = 0;
       }
       const slowLevel = shopInv.slowLevel || 0;
-      if (slowLevel > 0 && slowMoTimer <= 0 && slowMoCooldown <= 0) {
+      if (slowLevel > 0 && slowMoTimer <= 0 && slowMoCooldown <= 0 && slowMoPendingTimer <= 0) {
         const slowChance = Math.min(1, slowLevel * 0.1);
         if (Math.random() < slowChance) {
-          slowMoTimer = SLOW_MO_DURATION;
-          slowMoCooldown = SLOW_MO_COOLDOWN;
-          spawnEffect('combo', player.x, player.y - 24, t('effects.slow'));
+          slowMoPendingTimer = SLOW_MO_TRIGGER_DELAY;
+          slowMoPendingEffect = { x: player.x, y: player.y - 24 };
+          slowMoCooldown = SLOW_MO_COOLDOWN + SLOW_MO_TRIGGER_DELAY;
         }
       }
       player.vx = detVx;
@@ -500,11 +562,8 @@ function updateRun(dt) {
       else if (b.kind === 'wideCatch') pendingCatchR = 50;
       else if (b.kind === 'bigSize') pendingSizeScale = 1.5;
       else if (b.kind === 'slow') {
-        // Activate slow motion effect immediately
-        slowMoTimer = SLOW_MO_DURATION;
-        slowMoCooldown = 0; // Reset cooldown to allow immediate effect
         spawnEffect('sparkle', b.x, displayY);
-        spawnEffect('combo', b.x, displayY - 24, t('effects.slow'));
+        triggerSlowMoImmediate(b.x, displayY - 24, 0);
       }
       else if (b.kind === 'roulette') {
         const spinDuration = CONFIG.rouletteSpinDuration || 2.4;
@@ -860,6 +919,8 @@ function updateRun(dt) {
         shopInv = { ...SHOP_INV_DEFAULTS };
         saveShopInv(shopInv);
         saveShopInv(shopInv);
+        selectedCharacter = 'default';
+        localStorage.setItem('webswing_selected_char_v1', 'default');
       } catch(_){}
     }
     best = Math.max(best, score);
@@ -869,6 +930,13 @@ function updateRun(dt) {
     // End fever state on game over
     starModeActive = false;
     starModeEndTime = 0;
+    if (typeof IS_NATIVE_APP !== 'undefined' && IS_NATIVE_APP && typeof consumeDailyLife === 'function') {
+      if (!lifeSpentThisRun) {
+        if (typeof ensureDailyState === 'function') ensureDailyState();
+        consumeDailyLife();
+        lifeSpentThisRun = true;
+      }
+    }
     State.current = 'gameover';
     // Clear current input edges and lock inputs briefly to avoid instant restart
     if (typeof UI !== 'undefined') UI.reset();
@@ -1012,6 +1080,45 @@ function renderRun(g) {
   drawParticles(g);
   renderRouletteOverlay(g);
 
+  if (bossOutcomeBanner && bossOutcomeTimer > 0) {
+    const lines = [];
+    const primaryKey = bossOutcomeBanner.success ? 'bossOutcome.success' : 'bossOutcome.failure';
+    lines.push(t(primaryKey));
+    if (bossOutcomeBanner.success) {
+      const cash = bossOutcomeBanner.rewardCash || 0;
+      const score = bossOutcomeBanner.rewardScore || 0;
+      if (cash > 0 && score > 0) {
+        lines.push(t('bossOutcome.rewardCashScore', { cash, score }));
+      } else if (cash > 0) {
+        lines.push(t('bossOutcome.rewardCash', { cash }));
+      } else if (score > 0) {
+        lines.push(t('bossOutcome.rewardScore', { score }));
+      }
+    } else {
+      const reasonText = translateBossOutcomeReason(bossOutcomeBanner.reason);
+      if (reasonText) lines.push(reasonText);
+    }
+    const panelWidth = Math.min(CONFIG.width * 0.72, 320);
+    const panelHeight = 34 + Math.max(0, lines.length - 1) * 18;
+    const px = (CONFIG.width - panelWidth) / 2;
+    const py = CONFIG.height * 0.18;
+    g.save();
+    g.fillStyle = 'rgba(15,26,42,0.78)';
+    g.strokeStyle = bossOutcomeBanner.success ? '#6fffb0' : '#ff8a8a';
+    g.lineWidth = 2;
+    g.fillRect(px, py, panelWidth, panelHeight);
+    g.strokeRect(px, py, panelWidth, panelHeight);
+    lines.forEach((text, idx) => {
+      const color = idx === 0
+        ? (bossOutcomeBanner.success ? '#9cffc7' : '#ff9c9c')
+        : '#ffffff';
+      const size = idx === 0 ? 14 : 11;
+      const lineY = py + 18 + idx * 18;
+      drawCenteredText(g, text, lineY, size, color);
+    });
+    g.restore();
+  }
+
   // HUD
   g.fillStyle = '#ffffff';
   g.textAlign = 'left';
@@ -1076,6 +1183,7 @@ function renderRun(g) {
   g.textAlign = 'left';
   g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
   g.fillText(t('hud.level', { level: getLevelByExp(exp) }), 12, 46);
+
 }
 
 function renderBoss(g) {
@@ -1143,7 +1251,7 @@ function renderBoss(g) {
       const b = bossState.battle;
       const remain = Math.max(0, b.duration - b.bossTimer).toFixed(1);
       g.font = `26px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-      g.fillText(t('boss.slamHudProgress', { current: b.jumpCount || 0, goal: b.jumpGoal || 80 }), CONFIG.width / 2, CONFIG.height * 0.42);
+      g.fillText(t('boss.slamHudProgress', { current: b.jumpCount || 0, goal: b.jumpGoal ?? 50 }), CONFIG.width / 2, CONFIG.height * 0.42);
       g.font = `12px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
       g.fillText(t('boss.slamHudTime', { seconds: remain }), CONFIG.width / 2, 40);
     } else if (bossState.type === 'collect') {
@@ -1272,6 +1380,10 @@ function updateGameOver(dt) {
   // allow particles to continue animating on game over
   updateParticles(dt);
   updateStageTransition(dt);
+  if (gameOverMenuMessageTimer > 0) {
+    gameOverMenuMessageTimer = Math.max(0, gameOverMenuMessageTimer - dt);
+    if (gameOverMenuMessageTimer <= 0) gameOverMenuMessage = null;
+  }
   // advance gameover local timer
   gameOverTimer += dt;
   levelUpPopupTimer += dt;
@@ -1282,12 +1394,26 @@ function updateGameOver(dt) {
     Input.down = false; Input.justPressed = false;
     return;
   }
-  
+
+  const lvl = getLevelByExp(exp);
+  if (gameOverMenuButtons && gameOverMenuButtons.length) {
+    for (const button of gameOverMenuButtons) {
+      if (!button || !button.meta || typeof button.meta.requiredLevel !== 'number') continue;
+      const shouldDisable = lvl < button.meta.requiredLevel;
+      button.disabled = shouldDisable;
+    }
+  }
+
+  const outOfLives = typeof IS_NATIVE_APP !== 'undefined' && IS_NATIVE_APP && nativeLivesRemaining() <= 0;
+  if (outOfLives && lifeAdStatus === 'idle') {
+    triggerLifeAd(false);
+  }
+
   // Build buttons if not exist
   if (uiButtons.gameover.length === 0) {
     buildGameOverButtons();
   }
-  
+
   // Check button clicks
   if (UI.clicked && State.current === 'gameover') {
     for (const button of uiButtons.gameover) {
@@ -1298,42 +1424,64 @@ function updateGameOver(dt) {
         return;
       }
     }
-    
+
     // If no button clicked, restart game
     UI.reset();
     Input.down = false; Input.justPressed = false;
-    resetRun();
+    if (outOfLives) {
+      triggerLifeAd(false);
+    } else {
+      resetRun();
+    }
     return;
   }
-  
+
   // Restart on Space or Escape
   if (UI.keyPressed === 'Space' || UI.keyPressed === 'Escape') {
     UI.reset();
     Input.down = false; Input.justPressed = false;
-    resetRun();
+    if (outOfLives) {
+      triggerLifeAd(false);
+    } else {
+      resetRun();
+    }
   }
 }
 
 function renderGameOver(g) {
   drawBackground(g);
   drawParticles(g);
+  const yAdjust = -100;
+  const adjust = (val) => val + yAdjust;
+  if (typeof IS_NATIVE_APP !== 'undefined' && IS_NATIVE_APP) {
+    const rawLives = nativeLivesRemaining();
+    const maxLives = nativeLivesMax();
+    const lives = Math.max(0, rawLives);
+    const displayCurrent = (rawLives === Number.POSITIVE_INFINITY) ? '∞' : lives;
+    const maxText = (maxLives === Number.POSITIVE_INFINITY) ? '∞' : maxLives;
+    g.fillStyle = '#b4c0d9';
+    g.textAlign = 'right';
+    g.textBaseline = 'top';
+    g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+    g.fillText(t('ads.lifeCounter', { current: displayCurrent, max: maxText }), CONFIG.width - 12, 12);
+  }
   if (lastDemoLoss) {
-    drawCenteredText(g, t('gameOver.title'), CONFIG.height * 0.30 - 20, 18, '#ff6666');
+    drawCenteredText(g, t('gameOver.title'), adjust(CONFIG.height * 0.30 - 20), 18, '#ff6666');
     g.fillStyle = '#ffffff';
     g.textAlign = 'center';
     g.textBaseline = 'top';
     g.font = `12px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-    g.fillText(t('gameOver.demoLossLine1'), CONFIG.width / 2, CONFIG.height * 0.40 - 20);
-    g.fillText(t('gameOver.demoLossLine2'), CONFIG.width / 2, CONFIG.height * 0.46 - 20);
+    g.fillText(t('gameOver.demoLossLine1'), CONFIG.width / 2, adjust(CONFIG.height * 0.40 - 20));
+    g.fillText(t('gameOver.demoLossLine2'), CONFIG.width / 2, adjust(CONFIG.height * 0.46 - 20));
   } else {
-    drawCenteredText(g, t('gameOver.title'), CONFIG.height * 0.30 - 20, 18, '#ff6666');
-    drawCenteredText(g, t('hud.score', { score }), CONFIG.height * 0.40 - 20, 12);
+    drawCenteredText(g, t('gameOver.title'), adjust(CONFIG.height * 0.30 - 20), 18, '#ff6666');
+    drawCenteredText(g, t('hud.score', { score }), adjust(CONFIG.height * 0.40 - 20), 12);
 
     // Savings summary and next target
     g.fillStyle = '#ffffff';
     g.textAlign = 'center';
     g.textBaseline = 'top';
-    const y0 = CONFIG.height * 0.46 - 20;
+    const y0 = adjust(CONFIG.height * 0.46 - 20);
     function nextLevelThreshold(val) {
       for (let i = 0; i < LEVEL_THRESHOLDS.length; i++) {
         if (val < LEVEL_THRESHOLDS[i]) return LEVEL_THRESHOLDS[i];
@@ -1381,7 +1529,7 @@ function renderGameOver(g) {
   // Level-up popup when level increased this game over
   if (gameOverLevelUp) {
     const cx = CONFIG.width / 2;
-    const cy = CONFIG.height * 0.22 - 20;
+    const cy = adjust(CONFIG.height * 0.22 - 20);
     g.fillStyle = '#ffffff';
     g.textAlign = 'center';
     g.textBaseline = 'middle';
@@ -1393,56 +1541,46 @@ function renderGameOver(g) {
   if (rem > 0) {
     // Countdown until retry is enabled
     const sec = Math.ceil(rem);
-    drawCenteredText(g, t('gameOver.retryCountdown', { seconds: sec }), CONFIG.height * 0.74 - 20, 10, '#b4c0d9');
+    drawCenteredText(g, t('gameOver.retryCountdown', { seconds: sec }), adjust(CONFIG.height * 0.74 - 20), 10, '#b4c0d9');
   } else {
-    drawCenteredText(g, t('gameOver.retryReady'), CONFIG.height * 0.74 - 20, 10, '#b4c0d9');
-    // Shop buttons (Level >= 2)
-    const lvl = getLevelByExp(exp);
-    if (lvl >= 2) {
-      const bw = 100, bh = 36;
-      const spacing = 10;
-      const totalWidth = bw * 2 + spacing;
-      const startX = (CONFIG.width - totalWidth) / 2;
-      const by = CONFIG.height * 0.80;
-      
-      // ITEMS button
-      const itemsBx = startX;
-      g.fillStyle = '#22334a';
-      g.strokeStyle = '#b4c0d9';
-      g.lineWidth = 2;
-      g.fillRect(itemsBx, by, bw, bh);
-      g.strokeRect(itemsBx, by, bw, bh);
-      g.fillStyle = '#ffffff';
-      g.textAlign = 'center';
-      g.textBaseline = 'middle';
-      g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-      g.fillText(t('common.items'), itemsBx + bw/2, by + bh/2 + 1);
-      
-      // CHARS button
-      const charsBx = startX + bw + spacing;
-      g.fillStyle = '#22334a';
-      g.fillRect(charsBx, by, bw, bh);
-      g.strokeStyle = '#b4c0d9';
-      g.strokeRect(charsBx, by, bw, bh);
-      g.fillStyle = '#ffffff';
-      g.fillText(t('common.chars'), charsBx + bw/2, by + bh/2 + 1);
-
-      // Fast mode toggle (Level >= 8)
-      if (lvl >= 8) {
-        const bw = 160, bh = 24;
-        const bx = (CONFIG.width - bw) / 2;
-        const by = CONFIG.height * 0.80 + 80; // moved down by 30px
-        g.fillStyle = fastModeEnabled ? '#4a6e33' : '#22334a';
-        g.strokeStyle = '#b4c0d9';
-        g.lineWidth = 2;
-        g.fillRect(bx, by, bw, bh);
-        g.strokeRect(bx, by, bw, bh);
-        g.fillStyle = '#ffffff';
-        g.textAlign = 'center';
-        g.textBaseline = 'middle';
-        g.font = `10px "Press Start 2P", monospace`;
-        g.fillText(t('game.fastToggle', { state: commonText(fastModeEnabled ? 'on' : 'off') }), bx + bw/2, by + bh/2 + 1);
+    drawCenteredText(g, t('gameOver.retryReady'), adjust(CONFIG.height * 0.74 - 20), 10, '#b4c0d9');
+    const menuSet = new Set(gameOverMenuButtons || []);
+    if (gameOverMenuButtons && gameOverMenuButtons.length) {
+      gameOverMenuButtons.forEach((button) => drawUIButtonRect(g, button));
+      const messageAnchor = gameOverMenuButtons[gameOverMenuButtons.length - 1];
+      if (gameOverMenuMessage && messageAnchor) {
+        const msgY = messageAnchor.y + messageAnchor.h + 18;
+        drawCenteredText(g, gameOverMenuMessage, msgY, 9, '#ffb347');
       }
+    }
+    if (uiButtons.gameover && uiButtons.gameover.length) {
+      uiButtons.gameover.forEach((button) => {
+        if (!button || menuSet.has(button)) return;
+        const isFastToggle = button.meta && button.meta.type === 'fast-toggle';
+        drawUIButtonRect(g, button, isFastToggle ? {
+          fill: fastModeEnabled ? '#4a6e33' : '#22334a',
+        } : {});
+      });
+    }
+  }
+
+  if (typeof IS_NATIVE_APP !== 'undefined' && IS_NATIVE_APP) {
+    const lives = Math.max(0, nativeLivesRemaining());
+    const messageY = adjust(CONFIG.height * 0.66);
+    if (lives <= 0) {
+      const msg = lifeAdStatus === 'loading'
+        ? t('ads.lifeLoading')
+        : (lifeAdMessage || t('ads.lifePrompt'));
+      drawCenteredText(g, msg, messageY, 10, lifeAdStatus === 'loading' ? '#b4c0d9' : '#ffb347');
+      if (lifeAdStatus !== 'loading' && lifeAdStatus !== 'limit') {
+        drawCenteredText(g, t('ads.lifeTapToWatch'), messageY + 20, 9, '#b4c0d9');
+      } else if (lifeAdStatus === 'limit' && !lifeAdMessage) {
+        drawCenteredText(g, t('ads.lifeLimit', { limit: DAILY_INTERSTITIAL_LIMIT }), messageY + 20, 9, '#ff8888');
+      }
+    } else if (lifeAdStatus === 'loading') {
+      drawCenteredText(g, t('ads.lifeLoading'), messageY, 10, '#b4c0d9');
+    } else if (lifeAdMessage) {
+      drawCenteredText(g, lifeAdMessage, messageY, 10, '#b4c0d9');
     }
   }
 }

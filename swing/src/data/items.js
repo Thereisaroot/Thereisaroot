@@ -4,7 +4,7 @@
     { id: 'buds', type: 'level', maxLevel: 6, price: 50, minLevel: 2, unlock: { type: 'level', value: 2 } },
     { id: 'plusjump', type: 'single', price: 100, minLevel: 2, unlock: { type: 'level', value: 2 } },
     { id: 'fly', type: 'single', price: 100, minLevel: 2, unlock: { type: 'level', value: 2 } },
-    { id: 'big', type: 'level', price: 20, minLevel: 5, unlock: { type: 'level', value: 5 } },
+    { id: 'big', type: 'level', maxLevel: 5,rice: 20, minLevel: 5, unlock: { type: 'level', value: 5 } },
     { id: 'gamble', type: 'consumable', price: 10, minLevel: 1, unlock: { type: 'level', value: 1 } },
     { id: 'magnet', type: 'level', maxLevel: 5, price: 30, minLevel: 3, unlock: { type: 'level', value: 3 } },
     { id: 'combo', type: 'level', maxLevel: 3, price: 80, minLevel: 6, unlock: { type: 'level', value: 6 } },
