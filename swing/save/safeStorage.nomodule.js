@@ -15,33 +15,168 @@ const SafeStorage = (() => {
   let cache = {};
   let pendingWrite = null;
 
-  const Cap = (typeof window !== 'undefined' ? window.Capacitor : undefined) || undefined;
-  const isNative = !!(Cap && typeof Cap.isNativePlatform === 'function' && Cap.isNativePlatform());
-  const Plugins = (Cap && Cap.Plugins) || {};
-  const Pref = Plugins && Plugins.Preferences;
-  const FS = Plugins && Plugins.Filesystem;
+  const state = {
+    platform: 'web',
+    isNativeEnv: false,
+    hasPreferences: false,
+    hasFilesystem: false,
+    usingNative: false,
+    mirrorLocalStorage: true,
+  };
+
+  let preferencesRef = null;
+  let filesystemRef = null;
+  let nativeDisabled = false;
+
+  function stringifyValue(value) {
+    try {
+      const serialized = JSON.stringify(value);
+      if (serialized === undefined) return 'undefined';
+      return serialized;
+    } catch (_) {
+      try {
+        return JSON.stringify(String(value));
+      } catch (_) {
+        return 'undefined';
+      }
+    }
+  }
+
+  function disableNativeStorage(reason) {
+    if (nativeDisabled) return;
+    nativeDisabled = true;
+    preferencesRef = null;
+    state.hasPreferences = false;
+    state.usingNative = false;
+    mirrorLS = true;
+    console.warn('[SafeStorage] disabling native storage, fallback to localStorage:', reason);
+  }
+
+  function getCapacitor() {
+    if (typeof window === 'undefined') return undefined;
+    return window.Capacitor;
+  }
+
+  function resolvePlatform(cap) {
+    if (!cap) return 'web';
+    try {
+      if (typeof cap.getPlatform === 'function') {
+        const detected = cap.getPlatform();
+        if (detected) return detected;
+      }
+      if (typeof cap.platform === 'string' && cap.platform.length > 0) {
+        return cap.platform;
+      }
+    } catch (_) {}
+    return 'web';
+  }
+
+  function detectNativeEnv(cap, platform) {
+    if (!cap) return false;
+    try {
+      if (typeof cap.isNativePlatform === 'function') {
+        return !!cap.isNativePlatform();
+      }
+    } catch (_) {}
+    return Boolean(platform && platform !== 'web');
+  }
+
+  function resolvePlugin(cap, primaryKey, fallbackKeys = []) {
+    if (!cap) return null;
+    const candidates = [];
+    if (cap.Plugins && cap.Plugins[primaryKey]) candidates.push(cap.Plugins[primaryKey]);
+    if (cap[primaryKey]) candidates.push(cap[primaryKey]);
+    for (const key of fallbackKeys) {
+      if (cap[key]) candidates.push(cap[key]);
+      if (cap.Plugins && cap.Plugins[key]) candidates.push(cap.Plugins[key]);
+    }
+    if (typeof cap.getPlugin === 'function') {
+      try {
+        const viaGetter = cap.getPlugin(primaryKey);
+        if (viaGetter) candidates.push(viaGetter);
+      } catch (_) {}
+      for (const key of fallbackKeys) {
+        try {
+          const viaGetter = cap.getPlugin(key);
+          if (viaGetter) candidates.push(viaGetter);
+        } catch (_) {}
+      }
+    }
+    for (const cand of candidates) {
+      if (cand) return cand;
+    }
+    return null;
+  }
+
+  function resolvePreferences(cap) {
+    return resolvePlugin(cap, 'Preferences', [
+      'Storage',
+      'CapacitorStorage',
+      'SecureStorage',
+      'SecureStoragePlugin',
+    ]);
+  }
+
+  function resolveFilesystem(cap) {
+    return resolvePlugin(cap, 'Filesystem');
+  }
 
   async function init(opts) {
-    const platformName = (typeof PLATFORM !== 'undefined')
-      ? PLATFORM
-      : (Cap && typeof Cap.getPlatform === 'function')
-        ? Cap.getPlatform()
-        : (Cap && Cap.platform) || 'web';
-    if (typeof PLATFORM === 'undefined') {
-      try { globalThis.PLATFORM = platformName; } catch (_) {}
-    }
-    console.log('[SafeStorage] platform', platformName, 'isNative', isNative);
-    console.log('[SafeStorage] init start', opts);
-    ns = opts && opts.namespace || ns;
+    const cap = getCapacitor();
+    const platform = resolvePlatform(cap);
+    const nativeEnv = detectNativeEnv(cap, platform);
+    const prefPlugin = resolvePreferences(cap);
+    const fsPlugin = resolveFilesystem(cap);
+
+    const hasPreferences = Boolean(
+      nativeEnv &&
+      prefPlugin &&
+      typeof prefPlugin.get === 'function' &&
+      typeof prefPlugin.set === 'function'
+    );
+    const hasFilesystem = Boolean(
+      nativeEnv &&
+      fsPlugin &&
+      typeof fsPlugin.readFile === 'function' &&
+      typeof fsPlugin.writeFile === 'function'
+    );
+
+    ns = (opts && opts.namespace) || ns;
     file = (opts && opts.fileName) || file;
-    mirrorLS = (opts && typeof opts.mirrorLocalStorage === 'boolean') ? opts.mirrorLocalStorage : mirrorLS;
+
+    let requestedMirror = mirrorLS;
+    if (opts && typeof opts.mirrorLocalStorage === 'boolean') {
+      requestedMirror = opts.mirrorLocalStorage;
+    }
+
+    preferencesRef = hasPreferences ? prefPlugin : null;
+    filesystemRef = hasFilesystem ? fsPlugin : null;
+    nativeDisabled = !hasPreferences;
+
+    mirrorLS = hasPreferences ? requestedMirror : true;
+
+    state.platform = platform;
+    state.isNativeEnv = nativeEnv;
+    state.hasPreferences = hasPreferences;
+    state.hasFilesystem = hasFilesystem;
+    state.usingNative = hasPreferences;
+    state.mirrorLocalStorage = mirrorLS;
+
+    if (nativeEnv && !hasPreferences) {
+      console.warn('[SafeStorage] Preferences plugin not available; falling back to localStorage only');
+    }
+    if (nativeEnv && hasPreferences && !hasFilesystem) {
+      console.warn('[SafeStorage] Filesystem plugin not available; backup writes disabled');
+    }
+
+    // Diagnostics removed in production build to reduce noise.
 
     const [pIndex, lIndex] = await Promise.all([
-      preferencesGet(INDEX_KEY),
+      hasPreferences ? preferencesGet(INDEX_KEY) : Promise.resolve(undefined),
       localGet(INDEX_KEY),
     ]);
 
-    if (isNative) {
+    if (hasPreferences) {
       if (!pIndex) {
         const fsState = await readBackupFile();
         if (fsState) {
@@ -65,7 +200,6 @@ const SafeStorage = (() => {
 
   async function set(key, value) {
     const k = prefKey(key);
-    console.log(`[SafeStorage] set ${k} ${JSON.stringify(value)}`);
     cache[key] = value;
     await preferencesSet(k, value);
     if (mirrorLS) await localSet(k, value);
@@ -78,13 +212,11 @@ const SafeStorage = (() => {
     const k = prefKey(key);
     const p = await preferencesGet(k);
     if (p !== undefined) {
-      console.log(`[SafeStorage] hit pref ${k} ${JSON.stringify(p)}`);
       cache[key] = p;
       return p;
     }
     const l = await localGet(k);
     if (l !== undefined) {
-      console.log(`[SafeStorage] hit local ${k} ${JSON.stringify(l)}`);
       cache[key] = l;
       await preferencesSet(k, l);
       await addToIndex(key);
@@ -150,6 +282,7 @@ const SafeStorage = (() => {
   }
 
   async function dumpFromPreferences() {
+    if (!state.hasPreferences) return {};
     const out = {};
     const idx = await getIndex();
     for (const key of idx) {
@@ -186,23 +319,39 @@ const SafeStorage = (() => {
 
   // Preferences helpers
   async function preferencesSet(key, value) {
-    if (!isNative || !Pref) return;
+    if (!state.hasPreferences || !preferencesRef) return;
     const k = key.includes(':') ? key : prefKey(key);
-    try { await Pref.set({ key: k, value: JSON.stringify(value) }); } catch (_) {}
+    const serialized = stringifyValue(value);
+    try { await preferencesRef.set({ key: k, value: serialized }); }
+    catch (err) {
+      const message = err && err.message ? err.message : String(err);
+      console.warn('[SafeStorage] preferences set failed for', k, message);
+      disableNativeStorage(`set:${k}:${message}`);
+    }
   }
   async function preferencesGet(key) {
-    if (!isNative || !Pref) return undefined;
+    if (!state.hasPreferences || !preferencesRef) return undefined;
     const k = key.includes(':') ? key : prefKey(key);
     try {
-      const { value } = await Pref.get({ key: k });
+      const { value } = await preferencesRef.get({ key: k });
       if (value == null) return undefined;
       return JSON.parse(value);
-    } catch (_) { return undefined; }
+    } catch (err) {
+      const message = err && err.message ? err.message : String(err);
+      console.warn('[SafeStorage] preferences get failed for', k, message);
+      disableNativeStorage(`get:${k}:${message}`);
+      return undefined;
+    }
   }
   async function preferencesRemove(key) {
-    if (!isNative || !Pref) return;
+    if (!state.hasPreferences || !preferencesRef) return;
     const k = key.includes(':') ? key : prefKey(key);
-    try { await Pref.remove({ key: k }); } catch (_) {}
+    try { await preferencesRef.remove({ key: k }); }
+    catch (err) {
+      const message = err && err.message ? err.message : String(err);
+      console.warn('[SafeStorage] preferences remove failed for', k, message);
+      disableNativeStorage(`remove:${k}:${message}`);
+    }
   }
 
   // localStorage helpers
@@ -224,27 +373,34 @@ const SafeStorage = (() => {
   }
 
   async function writeBackupDebounced() {
-    if (!isNative || !FS) return;
+    if (!state.hasFilesystem || !filesystemRef) return;
     if (pendingWrite) clearTimeout(pendingWrite);
     pendingWrite = setTimeout(async () => {
       pendingWrite = null;
       try {
-        await FS.writeFile({
+        await filesystemRef.writeFile({
           path: file,
           data: JSON.stringify(cache),
           directory: 'DATA',
           encoding: 'utf8',
         });
-      } catch (_) {}
+      } catch (err) {
+        const message = err && err.message ? err.message : String(err);
+        console.warn('[SafeStorage] backup write failed', message);
+      }
     }, 150);
   }
 
   async function readBackupFile() {
-    if (!isNative || !FS) return null;
+    if (!state.hasFilesystem || !filesystemRef) return null;
     try {
-      const { data } = await FS.readFile({ path: file, directory: 'DATA', encoding: 'utf8' });
+      const { data } = await filesystemRef.readFile({ path: file, directory: 'DATA', encoding: 'utf8' });
       return JSON.parse(data);
-    } catch (_) { return null; }
+    } catch (err) {
+      const message = err && err.message ? err.message : String(err);
+      console.warn('[SafeStorage] backup read failed', message);
+      return null;
+    }
   }
 
   return {
@@ -254,6 +410,7 @@ const SafeStorage = (() => {
     remove,
     exportAll,
     importAll,
+    getState: () => ({ ...state }),
   };
 })();
 

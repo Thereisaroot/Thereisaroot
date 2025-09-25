@@ -503,7 +503,8 @@ function setupDebugUI(tuning, applyTuningCallback, saveTuningCallback) {
       const next = clampSliderValue(savingsInput, savingsInput.value);
       savings = next;
       savingsInput.value = next;
-      try { localStorage.setItem(SAVINGS_KEY, String(next)); } catch (_) {}
+  try { localStorage.setItem(SAVINGS_KEY, String(next)); }
+  catch (_) {}
     });
   }
 
@@ -515,7 +516,8 @@ function setupDebugUI(tuning, applyTuningCallback, saveTuningCallback) {
       const next = clampSliderValue(expInput, expInput.value);
       exp = next;
       expInput.value = next;
-      try { localStorage.setItem(EXP_KEY, String(next)); } catch (_) {}
+  try { localStorage.setItem(EXP_KEY, String(next)); }
+  catch (_) {}
     });
   }
 }
