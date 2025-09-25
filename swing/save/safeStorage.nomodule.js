@@ -22,7 +22,15 @@ const SafeStorage = (() => {
   const FS = Plugins && Plugins.Filesystem;
 
   async function init(opts) {
-    console.log('[SafeStorage] platform', PLATFORM, 'isNative', isNative);
+    const platformName = (typeof PLATFORM !== 'undefined')
+      ? PLATFORM
+      : (Cap && typeof Cap.getPlatform === 'function')
+        ? Cap.getPlatform()
+        : (Cap && Cap.platform) || 'web';
+    if (typeof PLATFORM === 'undefined') {
+      try { globalThis.PLATFORM = platformName; } catch (_) {}
+    }
+    console.log('[SafeStorage] platform', platformName, 'isNative', isNative);
     console.log('[SafeStorage] init start', opts);
     ns = opts && opts.namespace || ns;
     file = (opts && opts.fileName) || file;
