@@ -340,6 +340,7 @@ function renderIntro(g, time) {
 
       const cardW = innerWidth;
       const cardH = 98;
+      const statusWidth = 80;
       let gy = filterY + filterH + 18;
       g.textAlign = 'left';
       for (const entry of goalEntries) {
@@ -384,9 +385,9 @@ function renderIntro(g, time) {
             : t('records.filters.pending');
         const statusColor = entry.claimed ? '#9cffc7' : entry.achieved ? '#ffe066' : '#ff9c9c';
 
-        let claimButtonRect = null;
+        let statusX = rect.x + rect.w - statusWidth - 32;
         if (entry.achieved && !entry.claimed) {
-          claimButtonRect = { x: rect.x + rect.w - 124, y: rect.y + rect.h - 36, w: 110, h: 24 };
+          const claimButtonRect = { x: rect.x + rect.w - statusWidth - 24, y: rect.y + rect.h - 32, w: statusWidth, h: 18 };
           g.fillStyle = '#31507a';
           g.fillRect(claimButtonRect.x, claimButtonRect.y, claimButtonRect.w, claimButtonRect.h);
           g.strokeStyle = '#ffe066';
@@ -395,14 +396,24 @@ function renderIntro(g, time) {
           g.textAlign = 'center';
           g.fillText(t('records.goals.claim'), claimButtonRect.x + claimButtonRect.w / 2, claimButtonRect.y + claimButtonRect.h / 2 + 1);
           recordsGoalClaimButtons.push({ rect: claimButtonRect, goalId: entry.goal.id });
+        } else {
+          statusX = rect.x + rect.w - 18;
         }
-
-        const statusX = claimButtonRect ? claimButtonRect.x - 12 : rect.x + rect.w - 18;
 
         g.textAlign = 'right';
         g.fillStyle = entry.achieved && !entry.claimed ? '#ffe066' : (entry.claimed ? '#9cffc7' : '#b4c0d9');
         g.font = `9px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-        g.fillText(rewardLabel, statusX, rewardY);
+        const showRawReward = entry.claimed || !entry.achieved;
+        if (showRawReward) {
+          g.fillStyle = '#b4c0d9';
+          g.textAlign = 'right';
+          g.font = `9px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+          g.fillText(rewardLabel, statusX, rewardY);
+        } else if (entry.goal.reward) {
+          g.textAlign = 'right';
+          g.font = `9px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+          g.fillText(`$${formatNumber(entry.goal.reward)}`, statusX, rewardY);
+        }
 
         g.fillStyle = statusColor;
         g.fillText(statusLabel, statusX, bottomY);
@@ -595,6 +606,26 @@ function drawRope(g, rope) {
   g.moveTo(sx, sy);
   g.lineTo(tx, ty);
   g.stroke();
+
+  // Handle grip near rope tip
+  const dx = tx - sx;
+  const dy = ty - sy;
+  const length = Math.hypot(dx, dy) || 1;
+  const hx = tx - (dx / length) * 12;
+  const hy = ty - (dy / length) * 12;
+  g.save();
+  g.translate(hx, hy);
+  g.rotate(Math.atan2(dy, dx));
+  const gripW = 18;
+  const gripH = 6;
+  g.fillStyle = '#132235';
+  g.fillRect(-gripW / 2 - 1, -gripH / 2 - 1, gripW + 2, gripH + 2);
+  g.fillStyle = starModeActive ? '#ffe066' : '#4c668a';
+  g.fillRect(-gripW / 2, -gripH / 2, gripW, gripH);
+  g.fillStyle = starModeActive ? '#fff3b0' : '#89a5cc';
+  g.fillRect(-gripW / 2 + 3, -gripH / 2 + 1, gripW - 6, gripH - 2);
+  g.restore();
+
   // Anchor dot
   g.fillStyle = starModeActive ? '#ffd966' : '#92a0bb';
   g.beginPath();
@@ -1198,17 +1229,17 @@ function updateRun(dt) {
     spawnEffect('break', player.x, groundY);
     // Earnings and EXP: $1 and 1 EXP per point beyond 5 this run
     const baseEarned = Math.max(0, Math.floor(baseScoreForRewards - 5));
-    let earnedMoney = baseEarned;
-    let earnedExp = baseEarned;
-    if (characterIs('pirate')) earnedMoney += pirateBonusThisRun;
-    earnedMoney += tailorCashBonusThisRun;
+    let earnedMoneyCore = baseEarned;
+    let earnedExpCore = baseEarned;
+    if (characterIs('pirate')) earnedMoneyCore += pirateBonusThisRun;
+    earnedMoneyCore += tailorCashBonusThisRun;
     if (characterIs('knight')) {
-      earnedMoney *= 2;
-      earnedExp *= 2;
+      earnedMoneyCore *= 2;
+      earnedExpCore *= 2;
     }
     if (shopInv.gambleActive) {
-      earnedMoney = Math.floor(earnedMoney * 1.5);
-      earnedExp = Math.floor(earnedExp * 1.5);
+      earnedMoneyCore = Math.floor(earnedMoneyCore * 1.5);
+      earnedExpCore = Math.floor(earnedExpCore * 1.5);
       shopInv.gambleActive = false; // Consume gamble
       saveShopInv(shopInv);
       hudConsumables = (hudConsumables || []).filter((entry) => entry && entry.id !== 'gamble');
@@ -1217,7 +1248,7 @@ function updateRun(dt) {
     if (rouletteState && rouletteState.active) {
       finalizeRouletteSpin();
       if (rouletteState.finalOp != null && !rouletteState.applied) {
-        const beforeMoney = earnedMoney;
+        const beforeMoney = earnedMoneyCore;
         let afterMoney = beforeMoney;
         const op = rouletteState.finalOp;
         const val = rouletteState.finalValue || 0;
@@ -1225,17 +1256,19 @@ function updateRun(dt) {
         else if (op === '-') afterMoney = beforeMoney - val;
         else if (op === 'x') afterMoney = beforeMoney * Math.max(1, val);
         afterMoney = Math.max(0, Math.floor(afterMoney));
-        earnedMoney = afterMoney;
+        earnedMoneyCore = afterMoney;
         rouletteSummary = { before: beforeMoney, after: afterMoney, op, value: val };
         rouletteState.applied = true;
       }
     }
 
-    lastEarned = earnedMoney;
-    lastExpEarned = earnedExp;
+    const summaryMoney = earnedMoneyCore + stageGateCashBonusThisRun;
+    const summaryExp = earnedExpCore + stageGateExpBonusThisRun;
+    lastEarned = summaryMoney;
+    lastExpEarned = summaryExp;
     // Compute potential level-up BEFORE applying demo resets (based on EXP)
     const prevLevel = getLevelByExp(exp);
-    const newLevel = getLevelByExp(exp + earnedExp);
+    const newLevel = getLevelByExp(exp + earnedExpCore);
     if (newLevel > prevLevel) {
       gameOverLevelUp = { from: prevLevel, to: newLevel };
       levelUpPopupTimer = 0;
@@ -1244,19 +1277,20 @@ function updateRun(dt) {
       const cy = CONFIG.height * 0.36;
       spawnEffect('big', cx, cy);
     }
-    if (earnedMoney > 0 || earnedExp > 0) {
-      // Add to money and EXP
-      savings += earnedMoney;
-      exp += earnedExp;
-      if (earnedMoney > 0 && typeof addToPlayerStat === 'function') addToPlayerStat('totalCashEarned', earnedMoney);
-      if (earnedExp > 0 && typeof addToPlayerStat === 'function') addToPlayerStat('totalExpEarned', earnedExp);
+    if (earnedMoneyCore > 0 || earnedExpCore > 0) {
+      savings += earnedMoneyCore;
+      exp += earnedExpCore;
+      if (earnedMoneyCore > 0 && typeof addToPlayerStat === 'function') addToPlayerStat('totalCashEarned', earnedMoneyCore);
+      if (earnedExpCore > 0 && typeof addToPlayerStat === 'function') addToPlayerStat('totalExpEarned', earnedExpCore);
       try {
         localStorage.setItem(SAVINGS_KEY, String(savings));
         localStorage.setItem(EXP_KEY, String(exp));
       } catch(_){}
     }
-    tailorCashBonusThisRun = 0;
-    pirateBonusThisRun = 0;
+      tailorCashBonusThisRun = 0;
+      pirateBonusThisRun = 0;
+      stageGateCashBonusThisRun = 0;
+      stageGateExpBonusThisRun = 0;
     baseScoreForRewards = 0;
     wizardFloatTimer = 0;
     wizardSpinTimer = 0;
@@ -1287,7 +1321,7 @@ function updateRun(dt) {
     // End fever state on game over
     starModeActive = false;
     starModeEndTime = 0;
-    if (typeof IS_NATIVE_APP !== 'undefined' && IS_NATIVE_APP && typeof consumeDailyLife === 'function') {
+    if (!demoActive && typeof IS_NATIVE_APP !== 'undefined' && IS_NATIVE_APP && typeof consumeDailyLife === 'function') {
       if (!lifeSpentThisRun) {
         if (typeof ensureDailyState === 'function') ensureDailyState();
         consumeDailyLife();
@@ -1296,6 +1330,14 @@ function updateRun(dt) {
     }
     if (typeof addToPlayerStat === 'function') addToPlayerStat('gameOverCount', 1);
     if (typeof flushPlayerStats === 'function') flushPlayerStats();
+    if (demoActive) {
+      try { localStorage.setItem(DEMO_DONE_KEY, '1'); } catch (_) {}
+      demoActive = false;
+      if (playerStats && Array.isArray(playerStats.goalsClaimed)) {
+        playerStats.goalsClaimed = [];
+        markPlayerStatsDirty && markPlayerStatsDirty();
+      }
+    }
     State.current = 'gameover';
     // Clear current input edges and lock inputs briefly to avoid instant restart
     if (typeof UI !== 'undefined') UI.reset();
@@ -1337,7 +1379,7 @@ function renderRun(g) {
     if (rouletteGlint) {
       const colors = ['#ff6ec7', '#ffd966', '#7dd3ff', '#9cff9c'];
       const segments = 9;
-      const alphaBase = 0.4;
+      const alphaBase = 0.2;
       const alphaPulse = 0.3;
       for (let i = 0; i < segments; i++) {
         const angle = (i / segments) * Math.PI * 2 + time * 3.8;

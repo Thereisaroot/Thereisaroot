@@ -808,6 +808,8 @@ let wizardSpinTimer = 0;
 let wizardSpinRate = 0;
 let activeRevivalCharges = 0; // Revival charges remaining this run
 let tailorCashBonusThisRun = 0; // Extra $ from Tailor rope catches this run
+let stageGateCashBonusThisRun = 0;
+let stageGateExpBonusThisRun = 0;
 let hudConsumables = [];
 // Web rope creation marker (explicitly declared to avoid implicit globals)
 let webRopeJustCreated = false;
@@ -852,6 +854,7 @@ const STAGE_COLORS = [
 const STAGE_BANNER_DURATION = 1.5;
 const STAGE_GATE_BONUS_SCORE = 5;
 const STAGE_GATE_BONUS_CASH = 5;
+const STAGE_GATE_BONUS_EXP = 5;
 const BOSS_TYPES = ['bullet', 'slam', 'collect'];
 const BOSS_FAIL_RETURN_DELAY = 1.0;
 
@@ -1070,9 +1073,17 @@ function grantStageGateReward(triggerRope) {
   if (triggerRope) triggerRope.stageGateRewarded = true;
   if (pendingStageGate) pendingStageGate.rewarded = true;
   score += STAGE_GATE_BONUS_SCORE;
-  spawnEffect('combo', player.x, player.y + 26, t('effects.stageBonus', { cash: STAGE_GATE_BONUS_CASH }));
+  exp += STAGE_GATE_BONUS_EXP;
+  spawnEffect('combo', player.x, player.y + 26, t('effects.stageBonus', {
+    cash: STAGE_GATE_BONUS_CASH,
+  }));
   savings += STAGE_GATE_BONUS_CASH;
+  stageGateCashBonusThisRun += STAGE_GATE_BONUS_CASH;
+  stageGateExpBonusThisRun += STAGE_GATE_BONUS_EXP;
   try { localStorage.setItem(SAVINGS_KEY, String(savings)); } catch (_) {}
+  if (typeof addToPlayerStat === 'function') addToPlayerStat('totalExpEarned', STAGE_GATE_BONUS_EXP);
+  if (typeof addToPlayerStat === 'function') addToPlayerStat('totalCashEarned', STAGE_GATE_BONUS_CASH);
+  try { localStorage.setItem(EXP_KEY, String(exp)); } catch (_) {}
   if (stageNumber != null) maybeTriggerBossStage(stageNumber, triggerRope);
 }
 
@@ -2342,6 +2353,8 @@ function resetRun() {
   shopInv = consumableResult.shopInv;
   activeRevivalCharges = consumableResult.activeRevivalCharges;
   hudConsumables = consumableResult.hudConsumables || [];
+  stageGateCashBonusThisRun = 0;
+  stageGateExpBonusThisRun = 0;
   spawnInitialRope();
   ensureRopesBuffered();
   airJumpsLeft = 0;

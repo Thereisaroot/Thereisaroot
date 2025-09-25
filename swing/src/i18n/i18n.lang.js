@@ -111,7 +111,7 @@
         completed: 'Done',
       },
       goals: {
-        reward: 'Reward: $${amount}',
+        reward: 'Reward: ${amount}',
         claim: 'Claim',
         status: {
           completed: 'Completed',
@@ -126,9 +126,25 @@
           title: 'Earn $500',
           desc: 'Accumulate $500 in total earnings.',
         },
+        cash_1000: {
+          title: 'Earn $1,000',
+          desc: 'Accumulate $1,000 in total earnings.',
+        },
+        cash_2000: {
+          title: 'Earn $2,000',
+          desc: 'Accumulate $2,000 in total earnings.',
+        },
         exp_1000: {
           title: 'Earn 1,000 EXP',
           desc: 'Reach 1,000 total EXP.',
+        },
+        exp_2000: {
+          title: 'Earn 2,000 EXP',
+          desc: 'Reach 2,000 total EXP.',
+        },
+        exp_4000: {
+          title: 'Earn 4,000 EXP',
+          desc: 'Reach 4,000 total EXP.',
         },
         items_owned_5: {
           title: 'Own 5 Items',
@@ -138,16 +154,36 @@
           title: 'Recruit 3 Characters',
           desc: 'Own at least three characters.',
         },
+        characters_owned_5: {
+          title: 'Recruit 5 Characters',
+          desc: 'Own at least five characters.',
+        },
         ropes_1000: {
           title: 'Catch 1,000 Ropes',
           desc: 'Catch ropes 1,000 times in total.',
+        },
+        ropes_2000: {
+          title: 'Catch 2,000 Ropes',
+          desc: 'Catch ropes 2,000 times in total.',
+        },
+        ropes_4000: {
+          title: 'Catch 4,000 Ropes',
+          desc: 'Catch ropes 4,000 times in total.',
         },
         items_collected_200: {
           title: 'Grab 200 Items',
           desc: 'Collect in-run items 200 times.',
         },
+        items_collected_400: {
+          title: 'Grab 400 Items',
+          desc: 'Collect in-run items 400 times.',
+        },
+        items_collected_800: {
+          title: 'Grab 800 Items',
+          desc: 'Collect in-run items 800 times.',
+        },
       },
-      goalClaimed: 'Reward claimed! +$${amount}',
+      goalClaimed: 'Reward claimed! +${amount}',
     },
     hud: {
       score: 'SCORE {score}',
@@ -175,8 +211,8 @@
     bossOutcome: {
       success: 'Boss Cleared!',
       failure: 'Boss Failed...',
-      rewardCashScore: '+${cash}$ / +{score} pts',
-      rewardCash: '+${cash}$ cash',
+      rewardCashScore: '+${cash} / +{score} pts',
+      rewardCash: '+${cash} cash',
       rewardScore: '+{score} pts',
       reason: {
         hit: 'You were hit!',
@@ -211,7 +247,7 @@
       wizardUnlocked: 'Wizard unlocked! Enjoy the sparkle.',
       cashTitle: '$20 Pouch',
       cashDesc: 'Watch an ad to receive $20 instantly.',
-      cashGranted: '${amount}$ added to savings.',
+      cashGranted: '${amount} added to savings.',
       watch: 'WATCH AD',
       loading: 'Loading...',
       claimedToday: 'Already claimed today.',
@@ -243,10 +279,10 @@
       ownedTag: '[OWNED]',
       lockTag: 'LV {level}',
       levelTag: 'LV {level}',
-      balance: 'Funds: ${amount}$',
+      balance: 'Funds: ${amount}',
       specialTag: 'SPECIAL',
       lockedLevel: 'Reach LV {level}',
-      lockedFunds: 'Need ${amount}$',
+      lockedFunds: 'Need ${amount}',
       lockedSpecial: 'Special unlock required',
       price: '${amount}',
       itemLevel: 'Lv. {level}',
@@ -258,7 +294,7 @@
       confirmSelectCharacter: 'Select {name}?',
       error: {
         level: 'Requires LV {level}',
-        funds: 'Need ${amount}$',
+        funds: 'Need ${amount}',
         alreadyPurchased: 'Already purchased',
         special: 'Requires special unlock',
       },
@@ -266,7 +302,7 @@
     effects: {
       stageBonus: '+${cash}',
       cashPickup: '+$',
-      cashEarned: '+$${cash}',
+      cashEarned: '+${cash}',
       pointsEarned: '+{points}P',
       slow: 'SLOW!',
       comboCount: '{combo} COMBO',
@@ -277,11 +313,11 @@
     items: {
       glow: {
         name: 'Glow',
-        description: 'Glow effect and +10% catch radius per level (max 3).',
+        description: 'Glow effect and +10% catch radius per level.',
       },
       buds: {
         name: 'Buds',
-        description: 'Adds rotating orbs that auto-catch ropes, boxes, and block bullets (max 6).',
+        description: 'Adds rotating orbs that auto-catch ropes, boxes, and block bullets.',
       },
       plusjump: {
         name: '+Jump',
@@ -293,15 +329,15 @@
       },
       big: {
         name: 'Big',
-        description: 'Increases body size by 2.5% per level (max 5).',
+        description: 'Increases body size by 2.5% per level.',
       },
       gamble: {
         name: 'Gamble',
-        description: 'Next run earns 1.5x money and EXP (one-time use).',
+        description: 'Next run earns 1.5x money and EXP.',
       },
       magnet: {
         name: 'Magnet',
-        description: 'Pulls nearby boxes and +10px pickup radius per level (max 5).',
+        description: 'Pulls nearby boxes and +10px pickup radius per level.',
       },
       combo: {
         name: 'Combo+',
@@ -313,7 +349,7 @@
       },
       lucky: {
         name: 'Lucky',
-        description: 'Item spawn chance +5% per level (max 5).',
+        description: 'Item spawn chance +5% per level.',
       },
       revival: {
         name: 'Revival',
@@ -321,7 +357,7 @@
       },
       fever: {
         name: 'Fever+',
-        description: 'Extends star mode by +1 second per level (max 3).',
+        description: 'Extends star mode by +1 second per level.',
       },
     },
     chars: {
@@ -493,9 +529,25 @@
           title: '소지금 500$ 모으기',
           desc: '누적 소지금을 500$ 이상 모으세요.',
         },
+        cash_1000: {
+          title: '소지금 1,000$ 모으기',
+          desc: '누적 소지금을 1,000$ 이상 모으세요.',
+        },
+        cash_2000: {
+          title: '소지금 2,000$ 모으기',
+          desc: '누적 소지금을 2,000$ 이상 모으세요.',
+        },
         exp_1000: {
           title: '경험치 1000 달성',
           desc: '누적 경험치를 1000 이상 모으세요.',
+        },
+        exp_2000: {
+          title: '경험치 2000 달성',
+          desc: '누적 경험치를 2000 이상 모으세요.',
+        },
+        exp_4000: {
+          title: '경험치 4000 달성',
+          desc: '누적 경험치를 4000 이상 모으세요.',
         },
         items_owned_5: {
           title: '아이템 5종 보유',
@@ -505,13 +557,33 @@
           title: '캐릭터 3종 수집',
           desc: '캐릭터를 3명 이상 보유하세요.',
         },
+        characters_owned_5: {
+          title: '캐릭터 5종 수집',
+          desc: '캐릭터를 5명 이상 보유하세요.',
+        },
         ropes_1000: {
           title: '로프 1000번 잡기',
           desc: '누적 1000번 로프를 잡으세요.',
         },
+        ropes_2000: {
+          title: '로프 2000번 잡기',
+          desc: '누적 2000번 로프를 잡으세요.',
+        },
+        ropes_4000: {
+          title: '로프 4000번 잡기',
+          desc: '누적 4000번 로프를 잡으세요.',
+        },
         items_collected_200: {
           title: '아이템 200개 획득',
           desc: '인게임 아이템을 200번 획득하세요.',
+        },
+        items_collected_400: {
+          title: '아이템 400개 획득',
+          desc: '인게임 아이템을 400번 획득하세요.',
+        },
+        items_collected_800: {
+          title: '아이템 800개 획득',
+          desc: '인게임 아이템을 800번 획득하세요.',
         },
       },
       goalClaimed: '보상 {amount}$을 획득했습니다!',
@@ -542,8 +614,8 @@
     bossOutcome: {
       success: '보스를 격파했습니다!',
       failure: '보스 도전에 실패했습니다...',
-      rewardCashScore: '+${cash}$ / +{score}점',
-      rewardCash: '+${cash}$ 획득',
+      rewardCashScore: '+${cash} / +{score}점',
+      rewardCash: '+${cash} 획득',
       rewardScore: '+{score}점 획득',
       reason: {
         hit: '공격에 맞았습니다.',
@@ -578,7 +650,7 @@
       wizardUnlocked: '위자드가 해제되었습니다!',
       cashTitle: '$20 주머니',
       cashDesc: '광고를 보면 바로 20달러를 획득합니다.',
-      cashGranted: '${amount}$를 소지금에 추가했습니다.',
+      cashGranted: '${amount}를 소지금에 추가했습니다.',
       watch: '광고 보기',
       loading: '불러오는 중...',
       claimedToday: '오늘은 이미 받았습니다.',
@@ -633,7 +705,7 @@
     effects: {
       stageBonus: '+${cash}',
       cashPickup: '+$',
-      cashEarned: '+$${cash}',
+      cashEarned: '+${cash}',
       pointsEarned: '+{points}P',
       slow: '슬로우!',
       comboCount: '{combo} COMBO',
@@ -660,7 +732,7 @@
       },
       big: {
         name: '빅',
-        description: '레벨당 몸집이 2.5% 커집니다 (최대 5레벨).',
+        description: '레벨당 몸집이 2.5% 커집니다.',
       },
       gamble: {
         name: '갬블',
@@ -668,11 +740,11 @@
       },
       magnet: {
         name: '마그넷',
-        description: '근처 상자를 끌어당기고 레벨당 +10px 범위가 증가합니다 (최대 5).',
+        description: '근처 상자를 끌어당기고 레벨당 +10px 범위가 증가합니다.',
       },
       combo: {
         name: '콤보+',
-        description: '콤보 캐치마다 레벨당 +1 점이 추가됩니다 (배수 아님, 최대 3).',
+        description: '콤보 캐치마다 레벨당 +1 점이 추가됩니다.',
       },
       slow: {
         name: '슬로',
@@ -680,7 +752,7 @@
       },
       lucky: {
         name: '럭키',
-        description: '아이템 상자 출현 확률이 레벨당 +5% 증가합니다 (최대 5).',
+        description: '아이템 상자 출현 확률이 레벨당 +5% 증가합니다.',
       },
       revival: {
         name: '부활',
@@ -688,7 +760,7 @@
       },
       fever: {
         name: '피버+',
-        description: '스타 모드 지속 시간이 레벨당 +1초 늘어납니다 (최대 3).',
+        description: '스타 모드 지속 시간이 레벨당 +1초 늘어납니다.',
       },
     },
     chars: {
