@@ -1330,13 +1330,8 @@ function updateRun(dt) {
     }
     if (typeof addToPlayerStat === 'function') addToPlayerStat('gameOverCount', 1);
     if (typeof flushPlayerStats === 'function') flushPlayerStats();
-    if (demoActive) {
-      try { localStorage.setItem(DEMO_DONE_KEY, '1'); } catch (_) {}
-      demoActive = false;
-      if (playerStats && Array.isArray(playerStats.goalsClaimed)) {
-        playerStats.goalsClaimed = [];
-        markPlayerStatsDirty && markPlayerStatsDirty();
-      }
+    if(exp == 0 && savings == 0 && demoActive == false) {
+      savePlayerStats(playerStatDefault);
     }
     State.current = 'gameover';
     // Clear current input edges and lock inputs briefly to avoid instant restart

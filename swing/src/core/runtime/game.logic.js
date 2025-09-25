@@ -122,10 +122,7 @@ const RECORD_GOALS_PER_PAGE = 3;
 const recordGoalDefs = (typeof window !== 'undefined' && window.RECORD_GOALS) || [];
 let playerStats = (typeof loadPlayerStats === 'function') ? loadPlayerStats() : null;
 let playerStatsDirty = false;
-
-function ensurePlayerStats() {
-  if (!playerStats) {
-    playerStats = (typeof loadPlayerStats === 'function') ? loadPlayerStats() : {
+let playerStatDefault = {
       version: 1,
       gameOverCount: 0,
       totalExpEarned: 0,
@@ -136,6 +133,9 @@ function ensurePlayerStats() {
       itemsCollected: 0,
       goalsClaimed: [],
     };
+function ensurePlayerStats() {
+  if (!playerStats) {
+    playerStats = (typeof loadPlayerStats === 'function') ? loadPlayerStats() : playerStatDefault
   }
   if (!Array.isArray(playerStats.goalsClaimed)) playerStats.goalsClaimed = [];
   return playerStats;
