@@ -76,6 +76,77 @@
     menu: {
       unlockAtLevel: 'Opens at Lv {level}.',
     },
+    records: {
+      title: 'Character Records',
+      menuButton: 'Records',
+      menu: {
+        history: 'Lifetime Stats',
+        historyHint: 'View your cumulative progress.',
+        goals: 'Achievement Goals',
+        goalsHint: 'Complete goals and claim rewards.',
+        closeHint: 'Click outside or press ESC to close.',
+      },
+      stats: {
+        gameOverCount: 'Total Game Overs',
+        totalExp: 'Total EXP Earned',
+        totalCash: 'Total Cash Earned',
+        itemsOwned: 'Owned Items',
+        charactersOwned: 'Owned Characters',
+        ropesCaught: 'Ropes Caught',
+        bossSuccess: 'Boss Victories',
+        bossFailure: 'Boss Fails',
+        itemsCollected: 'Items Collected',
+      },
+      common: {
+        none: 'None',
+      },
+      pagination: 'Page {page}/{total}',
+      back: 'Back',
+      filters: {
+        all: 'All',
+        pending: 'Incomplete',
+        achievable: 'Claimable',
+        completed: 'Completed',
+      },
+      goals: {
+        reward: 'Reward: $${amount}',
+        claim: 'Claim',
+        status: {
+          completed: 'Completed',
+          pending: 'Incomplete',
+        },
+        rewardPrefix: 'Reward: $',
+        first_boss_clear: {
+          title: 'First Boss Clear',
+          desc: 'Defeat any boss once.',
+        },
+        cash_500: {
+          title: 'Earn $500',
+          desc: 'Accumulate $500 in total earnings.',
+        },
+        exp_1000: {
+          title: 'Earn 1,000 EXP',
+          desc: 'Reach 1,000 total EXP.',
+        },
+        items_owned_5: {
+          title: 'Own 5 Items',
+          desc: 'Own at least five shop items.',
+        },
+        characters_owned_3: {
+          title: 'Recruit 3 Characters',
+          desc: 'Own at least three characters.',
+        },
+        ropes_1000: {
+          title: 'Catch 1,000 Ropes',
+          desc: 'Catch ropes 1,000 times in total.',
+        },
+        items_collected_200: {
+          title: 'Grab 200 Items',
+          desc: 'Collect in-run items 200 times.',
+        },
+      },
+      goalClaimed: 'Reward claimed! +$${amount}',
+    },
     hud: {
       score: 'SCORE {score}',
       best: 'BEST {best}',
@@ -395,6 +466,77 @@
     },
     menu: {
       unlockAtLevel: 'Lv {level}에 오픈됩니다.',
+    },
+    records: {
+      title: '내 캐릭터 기록',
+      menuButton: '기록',
+      menu: {
+        history: '누적 기록',
+        historyHint: '지금까지 모은 데이터를 한눈에 확인해요.',
+        goals: '달성 목표',
+        goalsHint: '조건을 채우고 보상을 획득하세요.',
+        closeHint: 'ESC 또는 바깥 영역을 누르면 닫힙니다.',
+      },
+      stats: {
+        gameOverCount: '게임 오버 횟수',
+        totalExp: '누적 경험치',
+        totalCash: '누적 소지금',
+        itemsOwned: '보유 아이템',
+        charactersOwned: '보유 캐릭터',
+        ropesCaught: '잡은 로프 수',
+        bossSuccess: '격파한 보스 수',
+        bossFailure: '실패한 보스 수',
+        itemsCollected: '먹은 인게임 아이템',
+      },
+      common: {
+        none: '없음',
+      },
+      pagination: '{page} / {total} 페이지',
+      back: '뒤로가기',
+      filters: {
+        all: '전체',
+        pending: '미달성',
+        achievable: '달성',
+        completed: '완료',
+      },
+      goals: {
+        reward: '보상: {amount}$',
+        claim: '달성',
+        status: {
+          completed: '완료',
+          pending: '미달성',
+        },
+        rewardPrefix: '보상: $',
+        first_boss_clear: {
+          title: '첫 보스 격파',
+          desc: '아무 보스나 한 번 격파하세요.',
+        },
+        cash_500: {
+          title: '소지금 500$ 모으기',
+          desc: '누적 소지금을 500$ 이상 모으세요.',
+        },
+        exp_1000: {
+          title: '경험치 1000 달성',
+          desc: '누적 경험치를 1000 이상 모으세요.',
+        },
+        items_owned_5: {
+          title: '아이템 5종 보유',
+          desc: '상점 아이템을 5개 이상 보유하세요.',
+        },
+        characters_owned_3: {
+          title: '캐릭터 3종 수집',
+          desc: '캐릭터를 3명 이상 보유하세요.',
+        },
+        ropes_1000: {
+          title: '로프 1000번 잡기',
+          desc: '누적 1000번 로프를 잡으세요.',
+        },
+        items_collected_200: {
+          title: '아이템 200개 획득',
+          desc: '인게임 아이템을 200번 획득하세요.',
+        },
+      },
+      goalClaimed: '보상 {amount}$을 획득했습니다!',
     },
     hud: {
       score: 'SCORE {score}',

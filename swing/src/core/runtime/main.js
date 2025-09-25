@@ -74,6 +74,21 @@ async function start() {
   } catch (_) {}
   // Load shop inventory
   shopInv = loadShopInv(shopInv);
+  if (typeof ensurePlayerStats === 'function') ensurePlayerStats();
+  if (typeof getPlayerStats === 'function') {
+    const stats = getPlayerStats();
+    if (stats) {
+      const expGap = Math.max(0, exp - (Number(stats.totalExpEarned) || 0));
+      if (expGap > 0) addToPlayerStat && addToPlayerStat('totalExpEarned', expGap);
+      const cashGap = Math.max(0, savings - (Number(stats.totalCashEarned) || 0));
+      if (cashGap > 0) addToPlayerStat && addToPlayerStat('totalCashEarned', cashGap);
+      if (!stats.recordsBootstrapped) {
+        stats.recordsBootstrapped = true;
+        markPlayerStatsDirty && markPlayerStatsDirty();
+        flushPlayerStats && flushPlayerStats();
+      }
+    }
+  }
   if (selectedCharacter === 'wizard') {
     const ownsWizard = shopInv.characters && shopInv.characters.includes('wizard');
     if (!ownsWizard && !demoActive) {

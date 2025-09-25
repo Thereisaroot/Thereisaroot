@@ -116,6 +116,184 @@ let lastDemoLoss = false;
 let fastModeEnabled = false;
 let comboCount = 0;
 
+const RECORD_HISTORY_PER_PAGE = 4;
+const RECORD_GOALS_PER_PAGE = 3;
+
+const recordGoalDefs = (typeof window !== 'undefined' && window.RECORD_GOALS) || [];
+let playerStats = (typeof loadPlayerStats === 'function') ? loadPlayerStats() : null;
+let playerStatsDirty = false;
+
+function ensurePlayerStats() {
+  if (!playerStats) {
+    playerStats = (typeof loadPlayerStats === 'function') ? loadPlayerStats() : {
+      version: 1,
+      gameOverCount: 0,
+      totalExpEarned: 0,
+      totalCashEarned: 0,
+      ropesCaught: 0,
+      bossSuccessCount: 0,
+      bossFailureCount: 0,
+      itemsCollected: 0,
+      goalsClaimed: [],
+    };
+  }
+  if (!Array.isArray(playerStats.goalsClaimed)) playerStats.goalsClaimed = [];
+  return playerStats;
+}
+
+function getPlayerStats() {
+  return ensurePlayerStats();
+}
+
+function markPlayerStatsDirty() {
+  playerStatsDirty = true;
+}
+
+function addToPlayerStat(key, amount = 1) {
+  if (!key || !Number.isFinite(amount)) return;
+  const stats = ensurePlayerStats();
+  const current = Number.isFinite(stats[key]) ? stats[key] : 0;
+  stats[key] = current + amount;
+  markPlayerStatsDirty();
+}
+
+function recordGoalClaimed(goalId) {
+  if (!goalId) return;
+  const stats = ensurePlayerStats();
+  if (!stats.goalsClaimed.includes(goalId)) {
+    stats.goalsClaimed.push(goalId);
+    markPlayerStatsDirty();
+  }
+}
+
+function isGoalClaimed(goalId) {
+  const stats = ensurePlayerStats();
+  return stats.goalsClaimed.includes(goalId);
+}
+
+function flushPlayerStats() {
+  if (!playerStatsDirty) return;
+  if (typeof savePlayerStats === 'function') {
+    savePlayerStats(ensurePlayerStats());
+    playerStatsDirty = false;
+  }
+}
+
+function getOwnedItemIds() {
+  const owned = [];
+  const specs = (typeof ITEM_SPECS !== 'undefined' && Array.isArray(ITEM_SPECS)) ? ITEM_SPECS : [];
+  for (const spec of specs) {
+    if (!spec || !spec.id) continue;
+    const { id, type } = spec;
+    let level = 0;
+    if (type === 'single') {
+      if (id === 'plusjump') level = shopInv.plusJump ? 1 : 0;
+      else if (id === 'fly') level = shopInv.fly ? 1 : 0;
+      else if (id === 'revival') level = shopInv.revival ? 1 : 0;
+    } else if (type === 'level') {
+      if (id === 'glow') level = shopInv.glowLevel || 0;
+      else if (id === 'buds') level = shopInv.budsLevel || 0;
+      else if (id === 'big') level = shopInv.bigLevel || 0;
+      else if (id === 'magnet') level = shopInv.magnetLevel || 0;
+      else if (id === 'combo') level = shopInv.comboLevel || 0;
+      else if (id === 'slow') level = shopInv.slowLevel || 0;
+      else if (id === 'lucky') level = shopInv.luckyLevel || 0;
+      else if (id === 'fever') level = shopInv.feverLevel || 0;
+    } else if (type === 'consumable') {
+      const count = shopInv.consumables && shopInv.consumables[id];
+      level = count > 0 ? count : 0;
+    }
+    if (level > 0) owned.push(id);
+  }
+  return owned;
+}
+
+function getOwnedCharacterIds() {
+  const owned = new Set(['default']);
+  if (Array.isArray(shopInv.characters)) {
+    shopInv.characters.forEach((id) => {
+      if (id) owned.add(id);
+    });
+  }
+  if (selectedCharacter) owned.add(selectedCharacter);
+  return Array.from(owned);
+}
+
+function buildRecordHistoryEntries() {
+  const stats = getPlayerStats();
+  const ownedItems = getOwnedItemIds();
+  const ownedChars = getOwnedCharacterIds();
+  return [
+    { id: 'gameOverCount', labelKey: 'records.stats.gameOverCount', type: 'number', value: stats.gameOverCount || 0 },
+    { id: 'totalExpEarned', labelKey: 'records.stats.totalExp', type: 'number', value: stats.totalExpEarned || 0 },
+    { id: 'totalCashEarned', labelKey: 'records.stats.totalCash', type: 'number', value: stats.totalCashEarned || 0 },
+    { id: 'itemsOwned', labelKey: 'records.stats.itemsOwned', type: 'list', value: ownedItems },
+    { id: 'charactersOwned', labelKey: 'records.stats.charactersOwned', type: 'list', value: ownedChars },
+    { id: 'ropesCaught', labelKey: 'records.stats.ropesCaught', type: 'number', value: stats.ropesCaught || 0 },
+    { id: 'bossSuccessCount', labelKey: 'records.stats.bossSuccess', type: 'number', value: stats.bossSuccessCount || 0 },
+    { id: 'bossFailureCount', labelKey: 'records.stats.bossFailure', type: 'number', value: stats.bossFailureCount || 0 },
+    { id: 'itemsCollected', labelKey: 'records.stats.itemsCollected', type: 'number', value: stats.itemsCollected || 0 },
+  ];
+}
+
+function goalMetricValue(statKey, stats, derived) {
+  switch (statKey) {
+    case 'itemsOwned':
+      return derived.itemsOwned.length;
+    case 'charactersOwned':
+      return derived.charactersOwned.length;
+    default:
+      return Number(stats[statKey] || 0);
+  }
+}
+
+function collectRecordGoalStates(filter = 'all') {
+  const stats = getPlayerStats();
+  const derived = {
+    itemsOwned: getOwnedItemIds(),
+    charactersOwned: getOwnedCharacterIds(),
+  };
+  const goals = [];
+  for (const goal of recordGoalDefs) {
+    if (!goal || !goal.id) continue;
+    const value = goalMetricValue(goal.stat, stats, derived);
+    const target = Math.max(0, goal.target || 0);
+    const achieved = value >= target && target > 0;
+    const claimed = isGoalClaimed(goal.id);
+    const status = claimed ? 'completed' : (achieved ? 'achievable' : 'pending');
+    if (filter === 'pending' && status !== 'pending') continue;
+    if (filter === 'achievable' && status !== 'achievable') continue;
+    if (filter === 'completed' && status !== 'completed') continue;
+    goals.push({
+      goal,
+      value,
+      target,
+      achieved,
+      claimed,
+      status,
+      progress: target > 0 ? Math.min(1, value / target) : 0,
+    });
+  }
+  return goals;
+}
+
+function claimRecordGoal(goalId) {
+  if (!goalId) return false;
+  const goals = collectRecordGoalStates('all');
+  const entry = goals.find((g) => g.goal && g.goal.id === goalId);
+  if (!entry || entry.claimed || !entry.achieved) return false;
+  const reward = Number(entry.goal.reward || 0);
+  if (reward > 0) {
+    savings += reward;
+    try { localStorage.setItem(SAVINGS_KEY, String(savings)); } catch(_){}
+    if (typeof addToPlayerStat === 'function') addToPlayerStat('totalCashEarned', reward);
+  }
+  recordGoalClaimed(goalId);
+  flushPlayerStats();
+  showMenuMessage('intro', t('records.goalClaimed', { amount: reward }));
+  return true;
+}
+
 
 // Level-up popup state for game over screen
 let gameOverLevelUp = null; // { from, to }
@@ -363,6 +541,24 @@ function buildIntroButtons() {
   const menuSpacing = 12;
   const menuSpecs = [
     {
+      key: 'records',
+      label: 'records.menuButton',
+      action: () => {
+        showRecords = true;
+        recordsView = 'menu';
+        recordsMenuOptionRects = [];
+        recordsCardRects = [];
+        recordsFilterButtons = [];
+        recordsGoalClaimButtons = [];
+        recordsPaginationButtons = [];
+        recordsBackButtonRect = null;
+        recordsHistoryPage = 0;
+        recordsGoalsPage = 0;
+        recordsGoalFilter = 'all';
+      },
+      requiredLevel: 1,
+    },
+    {
       key: 'items',
       label: 'common.items',
       shopMode: 'items',
@@ -394,6 +590,10 @@ function buildIntroButtons() {
       const disabled = lvl < spec.requiredLevel;
       const onDisabled = () => showMenuMessage('intro', t('menu.unlockAtLevel', { level: spec.requiredLevel }));
       const action = () => {
+        if (spec.key === 'records') {
+          if (typeof spec.action === 'function') spec.action();
+          return;
+        }
         previousState = State.current;
         State.current = 'shop';
         switchShopMode(spec.shopMode);
@@ -613,7 +813,7 @@ let activeBudsCount = 0; // Runtime buds count (reset per run)
 const SLOW_MO_SCALE = 0.65;
 const SLOW_MO_DURATION = 0.9;
 const SLOW_MO_COOLDOWN = 1.5;
-const SLOW_MO_TRIGGER_DELAY = 0.5;
+const SLOW_MO_TRIGGER_DELAY = 0.2;
 const COMBO_BONUS_PER_LEVEL = 1;
 const LUCKY_BONUS_PER_LEVEL = 0.05;
 const FEVER_BONUS_SECONDS = 1;
@@ -1092,6 +1292,7 @@ function initBossBattle() {
       bossSpeed: 90,
       bossMinY: 60,
       bossMaxY: CONFIG.height * 0.65,
+      bossOffsetX: CONFIG.width - 8,
       shotsFired: 0,
       totalShots: 15,
       shotInterval: 1.0,
@@ -1103,6 +1304,8 @@ function initBossBattle() {
       bulletSpeed: 220,
       failOnHit: false,
       nextVolleySize: 1,
+      topLeftAimFrequency: 4,
+      topLeftTarget: { x: 40, y: 48 },
     };
   } else if (bossState.type === 'slam') {
     bossState.battle = {
@@ -1275,7 +1478,7 @@ function updateBossTypeBullet(dt, battle) {
       }
     }
 
-    if (bullet.x < -40) {
+    if (bullet.x < camera.x - 40) {
       battle.dodged += 1;
       battle.bullets.splice(i, 1);
     }
@@ -1302,18 +1505,39 @@ function spawnBossBullet(battle) {
     return;
   }
   const speed = battle.bulletSpeed || 220;
+  const bossOffsetX = battle.bossOffsetX != null ? battle.bossOffsetX : (CONFIG.width - 8);
+  const spawnBaseX = (camera.x + bossOffsetX) - 12;
+  const spawnBaseY = battle.bossY;
+  const topLeftTarget = battle.topLeftTarget || { x: 40, y: 48 };
   for (let i = 0; i < volleySize; i += 1) {
-    const angleOffset = randRange(-10, 10) * (Math.PI / 180);
-    const angle = Math.PI + angleOffset;
+    const shotIndex = battle.shotsFired + 1;
+    const spawnY = spawnBaseY + ((i - (volleySize - 1) / 2) * 18);
+    const aimEvery = Math.max(2, battle.topLeftAimFrequency || 4);
+    const aimTopLeft = (shotIndex % aimEvery) === 0;
+    let targetX;
+    let targetY;
+    if (aimTopLeft) {
+      targetX = camera.x + (topLeftTarget.x != null ? topLeftTarget.x : 40);
+      targetY = topLeftTarget.y != null ? topLeftTarget.y : 48;
+    } else {
+      targetX = player.x + randRange(-20, 20);
+      targetY = (player.y - 10) + randRange(-12, 12);
+    }
+    const dx = targetX - spawnBaseX;
+    const dy = targetY - spawnY;
+    const mag = Math.hypot(dx, dy) || 1;
+    const vx = (dx / mag) * speed;
+    const vy = (dy / mag) * speed;
     battle.shotsFired += 1;
     battle.bullets.push({
-      x: camera.x + CONFIG.width + 24,
-      y: (CONFIG.height * 0.5) + randRange(-50, 50),
-      vx: Math.cos(angle) * speed,
-      vy: Math.sin(angle) * speed,
+      x: spawnBaseX,
+      y: spawnY,
+      vx,
+      vy,
       radius: 10,
       life: 0,
       hit: false,
+      target: aimTopLeft ? 'topLeft' : 'player',
     });
   }
   battle.nextVolleySize = desiredVolley === 1 ? 2 : 1;
@@ -1441,6 +1665,10 @@ function triggerBossOutcome({ success, score: rewardScore = 0, cash: rewardCash 
 
 function applyBossReturn(payload) {
   const { success, rewardScore = 0, rewardCash = 0, reason = null } = payload || {};
+  if (typeof addToPlayerStat === 'function') {
+    addToPlayerStat(success ? 'bossSuccessCount' : 'bossFailureCount', 1);
+    if (success && rewardCash > 0) addToPlayerStat('totalCashEarned', rewardCash);
+  }
   bossOutcomeBanner = { success, rewardScore, rewardCash, reason };
   bossOutcomeTimer = 2.0;
   bossProgress.active = false;
@@ -1486,6 +1714,7 @@ function applyBossReturn(payload) {
   player.vy = 260;
   catchLockUntil = simTime + 0.2;
 
+  if (typeof flushPlayerStats === 'function') flushPlayerStats();
   State.current = 'run';
   ensureRopesBuffered();
   bossState = null;
@@ -2180,6 +2409,20 @@ function drawCenteredText(g, text, y, size = 18, color = '#fff') {
 
 let showGuide = false;
 let showSettings = false;
+let showRecords = false;
+let recordsView = 'menu';
+let recordsMenuOptionRects = [];
+let recordsCardRects = [];
+let recordsFilterButtons = [];
+let recordsBackButtonRect = null;
+let recordsGoalClaimButtons = [];
+let recordsPaginationButtons = [];
+let recordsPopupRect = null;
+let recordsHistoryPage = 0;
+let recordsHistoryTotalPages = 1;
+let recordsGoalsPage = 0;
+let recordsGoalsTotalPages = 1;
+let recordsGoalFilter = 'all';
 let settingsPopupRect = null;
 let settingsOptionRects = [];
 let settingsFocusedIndex = 0;
@@ -2257,13 +2500,87 @@ function updateIntro(dt) {
     buildIntroButtons();
   }
 
+  if (showRecords) {
+    if (UI.keyPressed === 'Escape') {
+      if (recordsView !== 'menu') recordsView = 'menu';
+      else showRecords = false;
+      UI.reset();
+      return;
+    }
+    if (UI.clicked) {
+      const { mx, my } = UI;
+      let handled = false;
+      if (recordsView === 'menu') {
+        for (const entry of recordsMenuOptionRects) {
+          if (entry && entry.rect && pointInRect(mx, my, entry.rect)) {
+            if (entry.view === 'history' || entry.view === 'goals') {
+              recordsView = entry.view;
+              recordsHistoryPage = 0;
+              recordsGoalsPage = 0;
+              handled = true;
+            }
+            break;
+          }
+        }
+        if (!handled && recordsPopupRect && !pointInRect(mx, my, recordsPopupRect)) {
+          showRecords = false;
+          handled = true;
+        }
+      } else {
+        if (recordsBackButtonRect && pointInRect(mx, my, recordsBackButtonRect)) {
+          if (recordsView === 'menu') showRecords = false;
+          else recordsView = 'menu';
+          handled = true;
+        }
+        if (!handled && recordsView === 'goals') {
+          for (const btn of recordsFilterButtons) {
+            if (btn && btn.rect && pointInRect(mx, my, btn.rect)) {
+              if (btn.filter !== recordsGoalFilter) {
+                recordsGoalFilter = btn.filter;
+                recordsGoalsPage = 0;
+              }
+              handled = true;
+              break;
+            }
+          }
+          if (!handled) {
+            for (const btn of recordsGoalClaimButtons) {
+              if (btn && btn.rect && pointInRect(mx, my, btn.rect)) {
+                if (claimRecordGoal(btn.goalId)) {
+                  recordsGoalsPage = Math.min(recordsGoalsPage, Math.max(0, recordsGoalsTotalPages - 1));
+                }
+                handled = true;
+                break;
+              }
+            }
+          }
+        }
+        if (!handled) {
+          for (const btn of recordsPaginationButtons) {
+            if (btn && btn.rect && pointInRect(mx, my, btn.rect)) {
+              if (btn.view === 'history') {
+                recordsHistoryPage = Math.max(0, Math.min(recordsHistoryTotalPages - 1, recordsHistoryPage + btn.dir));
+              } else if (btn.view === 'goals') {
+                recordsGoalsPage = Math.max(0, Math.min(recordsGoalsTotalPages - 1, recordsGoalsPage + btn.dir));
+              }
+              handled = true;
+              break;
+            }
+          }
+        }
+      }
+      if (!handled) {
+        if (!recordsPopupRect || !pointInRect(mx, my, recordsPopupRect)) {
+          showRecords = false;
+        }
+      }
+      UI.reset();
+    }
+    return;
+  }
+
   if (showGuide) {
     if (UI.clicked) {
-      if (tutorialButtonRect && pointInRect(UI.mx, UI.my, tutorialButtonRect)) {
-        setTutorialEnabled(!tutorialEnabled);
-        UI.reset();
-        return;
-      }
       showGuide = false;
       UI.reset();
       return;

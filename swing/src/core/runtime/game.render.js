@@ -131,6 +131,329 @@ function renderIntro(g, time) {
   g.fillStyle = '#ffffff';
   g.fillText(t('intro.settings'), settingsBtn.x + settingsBtn.w/2, settingsBtn.y + settingsBtn.h/2 + 1);
 
+  if (showRecords) {
+    g.save();
+    g.fillStyle = 'rgba(0, 0, 0, 0.55)';
+    g.fillRect(0, 0, CONFIG.width, CONFIG.height);
+
+    recordsMenuOptionRects = [];
+    recordsFilterButtons = [];
+    recordsGoalClaimButtons = [];
+    recordsPaginationButtons = [];
+    recordsBackButtonRect = null;
+
+    const formatNumber = (value) => {
+      const n = Number(value) || 0;
+      try { return n.toLocaleString(); } catch (_) { return String(n); }
+    };
+
+    if (recordsView === 'menu') {
+      const popupW = CONFIG.width * 0.78;
+      const popupH = Math.min(CONFIG.height * 0.6, 260);
+      const popupX = (CONFIG.width - popupW) / 2;
+      const popupY = (CONFIG.height - popupH) / 2;
+      recordsPopupRect = { x: popupX, y: popupY, w: popupW, h: popupH };
+
+      g.fillStyle = '#0f1a2a';
+      g.strokeStyle = '#b4c0d9';
+      g.lineWidth = 2;
+      g.fillRect(popupX, popupY, popupW, popupH);
+      g.strokeRect(popupX, popupY, popupW, popupH);
+
+      g.fillStyle = '#ffffff';
+      g.textAlign = 'center';
+      g.textBaseline = 'top';
+      g.font = `14px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+      g.fillText(t('records.title'), popupX + popupW / 2, popupY + 16);
+
+      const optionSpecs = [
+        { view: 'history', label: t('records.menu.history'), hint: t('records.menu.historyHint') },
+        { view: 'goals', label: t('records.menu.goals'), hint: t('records.menu.goalsHint') },
+      ];
+      const optionHeight = 68;
+      const optionGap = 18;
+      const optionWidth = popupW - 48;
+      let rowY = popupY + 58;
+      g.textAlign = 'left';
+      for (const option of optionSpecs) {
+        const rect = { x: popupX + 24, y: rowY, w: optionWidth, h: optionHeight };
+        g.fillStyle = '#22334a';
+        g.strokeStyle = '#b4c0d9';
+        g.lineWidth = 2;
+        g.fillRect(rect.x, rect.y, rect.w, rect.h);
+        g.strokeRect(rect.x, rect.y, rect.w, rect.h);
+        g.fillStyle = '#ffe066';
+        g.font = `12px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+        g.fillText(option.label, rect.x + 16, rect.y + 20);
+        g.fillStyle = '#b4c0d9';
+        g.font = `9px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+        g.fillText(option.hint, rect.x + 16, rect.y + 40);
+        recordsMenuOptionRects.push({ rect, view: option.view });
+        rowY += optionHeight + optionGap;
+      }
+
+      g.textAlign = 'center';
+      g.fillStyle = '#b4c0d9';
+      g.font = `9px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+      g.fillText(t('records.menu.closeHint'), popupX + popupW / 2, popupY + popupH - 24);
+
+      g.restore();
+      return;
+    }
+
+    // Full-screen layout for history/goals views
+    const frameX = CONFIG.width * 0.06;
+    const frameY = CONFIG.height * 0.07;
+    const frameW = CONFIG.width * 0.88;
+    const frameH = CONFIG.height * 0.9;
+    recordsPopupRect = { x: frameX, y: frameY, w: frameW, h: frameH };
+
+    const headerH = 60;
+    const bottomBarH = 72;
+    const innerLeft = frameX + 28;
+    const innerRight = frameX + frameW - 28;
+    const innerWidth = innerRight - innerLeft;
+    const contentTop = frameY + headerH + 24;
+    const contentBottom = frameY + frameH - bottomBarH;
+
+    g.fillStyle = '#0f1a2a';
+    g.strokeStyle = '#b4c0d9';
+    g.lineWidth = 3;
+    g.fillRect(frameX, frameY, frameW, frameH);
+    g.strokeRect(frameX, frameY, frameW, frameH);
+
+    g.fillStyle = '#182844';
+    g.fillRect(frameX, frameY, frameW, headerH);
+    g.strokeRect(frameX, frameY, frameW, headerH);
+
+    g.fillStyle = '#ffe066';
+    g.textAlign = 'left';
+    g.textBaseline = 'middle';
+    g.font = `16px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+    g.fillText(t(recordsView === 'history' ? 'records.menu.history' : 'records.menu.goals'), innerLeft, frameY + headerH / 2 + 1);
+    const closeRect = { x: frameX + frameW / 2 - 90, y: frameY + frameH - bottomBarH + 30, w: 180, h: 30 };
+
+    if (recordsView === 'history') {
+      const entries = buildRecordHistoryEntries();
+      recordsHistoryTotalPages = Math.max(1, Math.ceil(entries.length / RECORD_HISTORY_PER_PAGE));
+      recordsHistoryPage = Math.max(0, Math.min(recordsHistoryTotalPages - 1, recordsHistoryPage));
+      const sliceStart = recordsHistoryPage * RECORD_HISTORY_PER_PAGE;
+      const pageEntries = entries.slice(sliceStart, sliceStart + RECORD_HISTORY_PER_PAGE);
+
+      const cardGap = 16;
+      const cardW = innerWidth;
+      const cardH = 84;
+      let cy = contentTop;
+      for (const entry of pageEntries) {
+        const rect = { x: innerLeft, y: cy, w: cardW, h: cardH };
+        g.fillStyle = '#22334a';
+        g.strokeStyle = '#3f4e68';
+        g.lineWidth = 2;
+        g.fillRect(rect.x, rect.y, rect.w, rect.h);
+        g.strokeRect(rect.x, rect.y, rect.w, rect.h);
+
+        g.fillStyle = '#ffffff';
+        g.textAlign = 'left';
+        g.font = `11px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+        g.fillText(t(entry.labelKey), rect.x + 18, rect.y + 24);
+        g.font = `9px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+        if (entry.type === 'list') {
+          const ids = Array.isArray(entry.value) ? entry.value : [];
+          let label = ids.length ? ids.map((id) => {
+            if (entry.id === 'itemsOwned') return t(`items.${id}.name`) || id;
+            if (entry.id === 'charactersOwned') return t(`chars.${id}.name`) || id;
+            return id;
+          }).join(', ') : t('records.common.none');
+          if (label.length > 60) label = `${label.slice(0, 57)}...`;
+          g.fillStyle = '#b4c0d9';
+          g.fillText(label, rect.x + 18, rect.y + 48);
+          g.fillStyle = '#ffe066';
+          g.fillText(`${formatNumber(ids.length)}`, rect.x + 18, rect.y + 68);
+        } else {
+          g.fillStyle = '#ffe066';
+          g.fillText(formatNumber(entry.value), rect.x + 18, rect.y + 58);
+        }
+        cy += cardH + cardGap;
+      }
+
+      const pagerY = frameY + frameH - bottomBarH - 18;
+      const prevRect = { x: innerLeft, y: pagerY, w: 36, h: 26 };
+      const nextRect = { x: innerRight - 36, y: pagerY, w: 36, h: 26 };
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+      const historyLabel = `${recordsHistoryPage + 1}/${recordsHistoryTotalPages}`;
+      if (recordsHistoryPage > 0) {
+        g.fillStyle = '#22334a';
+        g.fillRect(prevRect.x, prevRect.y, prevRect.w, prevRect.h);
+        g.strokeStyle = '#b4c0d9';
+        g.strokeRect(prevRect.x, prevRect.y, prevRect.w, prevRect.h);
+        g.fillStyle = '#ffffff';
+        g.fillText('<', prevRect.x + prevRect.w / 2, prevRect.y + prevRect.h / 2 + 1);
+        recordsPaginationButtons.push({ rect: prevRect, dir: -1, view: 'history' });
+      }
+      if (recordsHistoryPage < recordsHistoryTotalPages - 1) {
+        g.fillStyle = '#22334a';
+        g.fillRect(nextRect.x, nextRect.y, nextRect.w, nextRect.h);
+        g.strokeStyle = '#b4c0d9';
+        g.strokeRect(nextRect.x, nextRect.y, nextRect.w, nextRect.h);
+        g.fillStyle = '#ffffff';
+        g.fillText('>', nextRect.x + nextRect.w / 2, nextRect.y + nextRect.h / 2 + 1);
+        recordsPaginationButtons.push({ rect: nextRect, dir: 1, view: 'history' });
+      }
+      g.fillStyle = '#b4c0d9';
+      g.fillText(`< ${historyLabel} >`, frameX + frameW / 2, pagerY + 13);
+
+    } else if (recordsView === 'goals') {
+      const filters = [
+        { filter: 'all', label: t('records.filters.all') },
+        { filter: 'pending', label: t('records.filters.pending') },
+        { filter: 'achievable', label: t('records.filters.achievable') },
+        { filter: 'completed', label: t('records.filters.completed') },
+      ];
+
+      const filterGap = 6;
+      const filterW = (innerWidth - filterGap * (filters.length - 1)) / filters.length;
+      const filterH = 32;
+      const filterY = contentTop;
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.font = `9px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+      for (let i = 0; i < filters.length; i++) {
+        const fx = innerLeft + i * (filterW + filterGap);
+        const rect = { x: fx, y: filterY, w: filterW, h: filterH };
+        const active = recordsGoalFilter === filters[i].filter;
+        g.fillStyle = active ? '#31507a' : '#22334a';
+        g.strokeStyle = active ? '#ffe066' : '#b4c0d9';
+        g.fillRect(rect.x, rect.y, rect.w, rect.h);
+        g.strokeRect(rect.x, rect.y, rect.w, rect.h);
+        g.fillStyle = '#ffffff';
+        g.fillText(filters[i].label, rect.x + rect.w / 2, rect.y + rect.h / 2 + 1);
+        recordsFilterButtons.push({ rect, filter: filters[i].filter });
+      }
+
+      const goals = collectRecordGoalStates(recordsGoalFilter);
+      recordsGoalsTotalPages = Math.max(1, Math.ceil(goals.length / RECORD_GOALS_PER_PAGE));
+      recordsGoalsPage = Math.max(0, Math.min(recordsGoalsTotalPages - 1, recordsGoalsPage));
+      const goalStart = recordsGoalsPage * RECORD_GOALS_PER_PAGE;
+      const goalEntries = goals.slice(goalStart, goalStart + RECORD_GOALS_PER_PAGE);
+
+      const cardW = innerWidth;
+      const cardH = 98;
+      let gy = filterY + filterH + 18;
+      g.textAlign = 'left';
+      for (const entry of goalEntries) {
+        const rect = { x: innerLeft, y: gy, w: cardW, h: cardH };
+        g.fillStyle = '#22334a';
+        g.strokeStyle = '#3f4e68';
+        g.lineWidth = 2;
+        g.fillRect(rect.x, rect.y, rect.w, rect.h);
+        g.strokeRect(rect.x, rect.y, rect.w, rect.h);
+
+        g.fillStyle = '#ffffff';
+        g.font = `11px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+        g.fillText(t(entry.goal.titleKey), rect.x + 18, rect.y + 24);
+        g.fillStyle = '#b4c0d9';
+        g.font = `8px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+        const descLines = String(t(entry.goal.descriptionKey) || '').split('\n');
+        let descY = rect.y + 46;
+        for (const line of descLines) {
+          g.fillText(line, rect.x + 18, descY);
+          descY += 12;
+        }
+
+        const barX = rect.x + 18;
+        const barY = rect.y + rect.h - 21;
+        const barW = rect.w - 190;
+        const barH = 10;
+        g.fillStyle = '#1a273b';
+        g.fillRect(barX, barY, barW, barH);
+        g.fillStyle = '#ffe066';
+        g.fillRect(barX, barY, barW * Math.min(1, entry.progress), barH);
+        g.fillStyle = '#b4c0d9';
+        g.font = `9px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+        g.fillText(`${formatNumber(entry.value)} / ${formatNumber(entry.target)}`, barX, barY - 12);
+
+        const bottomY = rect.y + rect.h - 20;
+        const rewardY = bottomY - 12;
+        const rewardLabel = `${t('records.goals.rewardPrefix')}${entry.goal.reward}`;
+        const statusLabel = entry.claimed
+          ? t('records.goals.status.completed')
+          : entry.achieved
+            ? t('records.filters.achievable')
+            : t('records.filters.pending');
+        const statusColor = entry.claimed ? '#9cffc7' : entry.achieved ? '#ffe066' : '#ff9c9c';
+
+        let claimButtonRect = null;
+        if (entry.achieved && !entry.claimed) {
+          claimButtonRect = { x: rect.x + rect.w - 124, y: rect.y + rect.h - 36, w: 110, h: 24 };
+          g.fillStyle = '#31507a';
+          g.fillRect(claimButtonRect.x, claimButtonRect.y, claimButtonRect.w, claimButtonRect.h);
+          g.strokeStyle = '#ffe066';
+          g.strokeRect(claimButtonRect.x, claimButtonRect.y, claimButtonRect.w, claimButtonRect.h);
+          g.fillStyle = '#ffffff';
+          g.textAlign = 'center';
+          g.fillText(t('records.goals.claim'), claimButtonRect.x + claimButtonRect.w / 2, claimButtonRect.y + claimButtonRect.h / 2 + 1);
+          recordsGoalClaimButtons.push({ rect: claimButtonRect, goalId: entry.goal.id });
+        }
+
+        const statusX = claimButtonRect ? claimButtonRect.x - 12 : rect.x + rect.w - 18;
+
+        g.textAlign = 'right';
+        g.fillStyle = entry.achieved && !entry.claimed ? '#ffe066' : (entry.claimed ? '#9cffc7' : '#b4c0d9');
+        g.font = `9px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+        g.fillText(rewardLabel, statusX, rewardY);
+
+        g.fillStyle = statusColor;
+        g.fillText(statusLabel, statusX, bottomY);
+        g.textAlign = 'left';
+        gy += cardH + 20;
+      }
+
+      const pagerYGoals = frameY + frameH - bottomBarH - 18;
+      const prevRectG = { x: innerLeft, y: pagerYGoals, w: 36, h: 26 };
+      const nextRectG = { x: innerRight - 36, y: pagerYGoals, w: 36, h: 26 };
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+      const goalsLabel = `${recordsGoalsPage + 1}/${recordsGoalsTotalPages}`;
+      if (recordsGoalsPage > 0) {
+        g.fillStyle = '#22334a';
+        g.fillRect(prevRectG.x, prevRectG.y, prevRectG.w, prevRectG.h);
+        g.strokeStyle = '#b4c0d9';
+        g.strokeRect(prevRectG.x, prevRectG.y, prevRectG.w, prevRectG.h);
+        g.fillStyle = '#ffffff';
+        g.fillText('<', prevRectG.x + prevRectG.w / 2, prevRectG.y + prevRectG.h / 2 + 1);
+        recordsPaginationButtons.push({ rect: prevRectG, dir: -1, view: 'goals' });
+      }
+      if (recordsGoalsPage < recordsGoalsTotalPages - 1) {
+        g.fillStyle = '#22334a';
+        g.fillRect(nextRectG.x, nextRectG.y, nextRectG.w, nextRectG.h);
+        g.strokeStyle = '#b4c0d9';
+        g.strokeRect(nextRectG.x, nextRectG.y, nextRectG.w, nextRectG.h);
+        g.fillStyle = '#ffffff';
+        g.fillText('>', nextRectG.x + nextRectG.w / 2, nextRectG.y + nextRectG.h / 2 + 1);
+        recordsPaginationButtons.push({ rect: nextRectG, dir: 1, view: 'goals' });
+      }
+      g.fillStyle = '#b4c0d9';
+      g.fillText(`< ${goalsLabel} >`, frameX + frameW / 2, pagerYGoals + 13);
+    }
+
+    recordsBackButtonRect = closeRect;
+
+    g.textAlign = 'center';
+    g.fillStyle = '#22334a';
+    g.fillRect(closeRect.x, closeRect.y, closeRect.w, closeRect.h);
+    g.strokeStyle = '#b4c0d9';
+    g.strokeRect(closeRect.x, closeRect.y, closeRect.w, closeRect.h);
+    g.fillStyle = '#ffffff';
+    g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+    g.fillText(t('records.back'), closeRect.x + closeRect.w / 2, closeRect.y + closeRect.h / 2 + 1);
+
+    g.restore();
+    return;
+  }
+
   if (showGuide) {
     g.save();
     g.fillStyle = 'rgba(0,0,0,0.55)';
@@ -155,20 +478,7 @@ function renderIntro(g, time) {
       g.fillText(line, px + 12, ly);
       ly += lineAdvance(baseGuideLine, line);
     }
-    const btnW = 150;
-    const btnH = 26;
-    const btnX = px + (pw - btnW) / 2;
-    const btnY = py + ph - 60;
-    tutorialButtonRect = { x: btnX, y: btnY, w: btnW, h: btnH };
-    g.fillStyle = '#22334a';
-    g.strokeStyle = '#b4c0d9';
-    g.fillRect(btnX, btnY, btnW, btnH);
-    g.strokeRect(btnX, btnY, btnW, btnH);
-    g.fillStyle = tutorialEnabled ? '#9cffc7' : '#ffffff';
-    g.textAlign = 'center';
-    g.textBaseline = 'middle';
-    g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-    g.fillText(t(tutorialEnabled ? 'guide.tutorialButtonOn' : 'guide.tutorialButtonOff'), btnX + btnW / 2, btnY + btnH / 2 + 1);
+    tutorialButtonRect = null;
     g.fillStyle = '#b4c0d9';
     g.font = `8px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
     g.textAlign = 'center';
@@ -552,6 +862,7 @@ function updateRun(dt) {
     if (!caught) continue;
 
     b.active = false;
+    addToPlayerStat && addToPlayerStat('itemsCollected', 1);
     const wobble = Math.sin(simTime * 3 + (b.phase || 0)) * 6;
     const displayY = b.y + wobble;
 
@@ -604,8 +915,8 @@ function updateRun(dt) {
       else if (b.kind === 'wideCatch') pendingCatchR = 50;
       else if (b.kind === 'bigSize') pendingSizeScale = 1.5;
       else if (b.kind === 'slow') {
-        spawnEffect('sparkle', b.x, displayY);
-        triggerSlowMoImmediate(b.x, displayY - 24, 0);
+        spawnEffect('sparkle', player.x, player.y - 18);
+        triggerSlowMoImmediate(player.x, player.y - 24, 0);
       }
       else if (b.kind === 'roulette') {
         const spinDuration = CONFIG.rouletteSpinDuration || 2.4;
@@ -731,6 +1042,7 @@ function updateRun(dt) {
         // Attach
         player.mode = 'attached';
         player.rope = rope;
+        addToPlayerStat && addToPlayerStat('ropesCaught', 1);
         wizardFloatTimer = 0;
         wizardSpinTimer = 0;
         wizardSpinRate = 0;
@@ -936,6 +1248,8 @@ function updateRun(dt) {
       // Add to money and EXP
       savings += earnedMoney;
       exp += earnedExp;
+      if (earnedMoney > 0 && typeof addToPlayerStat === 'function') addToPlayerStat('totalCashEarned', earnedMoney);
+      if (earnedExp > 0 && typeof addToPlayerStat === 'function') addToPlayerStat('totalExpEarned', earnedExp);
       try {
         localStorage.setItem(SAVINGS_KEY, String(savings));
         localStorage.setItem(EXP_KEY, String(exp));
@@ -980,6 +1294,8 @@ function updateRun(dt) {
         lifeSpentThisRun = true;
       }
     }
+    if (typeof addToPlayerStat === 'function') addToPlayerStat('gameOverCount', 1);
+    if (typeof flushPlayerStats === 'function') flushPlayerStats();
     State.current = 'gameover';
     // Clear current input edges and lock inputs briefly to avoid instant restart
     if (typeof UI !== 'undefined') UI.reset();

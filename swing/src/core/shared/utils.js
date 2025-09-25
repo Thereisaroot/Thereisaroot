@@ -8,6 +8,7 @@ const EXP_KEY = 'webswing_exp_v1';
 const DEMO_DONE_KEY = 'webswing_demo_done_v1';
 const SHOP_INV_KEY = 'webswing_shop_inv_v1';
 const LANG_KEY = 'webswing_lang';
+const STATS_KEY = 'webswing_stats_v1';
 
 // Daily system (UTC reset) for native builds
 const DAILY_STATE_KEY = 'webswing_daily_state_v1';
@@ -58,6 +59,18 @@ const SHOP_INV_DEFAULTS = {
   feverLevel: 0,
   characters: [],
   consumables: {},
+};
+
+const PLAYER_STATS_DEFAULTS = {
+  version: 1,
+  gameOverCount: 0,
+  totalExpEarned: 0,
+  totalCashEarned: 0,
+  ropesCaught: 0,
+  bossSuccessCount: 0,
+  bossFailureCount: 0,
+  itemsCollected: 0,
+  goalsClaimed: [],
 };
 
 function defaultDailyState(dateStamp = currentUtcDateStamp()) {
@@ -347,6 +360,28 @@ function loadShopInv(shopInv = {}) {
 
 function saveShopInv(shopInv) {
   try { localStorage.setItem(SHOP_INV_KEY, JSON.stringify(shopInv)); } catch(_){}
+}
+
+function loadPlayerStats(existing = {}) {
+  const base = { ...PLAYER_STATS_DEFAULTS, ...(existing && typeof existing === 'object' ? existing : {}) };
+  try {
+    const raw = localStorage.getItem(STATS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        Object.assign(base, parsed);
+      }
+    }
+  } catch (_) {}
+  base.version = PLAYER_STATS_DEFAULTS.version;
+  if (!Array.isArray(base.goalsClaimed)) base.goalsClaimed = [];
+  else base.goalsClaimed = Array.from(new Set(base.goalsClaimed));
+  return base;
+}
+
+function savePlayerStats(stats) {
+  if (!stats || typeof stats !== 'object') return;
+  try { localStorage.setItem(STATS_KEY, JSON.stringify(stats)); } catch(_){}
 }
 
 function applyRunConsumables(shopInv) {
