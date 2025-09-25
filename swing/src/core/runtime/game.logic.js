@@ -497,6 +497,9 @@ function applyAdReward(item) {
 }
 
 function switchShopMode(mode) {
+  if (mode === 'ads' && (demoActive || !IS_NATIVE_APP)) {
+    mode = 'items';
+  }
   if (mode !== 'items' && mode !== 'chars' && mode !== 'ads') return;
   shopMode = mode;
   shopScroll = 0;
@@ -571,7 +574,7 @@ function buildIntroButtons() {
       requiredLevel,
     },
   ];
-  if (IS_NATIVE_APP) {
+  if (IS_NATIVE_APP && !demoActive) {
     menuSpecs.push({
       key: 'ads',
       label: 'common.ads',
@@ -634,6 +637,18 @@ function buildGameOverButtons() {
   const menuSpacing = 12;
   const menuSpecs = [
     {
+      key: 'main',
+      label: 'common.mainMenu',
+      action: () => {
+        showRecords = false;
+        previousState = 'intro';
+        State.current = 'intro';
+        uiButtons.gameover = [];
+        uiButtons.intro = [];
+      },
+      requiredLevel: 1,
+    },
+    {
       key: 'items',
       label: 'common.items',
       shopMode: 'items',
@@ -646,7 +661,7 @@ function buildGameOverButtons() {
       requiredLevel,
     },
   ];
-  if (IS_NATIVE_APP) {
+  if (IS_NATIVE_APP && !demoActive) {
     menuSpecs.push({
       key: 'ads',
       label: 'common.ads',
@@ -665,6 +680,10 @@ function buildGameOverButtons() {
       const disabled = lvl < spec.requiredLevel;
       const onDisabled = () => showMenuMessage('gameover', t('menu.unlockAtLevel', { level: spec.requiredLevel }));
       const action = () => {
+        if (spec.key === 'main') {
+          if (typeof spec.action === 'function') spec.action();
+          return;
+        }
         previousState = 'gameover';
         State.current = 'shop';
         switchShopMode(spec.shopMode);
@@ -817,7 +836,7 @@ const SLOW_MO_TRIGGER_DELAY = 0.2;
 const COMBO_BONUS_PER_LEVEL = 1;
 const LUCKY_BONUS_PER_LEVEL = 0.05;
 const FEVER_BONUS_SECONDS = 1;
-const TUTORIAL_STEP_DURATION = 4;
+const TUTORIAL_STEP_DURATION = 6;
 const TAILOR_EXTRA_ROPE_CHANCE = 0.5;
 
 const STAGE_COLORS = [
@@ -1614,10 +1633,10 @@ function updateBossTypeCollect(dt, battle) {
 
   if (battle.shotsFired >= battle.totalShots && battle.boxes.length === 0) {
     const reward = battle.collected * 2;
-    if (battle.collected >= battle.totalShots) {
-      triggerBossSuccess({ score: reward, cash: reward });
+    if (battle.missed >= battle.missLimit) {
+      triggerBossFailure('missed_boxes');
     } else {
-      triggerBossOutcome({ success: false, score: reward, cash: reward });
+      triggerBossSuccess({ score: reward, cash: reward });
     }
   }
 }

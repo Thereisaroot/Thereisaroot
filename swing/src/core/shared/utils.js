@@ -42,6 +42,7 @@ const TUNING_DEFAULTS = {
   itemProb: 20,
   DshortMin: 120,
   DshortProb: 35,
+  stageRopesPerStage: 10,
 };
 
 const SHOP_INV_DEFAULTS = {
@@ -440,6 +441,10 @@ function applyTuningToConfig(CONFIG, tuning) {
   CONFIG.itemChancePct = Math.max(0, Math.min(1, (Number(tuning.itemProb) || 0) / 100));
   CONFIG.minSpacingShort = Number(tuning.DshortMin) || CONFIG.minSpacingShort;
   CONFIG.shortSpacingChance = Math.max(0, Math.min(1, (Number(tuning.DshortProb) || 0) / 100));
+  const stageRopes = Number(tuning.stageRopesPerStage);
+  if (Number.isFinite(stageRopes)) {
+    CONFIG.stageRopesPerStage = Math.max(3, Math.min(10, Math.floor(stageRopes)));
+  }
 }
 
 function setupDebugUI(tuning, applyTuningCallback, saveTuningCallback) {
@@ -472,6 +477,7 @@ function setupDebugUI(tuning, applyTuningCallback, saveTuningCallback) {
     ['dbg-itemProb', 'itemProb'],
     ['dbg-DshortMin', 'DshortMin'],
     ['dbg-DshortProb', 'DshortProb'],
+    ['dbg-stageRopes', 'stageRopesPerStage'],
   ];
   for (const [elemId, propName] of map) {
     const elem = get(elemId);

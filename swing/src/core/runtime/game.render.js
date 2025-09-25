@@ -1970,21 +1970,47 @@ function renderGameOver(g) {
 
   if (typeof IS_NATIVE_APP !== 'undefined' && IS_NATIVE_APP) {
     const lives = Math.max(0, nativeLivesRemaining());
-    const messageY = adjust(CONFIG.height * 0.66);
+    const panelY = adjust(CONFIG.height * 0.66);
     if (lives <= 0) {
-      const msg = lifeAdStatus === 'loading'
+      const panelMargin = 20;
+      const panelW = CONFIG.width - panelMargin * 2;
+      const panelH = 120;
+      const panelX = panelMargin;
+      const panelTop = panelY - panelH / 2;
+      g.fillStyle = 'rgba(21, 32, 54, 0.92)';
+      g.strokeStyle = '#b4c0d9';
+      g.lineWidth = 3;
+      g.fillRect(panelX, panelTop, panelW, panelH);
+      g.strokeRect(panelX, panelTop, panelW, panelH);
+
+      const headline = lifeAdStatus === 'loading'
         ? t('ads.lifeLoading')
         : (lifeAdMessage || t('ads.lifePrompt'));
-      drawCenteredText(g, msg, messageY, 10, lifeAdStatus === 'loading' ? '#b4c0d9' : '#ffb347');
-      if (lifeAdStatus !== 'loading' && lifeAdStatus !== 'limit') {
-        drawCenteredText(g, t('ads.lifeTapToWatch'), messageY + 20, 9, '#b4c0d9');
+      g.fillStyle = lifeAdStatus === 'loading' ? '#b4c0d9' : '#ffb347';
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.font = `12px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+      g.fillText(headline, panelX + panelW / 2, panelTop + 36);
+
+      let detail = '';
+      let detailColor = '#b4c0d9';
+      if (lifeAdStatus === 'loading') {
+        detail = '';
       } else if (lifeAdStatus === 'limit' && !lifeAdMessage) {
-        drawCenteredText(g, t('ads.lifeLimit', { limit: DAILY_INTERSTITIAL_LIMIT }), messageY + 20, 9, '#ff8888');
+        detail = t('ads.lifeLimit', { limit: DAILY_INTERSTITIAL_LIMIT });
+        detailColor = '#ff8888';
+      } else if (!lifeAdMessage) {
+        detail = t('ads.lifeTapToWatch');
+      }
+      if (detail) {
+        g.fillStyle = detailColor;
+        g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+        g.fillText(detail, panelX + panelW / 2, panelTop + 72);
       }
     } else if (lifeAdStatus === 'loading') {
-      drawCenteredText(g, t('ads.lifeLoading'), messageY, 10, '#b4c0d9');
+      drawCenteredText(g, t('ads.lifeLoading'), panelY, 10, '#b4c0d9');
     } else if (lifeAdMessage) {
-      drawCenteredText(g, lifeAdMessage, messageY, 10, '#b4c0d9');
+      drawCenteredText(g, lifeAdMessage, panelY, 10, '#b4c0d9');
     }
   }
 }

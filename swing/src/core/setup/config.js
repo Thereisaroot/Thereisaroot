@@ -39,7 +39,7 @@ const CONFIG = {
   lowRopeAnchorDropMinPx: 50, // fixed drop range (px)
   lowRopeAnchorDropMaxPx: 100,
   lowRopeFloorClearance: 100, // keep rope tip 100px above ground
-  stageRopesPerStage: 5, // ropes per stage transition (test friendly)
+  stageRopesPerStage: 10, // ropes per stage transition (test friendly)
   bossStageTriggers: [3, 7, 10], // 1-based stage numbers that trigger boss fights
 
   // Extra randomization knobs
