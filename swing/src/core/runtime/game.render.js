@@ -43,6 +43,16 @@ function translateBossOutcomeReason(reason) {
   return key ? t(key) : null;
 }
 
+function hslToHex(h, s, l) {
+  const sat = Math.max(0, Math.min(1, s / 100));
+  const lig = Math.max(0, Math.min(1, l / 100));
+  const k = (n) => (n + h / 30) % 12;
+  const a = sat * Math.min(lig, 1 - lig);
+  const f = (n) => lig - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+  const toHex = (x) => Math.round(x * 255).toString(16).padStart(2, '0');
+  return `#${toHex(f(0))}${toHex(f(8))}${toHex(f(4))}`;
+}
+
 function nativeBuildLabelText() {
   if (typeof IS_NATIVE_APP === 'undefined' || !IS_NATIVE_APP) return null;
   if (typeof CapacitorPlatform === 'undefined' || CapacitorPlatform !== 'android') return null;
@@ -70,21 +80,40 @@ function renderIntro(g, time) {
 
   const centerX = CONFIG.width / 2;
   const titleY = CONFIG.height * 0.26;
-  const pulse = 1 + 0.06 * Math.sin(time * 1.6);
-  const stretch = 1 + 0.04 * Math.cos(time * 1.2);
-  const wobble = 0.03 * Math.sin(time * 2.8);
+  const pulse = 1 + 0.12 * Math.sin(time * 1.6);
+  const stretch = 1 + 0.08 * Math.cos(time * 1.2);
+  const wobble = 0.08 * Math.sin(time * 2.8);
+  const driftX = Math.cos(time * 0.9) * 14;
+  const driftY = Math.sin(time * 1.1) * 18;
 
   g.save();
-  g.translate(centerX, titleY);
+  g.translate(centerX + driftX, titleY + driftY);
   g.rotate(wobble);
   g.scale(pulse, stretch);
   g.textAlign = 'center';
   g.textBaseline = 'middle';
-  g.font = `26px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-  g.fillStyle = '#24163f';
-  g.fillText(t('intro.title'), 3, 3);
-  g.fillStyle = '#ffe066';
-  g.fillText(t('intro.title'), 0, 0);
+  const title = t('intro.title');
+  const isHangulTitle = /[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7A3]/.test(title);
+  const titleWords = title.split(/\s+/).filter(Boolean);
+  const leftWord = titleWords[0] || title;
+  const rightWord = titleWords.length > 1 ? titleWords.slice(1).join(' ') : '';
+  const baseFontSize = isHangulTitle ? 46 : 36;
+  g.font = `${baseFontSize}px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+  const gap = 70;
+  const leftX = rightWord ? -gap : 0;
+  const rightX = gap;
+  const leftY = -10;
+  const rightY = 10;
+  g.fillStyle = '#1d1436';
+  g.fillText(leftWord, leftX + 4, leftY + 4);
+  if (rightWord) g.fillText(rightWord, rightX + 4, rightY + 4);
+  const hueBase = (time * 30) % 360;
+  g.fillStyle = hslToHex(hueBase, 70, 62);
+  g.fillText(leftWord, leftX, leftY);
+  if (rightWord) {
+    g.fillStyle = hslToHex((hueBase + 60) % 360, 70, 65);
+    g.fillText(rightWord, rightX, rightY);
+  }
   g.restore();
 
   const scanlineAlpha = Math.min(0.2, 0.08 + 0.05 * Math.sin(time * 3.0));
@@ -107,17 +136,17 @@ function renderIntro(g, time) {
     g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
     g.fillText(t('ads.lifeCounter', { current: displayCurrent, max: maxText }), CONFIG.width - 12, 12);
     if (lives <= 0) {
-      const msg = lifeAdStatus === 'loading'
-        ? t('ads.lifeLoading')
-        : (lifeAdMessage || t('ads.lifePrompt'));
-      drawCenteredText(g, msg, CONFIG.height * 0.58, 10, '#ffb347');
+    const msg = lifeAdStatus === 'loading'
+      ? t('ads.lifeLoading')
+      : (lifeAdMessage || t('ads.lifePrompt'));
+    drawCenteredText(g, msg, CONFIG.height * 0.58 - 5, 10, '#ffb347');
       if (lifeAdStatus !== 'loading' && lifeAdStatus !== 'limit') {
         drawCenteredText(g, t('ads.lifeTapToWatch'), CONFIG.height * 0.62, 9, '#b4c0d9');
       }
     } else if (lifeAdStatus === 'loading') {
       drawCenteredText(g, t('ads.lifeLoading'), CONFIG.height * 0.58, 10, '#b4c0d9');
     } else if (lifeAdMessage) {
-      drawCenteredText(g, lifeAdMessage, CONFIG.height * 0.58, 10, '#b4c0d9');
+      drawCenteredText(g, lifeAdMessage, CONFIG.height * 0.58 - 5, 10, '#b4c0d9');
     }
   }
 
@@ -2087,7 +2116,7 @@ function renderGameOver(g) {
     } else if (lifeAdStatus === 'loading') {
       drawCenteredText(g, t('ads.lifeLoading'), panelY, 10, '#b4c0d9');
     } else if (lifeAdMessage) {
-      drawCenteredText(g, lifeAdMessage, panelY, 10, '#b4c0d9');
+      drawCenteredText(g, lifeAdMessage, panelY - 5, 10, '#b4c0d9');
     }
   }
 
