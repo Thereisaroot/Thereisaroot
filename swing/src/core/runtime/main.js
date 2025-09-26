@@ -7,13 +7,22 @@ function applyStoredLanguagePreference() {
   const api = (typeof window !== 'undefined') ? window.I18N : null;
   if (!api || typeof api.setLanguage !== 'function') return;
   const stored = (typeof loadLanguagePreference === 'function') ? loadLanguagePreference() : null;
-  if (!stored) return;
-  const available = typeof api.getAvailableLanguages === 'function'
-    ? api.getAvailableLanguages()
-    : null;
-  if (Array.isArray(available) && available.length > 0 && !available.includes(stored)) return;
-  if (typeof api.getLanguage === 'function' && api.getLanguage() === stored) return;
-  api.setLanguage(stored);
+  if (stored) {
+    const available = typeof api.getAvailableLanguages === 'function'
+      ? api.getAvailableLanguages()
+      : null;
+    if (Array.isArray(available) && available.length > 0 && !available.includes(stored)) return;
+    if (typeof api.getLanguage === 'function' && api.getLanguage() === stored) return;
+    api.setLanguage(stored);
+    return;
+  }
+  if (typeof setLocaleFromEnvironment === 'function') {
+    const applied = setLocaleFromEnvironment(api);
+    if (applied) return;
+  }
+  if (typeof api.getLanguage === 'function' && api.getLanguage() !== 'en') {
+    api.setLanguage('en');
+  }
 }
 
 async function start() {

@@ -287,6 +287,20 @@ function loadLanguagePreference() {
   }
 }
 
+function setLocaleFromEnvironment(api) {
+  if (!api || typeof api.setLanguage !== 'function') return false;
+  if (typeof IS_NATIVE_APP === 'undefined' || !IS_NATIVE_APP) return false;
+  const locale = (typeof window !== 'undefined' && window.WEBSWING_DEVICE_LOCALE)
+    ? String(window.WEBSWING_DEVICE_LOCALE).toLowerCase()
+    : '';
+  if (locale.startsWith('ko')) {
+    try { api.setLanguage('ko'); } catch (_) {}
+    return true;
+  }
+  try { api.setLanguage('en'); } catch (_) {}
+  return true;
+}
+
 async function maybeLoadTuningFromServer() {
   // Placeholder for future server fetch; merge into tuning and apply
   // Example:
