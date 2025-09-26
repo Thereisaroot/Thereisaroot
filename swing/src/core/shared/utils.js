@@ -12,8 +12,9 @@ const STATS_KEY = 'webswing_stats_v1';
 
 // Daily system (UTC reset) for native builds
 const DAILY_STATE_KEY = 'webswing_daily_state_v1';
-const DAILY_BASE_LIVES = 20;
-const DAILY_INTERSTITIAL_LIMIT = 3;
+const DAILY_BASE_LIVES = 30;
+const DAILY_MAX_LIVES = 30;
+const DAILY_INTERSTITIAL_LIMIT = 5;
 const DAILY_AD_REWARD_KEYS = {
   wizard: 'wizard',
   cash20: 'cash20',
@@ -117,7 +118,9 @@ function loadDailyState() {
     dailyStateCache = defaultDailyState(today);
     return dailyStateCache;
   }
-  const lives = Number.isFinite(parsed.lives) ? Math.max(0, Math.floor(parsed.lives)) : DAILY_BASE_LIVES;
+  const lives = Number.isFinite(parsed.lives)
+    ? Math.max(0, Math.min(DAILY_MAX_LIVES, Math.floor(parsed.lives)))
+    : DAILY_BASE_LIVES;
   const interstitialViews = Number.isFinite(parsed.interstitialViews) ? Math.max(0, Math.floor(parsed.interstitialViews)) : 0;
   dailyStateCache = {
     date: storedDate,
@@ -158,7 +161,7 @@ function consumeDailyLife() {
 function grantDailyLives(amount) {
   if (!Number.isFinite(amount) || amount <= 0) return ensureDailyState().lives;
   const state = ensureDailyState();
-  state.lives = Math.max(0, Math.min(999, state.lives + Math.floor(amount)));
+  state.lives = Math.max(0, Math.min(DAILY_MAX_LIVES, state.lives + Math.floor(amount)));
   saveDailyState();
   return state.lives;
 }

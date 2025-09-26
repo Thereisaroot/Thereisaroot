@@ -324,7 +324,20 @@ function nativeLivesRemaining() {
 }
 
 function nativeLivesMax() {
-  return IS_NATIVE_APP ? DAILY_BASE_LIVES : Number.POSITIVE_INFINITY;
+  return IS_NATIVE_APP ? DAILY_MAX_LIVES : Number.POSITIVE_INFINITY;
+}
+
+function formatLifeAdError(err) {
+  if (!err) return '';
+  if (typeof err === 'string') return err;
+  if (typeof err.message === 'string' && err.message.trim()) return err.message;
+  if (typeof err.reason === 'string' && err.reason.trim()) return err.reason;
+  if (typeof err.code !== 'undefined') return `code ${err.code}`;
+  try {
+    return JSON.stringify(err);
+  } catch (_) {
+    return '';
+  }
 }
 
 function triggerLifeAd(autoStart = false) {
@@ -356,7 +369,7 @@ function triggerLifeAd(autoStart = false) {
     console.log('[LifeAd] showLifeAd resolved:', res);
     incrementDailyInterstitial();
     const rewarded = !!(res && res.rewarded);
-    const gain = rewarded ? 15 : 2;
+    const gain = rewarded ? DAILY_MAX_LIVES : 2;
     grantDailyLives(gain);
     lifeAdStatus = rewarded ? 'rewarded' : 'partial';
     lifeAdMessage = t(rewarded ? 'ads.lifeRewarded' : 'ads.lifePartial', { lives: gain });
@@ -367,8 +380,21 @@ function triggerLifeAd(autoStart = false) {
     }
   }).catch((_err) => {
     console.log('[LifeAd] showLifeAd failed:', _err);
-    lifeAdStatus = 'error';
-    lifeAdMessage = t('ads.lifeError');
+    const fallbackGain = 2;
+    const reasonText = formatLifeAdError(_err);
+    const noLivesBeforeAd = nativeLivesRemaining() <= 0;
+    if (noLivesBeforeAd) {
+      grantDailyLives(fallbackGain);
+      lifeAdStatus = 'partial';
+      lifeAdMessage = reasonText
+        ? t('ads.lifeErrorWithReason', { reason: reasonText, lives: fallbackGain })
+        : t('ads.lifePartial', { lives: fallbackGain });
+    } else {
+      lifeAdStatus = 'error';
+      lifeAdMessage = reasonText
+        ? `${t('ads.lifeError')} (${reasonText})`
+        : t('ads.lifeError');
+    }
     lifeAdAutoStart = false;
     if (uiButtons && uiButtons.gameover) uiButtons.gameover = [];
   });

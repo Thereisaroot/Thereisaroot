@@ -236,6 +236,7 @@
       lifePartial: 'Partial reward: +{lives} lives gained.',
       lifeLimit: 'Daily ad limit reached ({limit}/day).',
       lifeError: 'Ad failed. Please try again shortly.',
+      lifeErrorWithReason: 'Ad failed ({reason}). \n+{lives} lives granted.',
       lifeUnavailable: 'Ads are currently unavailable.',
       lifePrompt: 'No lives! Watch an ad!',
       lifeTapToWatch: 'Tap to watch an ad and get lives.',
@@ -631,17 +632,18 @@
     },
     game: {
       fastToggle: 'FAST MODE: {state}',
-    }, 
-        ads: {
+    },
+    ads: {
       lifeCounter: '기회 {current}/{max}',
       lifeLoading: '광고 불러오는 중... 잠시만요!',
       lifeRewarded: '기회 +{lives}! 다시 도전해요!',
       lifePartial: '부분 보상: 기회 +{lives} 획득.',
       lifeLimit: '오늘 광고 한도({limit}회)를 모두 사용했습니다.',
       lifeError: '광고 재생에 실패했어요. 잠시 후 다시 시도해주세요.',
+      lifeErrorWithReason: '광고 재생 실패. \n({reason}). \n기회 +{lives}을(를) 받았습니다.',
       lifeUnavailable: '현재 광고를 사용할 수 없습니다.',
-      lifePrompt: '기회가 없습니다! 광고를 보면 충전돼요.',
-      lifeTapToWatch: '화면을 터치하면 광고를 보고  얻습니다.',
+      lifePrompt: '기회가 없어요! 광고를 보면 충전돼요.',
+      lifeTapToWatch: '화면을 터치하면 광고를 보고 기회를 얻습니다.',
     },
     adsShop: {
       title: '광고 상점',

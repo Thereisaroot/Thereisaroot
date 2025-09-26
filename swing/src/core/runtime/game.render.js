@@ -1324,7 +1324,8 @@ function updateRun(dt) {
     if (!demoActive && typeof IS_NATIVE_APP !== 'undefined' && IS_NATIVE_APP && typeof consumeDailyLife === 'function') {
       if (!lifeSpentThisRun) {
         if (typeof ensureDailyState === 'function') ensureDailyState();
-        consumeDailyLife();
+        const currentLevel = (typeof getLevelByExp === 'function') ? getLevelByExp(exp) : 1;
+        if (currentLevel > 1) consumeDailyLife();
         lifeSpentThisRun = true;
       }
     }
@@ -1851,18 +1852,23 @@ function updateGameOver(dt) {
   const outOfLives = typeof IS_NATIVE_APP !== 'undefined' && IS_NATIVE_APP && nativeLivesRemaining() <= 0;
 
   // Build buttons if not exist
-  if (uiButtons.gameover.length === 0) {
+  if (outOfLives) {
+    if (uiButtons && Array.isArray(uiButtons.gameover) && uiButtons.gameover.length) uiButtons.gameover = [];
+    gameOverMenuButtons = [];
+  } else if (uiButtons && Array.isArray(uiButtons.gameover) && uiButtons.gameover.length === 0) {
     buildGameOverButtons();
   }
 
   // Check button clicks
   if (UI.clicked && State.current === 'gameover') {
-    for (const button of uiButtons.gameover) {
-      if (button.isClicked(UI.mx, UI.my)) {
-        button.onClick();
-        UI.reset();
-        Input.down = false; Input.justPressed = false;
-        return;
+    if (!outOfLives && uiButtons && Array.isArray(uiButtons.gameover)) {
+      for (const button of uiButtons.gameover) {
+        if (button.isClicked(UI.mx, UI.my)) {
+          button.onClick();
+          UI.reset();
+          Input.down = false; Input.justPressed = false;
+          return;
+        }
       }
     }
 
@@ -1894,10 +1900,12 @@ function renderGameOver(g) {
   drawParticles(g);
   const yAdjust = -100;
   const adjust = (val) => val + yAdjust;
-  if (typeof IS_NATIVE_APP !== 'undefined' && IS_NATIVE_APP) {
-    const rawLives = nativeLivesRemaining();
+  const isNative = typeof IS_NATIVE_APP !== 'undefined' && IS_NATIVE_APP;
+  const rawLives = isNative ? nativeLivesRemaining() : Number.POSITIVE_INFINITY;
+  const lives = Math.max(0, rawLives);
+  const outOfLives = isNative && lives <= 0;
+  if (isNative) {
     const maxLives = nativeLivesMax();
-    const lives = Math.max(0, rawLives);
     const displayCurrent = (rawLives === Number.POSITIVE_INFINITY) ? '∞' : lives;
     const maxText = (maxLives === Number.POSITIVE_INFINITY) ? '∞' : maxLives;
     g.fillStyle = '#b4c0d9';
@@ -1907,7 +1915,7 @@ function renderGameOver(g) {
     g.fillText(t('ads.lifeCounter', { current: displayCurrent, max: maxText }), CONFIG.width - 12, 12);
   }
   if (lastDemoLoss) {
-    drawCenteredText(g, t('gameOver.title'), adjust(CONFIG.height * 0.30 - 20), 18, '#ff6666');
+    drawCenteredText(g, t('gameOver.title'), adjust(CONFIG.height * 0.30), 18, '#ff6666');
     g.fillStyle = '#ffffff';
     g.textAlign = 'center';
     g.textBaseline = 'top';
@@ -1915,7 +1923,7 @@ function renderGameOver(g) {
     g.fillText(t('gameOver.demoLossLine1'), CONFIG.width / 2, adjust(CONFIG.height * 0.40 - 20));
     g.fillText(t('gameOver.demoLossLine2'), CONFIG.width / 2, adjust(CONFIG.height * 0.46 - 20));
   } else {
-    drawCenteredText(g, t('gameOver.title'), adjust(CONFIG.height * 0.30 - 20), 18, '#ff6666');
+    drawCenteredText(g, t('gameOver.title'), adjust(CONFIG.height * 0.30), 18, '#ff6666');
     drawCenteredText(g, t('hud.score', { score }), adjust(CONFIG.height * 0.40 - 20), 12);
 
     // Savings summary and next target
@@ -1970,7 +1978,7 @@ function renderGameOver(g) {
   // Level-up popup when level increased this game over
   if (gameOverLevelUp) {
     const cx = CONFIG.width / 2;
-    const cy = adjust(CONFIG.height * 0.22 - 20);
+    const cy = adjust(CONFIG.height * 0.22);
     g.fillStyle = '#ffffff';
     g.textAlign = 'center';
     g.textBaseline = 'middle';
@@ -1985,30 +1993,31 @@ function renderGameOver(g) {
     drawCenteredText(g, t('gameOver.retryCountdown', { seconds: sec }), adjust(CONFIG.height * 0.74 - 20), 10, '#b4c0d9');
   } else {
     drawCenteredText(g, t('gameOver.retryReady'), adjust(CONFIG.height * 0.74 - 20), 10, '#b4c0d9');
-    const menuSet = new Set(gameOverMenuButtons || []);
-    if (gameOverMenuButtons && gameOverMenuButtons.length) {
-      gameOverMenuButtons.forEach((button) => drawUIButtonRect(g, button));
-      const messageAnchor = gameOverMenuButtons[gameOverMenuButtons.length - 1];
-      if (gameOverMenuMessage && messageAnchor) {
-        const msgY = messageAnchor.y + messageAnchor.h + 18;
-        drawCenteredText(g, gameOverMenuMessage, msgY, 9, '#ffb347');
+    if (!outOfLives) {
+      const menuSet = new Set(gameOverMenuButtons || []);
+      if (gameOverMenuButtons && gameOverMenuButtons.length) {
+        gameOverMenuButtons.forEach((button) => drawUIButtonRect(g, button));
+        const messageAnchor = gameOverMenuButtons[gameOverMenuButtons.length - 1];
+        if (gameOverMenuMessage && messageAnchor) {
+          const msgY = messageAnchor.y + messageAnchor.h + 18;
+          drawCenteredText(g, gameOverMenuMessage, msgY, 9, '#ffb347');
+        }
       }
-    }
-    if (uiButtons.gameover && uiButtons.gameover.length) {
-      uiButtons.gameover.forEach((button) => {
-        if (!button || menuSet.has(button)) return;
-        const isFastToggle = button.meta && button.meta.type === 'fast-toggle';
-        drawUIButtonRect(g, button, isFastToggle ? {
-          fill: fastModeEnabled ? '#4a6e33' : '#22334a',
-        } : {});
-      });
+      if (uiButtons.gameover && uiButtons.gameover.length) {
+        uiButtons.gameover.forEach((button) => {
+          if (!button || menuSet.has(button)) return;
+          const isFastToggle = button.meta && button.meta.type === 'fast-toggle';
+          drawUIButtonRect(g, button, isFastToggle ? {
+            fill: fastModeEnabled ? '#4a6e33' : '#22334a',
+          } : {});
+        });
+      }
     }
   }
 
-  if (typeof IS_NATIVE_APP !== 'undefined' && IS_NATIVE_APP) {
-    const lives = Math.max(0, nativeLivesRemaining());
+  if (isNative) {
     const panelY = adjust(CONFIG.height * 0.66);
-    if (lives <= 0) {
+    if (outOfLives) {
       const panelMargin = 20;
       const panelW = CONFIG.width - panelMargin * 2;
       const panelH = 120;
