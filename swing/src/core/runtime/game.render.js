@@ -43,6 +43,27 @@ function translateBossOutcomeReason(reason) {
   return key ? t(key) : null;
 }
 
+function nativeBuildLabelText() {
+  if (typeof IS_NATIVE_APP === 'undefined' || !IS_NATIVE_APP) return null;
+  if (typeof CapacitorPlatform === 'undefined' || CapacitorPlatform !== 'android') return null;
+  if (typeof getNativeAppInfo !== 'function') return null;
+  if (typeof maybeLoadNativeAppInfo === 'function') {
+    const infoPeek = getNativeAppInfo();
+    const pending = (typeof nativeAppInfoPromise !== 'undefined') ? nativeAppInfoPromise : null;
+    const exhausted = (typeof nativeAppInfoExhausted !== 'undefined') ? nativeAppInfoExhausted : false;
+    if ((!infoPeek || (!infoPeek.label && !infoPeek.version && !infoPeek.build)) && !pending && !exhausted) {
+      try { maybeLoadNativeAppInfo(); } catch (err) {}
+    }
+  }
+  const info = getNativeAppInfo();
+  if (!info || (!info.label && !info.version && !info.build)) return null;
+  const label = info.label
+    || (info.version && info.build ? `${info.version} (${info.build})`
+      : (info.version || (info.build ? `build ${info.build}` : null)));
+  if (!label) return null;
+  return label;
+}
+
 function renderIntro(g, time) {
   tutorialButtonRect = null;
   drawBackground(g);
@@ -545,6 +566,15 @@ function renderIntro(g, time) {
     g.fillStyle = '#b4c0d9';
     g.font = `9px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
     g.fillText(t('settings.help'), px + pw/2, py + ph - 18);
+
+    const buildLabel = nativeBuildLabelText();
+    if (buildLabel) {
+      g.textAlign = 'right';
+      g.textBaseline = 'middle';
+      g.font = `8px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+      g.fillStyle = '#8fa3c9';
+      g.fillText(buildLabel, px + pw - 16, py + ph - 34);
+    }
     g.restore();
   } else {
     settingsPopupRect = null;
@@ -568,6 +598,7 @@ function renderIntro(g, time) {
     g.fillText(t('intro.pressStart'), centerX, pressY);
     g.restore();
   }
+
 }
 
 
@@ -2059,4 +2090,5 @@ function renderGameOver(g) {
       drawCenteredText(g, lifeAdMessage, panelY, 10, '#b4c0d9');
     }
   }
+
 }

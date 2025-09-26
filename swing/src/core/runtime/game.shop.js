@@ -485,6 +485,7 @@ function renderCharacterShop(g) {
     g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
     g.fillText(t('common.clickOutsideToClose'), px + pw/2, py + ph - 18);
   }
+
 }
 
 function wrapTextLines(g, text, maxWidth, maxLines = Infinity) {
@@ -629,6 +630,7 @@ function renderAdShop(g) {
   });
 
   drawShopNavButtons(g);
+
 }
 
 function renderShop(g) {
@@ -1013,6 +1015,7 @@ function renderShop(g) {
     g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
     g.fillText(t('common.clickOutsideToClose'), px + pw/2, py + ph - 18);
   }
+
 }
 
 function shopNavSpecs() {

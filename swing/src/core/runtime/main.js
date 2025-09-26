@@ -18,6 +18,11 @@ function applyStoredLanguagePreference() {
 
 async function start() {
   applyStoredLanguagePreference();
+  if (typeof maybeLoadNativeAppInfo === 'function') {
+    try {
+      await maybeLoadNativeAppInfo();
+    } catch (_) {}
+  }
   await Fonts.load();
   // Load tuning then apply
   tuning = loadTuningLocal(tuning);

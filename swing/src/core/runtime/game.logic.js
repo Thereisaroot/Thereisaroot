@@ -37,6 +37,175 @@ const IS_NATIVE_APP = Boolean(
     (CapacitorPlatform && CapacitorPlatform !== 'web')
   )
 );
+
+let nativeAppInfo = { version: null, build: null, label: null };
+let nativeAppInfoPromise = null;
+let nativeAppInfoExhausted = false;
+
+function normalizeAppInfoValue(val) {
+  if (val == null) return null;
+  const str = String(val).trim();
+  return str.length ? str : null;
+}
+
+function composeNativeAppLabel(version, build) {
+  if (version && build) return `${version} (${build})`;
+  if (version) return version;
+  if (build) return `build ${build}`;
+  return null;
+}
+
+function applyNativeAppInfo(info) {
+  if (!info || typeof info !== 'object') return nativeAppInfo;
+  const version = normalizeAppInfoValue(info.version)
+    || normalizeAppInfoValue(info.versionName)
+    || normalizeAppInfoValue(info.appVersion)
+    || normalizeAppInfoValue(info.versionNameString)
+    || normalizeAppInfoValue(info.nativeVersion)
+    || normalizeAppInfoValue(info.versionNumber);
+  const build = normalizeAppInfoValue(info.build)
+    || normalizeAppInfoValue(info.buildNumber)
+    || normalizeAppInfoValue(info.versionCode)
+    || normalizeAppInfoValue(info.bundleVersion)
+    || normalizeAppInfoValue(info.androidVersionCode)
+    || normalizeAppInfoValue(info.buildCode);
+  const labelExplicit = normalizeAppInfoValue(info.label);
+  const label = labelExplicit || composeNativeAppLabel(version, build);
+  console.log('[AppInfo] apply', { version, build, label, raw: info });
+  nativeAppInfo = { version, build, label };
+  return nativeAppInfo;
+}
+
+function getInjectedNativeAppInfo() {
+  if (typeof window === 'undefined') return null;
+  const version = window.WEBSWING_VERSION
+    || window.WEBSWING_APP_VERSION
+    || window.WEBSWING_VERSION_NAME
+    || window.WEBSWING_VERSIONNAME;
+  const build = window.WEBSWING_BUILD
+    || window.WEBSWING_BUILD_NUMBER
+    || window.WEBSWING_APP_BUILD
+    || window.WEBSWING_VERSION_CODE
+    || window.WEBSWING_VERSIONCODE
+    || window.WEBSWING_BUILD_CODE;
+  const label = window.WEBSWING_BUILD_LABEL || window.WEBSWING_VERSION_LABEL || window.WEBSWING_VERSION_DISPLAY;
+  if (!version && !build && !label) return null;
+  const injected = { version, build, label };
+  console.log('[AppInfo] injected', injected);
+  return injected;
+}
+
+function getNativeAppInfo() {
+  return nativeAppInfo;
+}
+
+function getCapacitorAppPlugin() {
+  if (!CapacitorRef) return null;
+  try {
+    if (CapacitorRef.App && typeof CapacitorRef.App.getInfo === 'function') return CapacitorRef.App;
+    if (CapacitorRef.Plugins && CapacitorRef.Plugins.App && typeof CapacitorRef.Plugins.App.getInfo === 'function') {
+      return CapacitorRef.Plugins.App;
+    }
+  } catch (_) {}
+  return null;
+}
+
+function getCapacitorDevicePlugin() {
+  if (!CapacitorRef) return null;
+  try {
+    if (CapacitorRef.Device && typeof CapacitorRef.Device.getInfo === 'function') return CapacitorRef.Device;
+    if (CapacitorRef.Plugins && CapacitorRef.Plugins.Device && typeof CapacitorRef.Plugins.Device.getInfo === 'function') {
+      return CapacitorRef.Plugins.Device;
+    }
+  } catch (_) {}
+  return null;
+}
+
+function maybeApplyInjectedAppInfo() {
+  const injected = getInjectedNativeAppInfo();
+  if (!injected) return nativeAppInfo;
+  return applyNativeAppInfo(injected);
+}
+
+function maybeLoadNativeAppInfo() {
+  if (nativeAppInfoExhausted) {
+    return Promise.resolve(nativeAppInfo);
+  }
+  if (CapacitorPlatform !== 'android' || !IS_NATIVE_APP) {
+    console.log('[AppInfo] skip load (platform/native?)', { CapacitorPlatform, IS_NATIVE_APP });
+    nativeAppInfoExhausted = true;
+    return Promise.resolve(nativeAppInfo);
+  }
+  if (nativeAppInfo.label) {
+    console.log('[AppInfo] already cached', nativeAppInfo);
+    nativeAppInfoExhausted = true;
+    return Promise.resolve(nativeAppInfo);
+  }
+  maybeApplyInjectedAppInfo();
+  if (nativeAppInfo.label) {
+    console.log('[AppInfo] using injected', nativeAppInfo);
+    nativeAppInfoExhausted = true;
+    return Promise.resolve(nativeAppInfo);
+  }
+  const appPlugin = getCapacitorAppPlugin();
+  if (appPlugin && typeof appPlugin.getInfo === 'function') {
+    if (!nativeAppInfoPromise) {
+      console.log('[AppInfo] requesting App.getInfo');
+      nativeAppInfoPromise = appPlugin.getInfo().then((info) => {
+        console.log('[AppInfo] App.getInfo resolved', info);
+        applyNativeAppInfo(info);
+        if (!nativeAppInfo.label) {
+          maybeApplyInjectedAppInfo();
+        }
+        return nativeAppInfo;
+      }).catch((err) => {
+        console.log('[AppInfo] App.getInfo failed:', err);
+        maybeApplyInjectedAppInfo();
+        return nativeAppInfo;
+      }).finally(() => {
+        console.log('[AppInfo] App.getInfo settled', nativeAppInfo);
+        nativeAppInfoPromise = null;
+        nativeAppInfoExhausted = Boolean(nativeAppInfo.label);
+      });
+    }
+    return nativeAppInfoPromise;
+  }
+
+  console.log('[AppInfo] App plugin unavailable, trying Device.getInfo');
+  const devicePlugin = getCapacitorDevicePlugin();
+  if (devicePlugin && typeof devicePlugin.getInfo === 'function') {
+    if (!nativeAppInfoPromise) {
+      console.log('[AppInfo] requesting Device.getInfo');
+      nativeAppInfoPromise = devicePlugin.getInfo().then((info) => {
+        console.log('[AppInfo] Device.getInfo resolved', info);
+        const mapped = {
+          version: info && (info.appVersion || info.version || info.versionName),
+          build: info && (info.appBuild || info.build || info.buildNumber || info.versionCode),
+          label: info && info.label,
+        };
+        applyNativeAppInfo(mapped);
+        if (!nativeAppInfo.label) {
+          maybeApplyInjectedAppInfo();
+        }
+        return nativeAppInfo;
+      }).catch((err) => {
+        console.log('[AppInfo] Device.getInfo failed:', err);
+        maybeApplyInjectedAppInfo();
+        return nativeAppInfo;
+      }).finally(() => {
+        console.log('[AppInfo] Device.getInfo settled', nativeAppInfo);
+        nativeAppInfoPromise = null;
+        nativeAppInfoExhausted = Boolean(nativeAppInfo.label);
+      });
+    }
+    return nativeAppInfoPromise;
+  }
+
+  console.log('[AppInfo] No Capacitor plugin available');
+  nativeAppInfoExhausted = true;
+  return Promise.resolve(nativeAppInfo);
+}
+
 function ensurePlayGateStub() {
   const Cap = (typeof window !== 'undefined') ? window.Capacitor : undefined;
   if (!Cap) return null;
