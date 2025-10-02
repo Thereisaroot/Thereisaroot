@@ -226,6 +226,7 @@ function ensurePlayGateStub() {
     Cap.Plugins.PlayGate = {
       showRewardedAd(options) { return invoke('showRewardedAd', options); },
       showLifeAd(options) { return invoke('showLifeAd', options); },
+      showAlert(options) { return invoke('showAlert', options); },
     };
   }
   return Cap.Plugins.PlayGate;
@@ -233,6 +234,56 @@ function ensurePlayGateStub() {
 
 function getPlayGatePlugin() {
   return ensurePlayGateStub();
+}
+
+let lastNativeNoAdAlert = 0;
+
+function showNativeAlert(message, title) {
+  if (!IS_NATIVE_APP) return false;
+  if (!message || typeof message !== 'string') return false;
+  const plugin = getPlayGatePlugin();
+  if (!plugin || typeof plugin.showAlert !== 'function') return false;
+  const payload = { message: String(message) };
+  if (title && typeof title === 'string' && title.trim()) {
+    payload.title = title.trim();
+  }
+  try {
+    const result = plugin.showAlert(payload);
+    if (result && typeof result.then === 'function') {
+      result.catch((err) => console.warn('[PlayGate] showAlert rejected', err));
+    }
+    return true;
+  } catch (err) {
+    console.warn('[PlayGate] showAlert threw', err);
+    return false;
+  }
+}
+
+function notifyNativeNoAdAvailable(preferredKey = 'adsShop.noFill') {
+  if (!IS_NATIVE_APP) return false;
+  const now = Date.now ? Date.now() : new Date().getTime();
+  if (now - lastNativeNoAdAlert < 1000) {
+    return false;
+  }
+  lastNativeNoAdAlert = now;
+  let message = '';
+  if (typeof t === 'function') {
+    try {
+      message = t(preferredKey);
+      if ((!message || typeof message !== 'string' || !message.trim()) && preferredKey !== 'adsShop.noFill') {
+        message = t('adsShop.noFill');
+      }
+      if (!message || typeof message !== 'string' || !message.trim()) {
+        message = t('ads.lifeUnavailable');
+      }
+    } catch (err) {
+      console.warn('[PlayGate] notifyNativeNoAdAvailable translate failed', err);
+    }
+  }
+  if (!message || typeof message !== 'string' || !message.trim()) {
+    message = 'No ad available right now. Please try again later.';
+  }
+  return showNativeAlert(message.trim());
 }
 
 let lifeAdStatus = 'idle'; // 'idle' | 'loading' | 'rewarded' | 'partial' | 'limit' | 'error'
@@ -561,10 +612,23 @@ function triggerLifeAd(autoStart = false) {
     const fallbackGain = 2;
     const rawReason = formatLifeAdError(_err);
     if (isNoAdAvailableError(rawReason)) {
-      lifeAdStatus = 'error';
-      lifeAdMessage = t('ads.lifeUnavailable');
+      const noLivesBeforeAd = nativeLivesRemaining() <= 0;
+      let shouldAutoRestart = false;
+      if (noLivesBeforeAd) {
+        grantDailyLives(fallbackGain);
+        lifeAdStatus = 'partial';
+        lifeAdMessage = t('ads.lifePartial', { lives: fallbackGain });
+        shouldAutoRestart = lifeAdAutoStart && nativeLivesRemaining() > 0;
+      } else {
+        lifeAdStatus = 'error';
+        lifeAdMessage = null;
+      }
       lifeAdAutoStart = false;
+      if (shouldAutoRestart) {
+        setTimeout(() => resetRun(), 0);
+      }
       if (uiButtons && uiButtons.gameover) uiButtons.gameover = [];
+      notifyNativeNoAdAvailable();
       return;
     }
     const reasonText = rawReason;
@@ -685,7 +749,12 @@ function startRewardAd(key) {
     const reasonText = formatLifeAdError(_err);
     const noFill = isNoAdAvailableError(reasonText);
     state.status = 'error';
-    state.message = noFill ? null : t('ads.lifeError');
+    if (noFill) {
+      state.message = null;
+      notifyNativeNoAdAvailable('adsShop.noFill');
+    } else {
+      state.message = t('ads.lifeError');
+    }
     uiButtons.shop.cards = [];
     uiButtons.shop.buttons = [];
     if (typeof buildShopCards === 'function') buildShopCards();
