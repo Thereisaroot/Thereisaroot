@@ -253,6 +253,7 @@
       loading: 'Loading...',
       claimedToday: 'Already claimed today.',
       adNotCompleted: 'Finish the ad to receive the reward.',
+      noFill: 'No ad available right now. Please try again later.',
       nativeOnly: 'Ads are only available in the app.',
       alreadyOwned: 'Already unlocked.',
     },
@@ -657,6 +658,7 @@
       loading: '불러오는 중...',
       claimedToday: '오늘은 이미 받았습니다.',
       adNotCompleted: '보상을 받으려면 광고를 끝까지 시청하세요.',
+      noFill: '현재 재생할 광고가 없습니다. 잠시 후 다시 시도해 주세요.',
       nativeOnly: '이 기능은 앱 버전에서만 이용할 수 있습니다.',
       alreadyOwned: '이미 해제된 캐릭터입니다.',
     },
@@ -809,7 +811,54 @@
     },
   };
 
+  function detectInitialLanguage() {
+    let isNative = false;
+    if (typeof window !== 'undefined') {
+      const Cap = window.Capacitor;
+      if (Cap) {
+        try {
+          if (typeof Cap.isNativePlatform === 'function' && Cap.isNativePlatform()) {
+            isNative = true;
+          }
+        } catch (_) {}
+        if (!isNative) {
+          try {
+            const platform = typeof Cap.getPlatform === 'function'
+              ? Cap.getPlatform()
+              : Cap.platform;
+            if (platform && platform !== 'web') {
+              isNative = true;
+            }
+          } catch (_) {}
+        }
+      }
+      if (isNative) {
+        const explicit = window.WEBSWING_DEFAULT_LANG;
+        if (explicit) {
+          const normalized = String(explicit).trim().toLowerCase();
+          if (normalized === 'ko' || normalized === 'en') return normalized;
+        }
+        const locale = window.WEBSWING_DEVICE_LOCALE;
+        if (locale) {
+          const normalizedLocale = String(locale).trim().toLowerCase();
+          if (normalizedLocale.startsWith('ko')) return 'ko';
+          if (normalizedLocale.startsWith('en')) return 'en';
+        }
+      }
+    }
+    if (typeof navigator !== 'undefined') {
+      const navLangs = navigator.languages || [navigator.language || navigator.userLanguage];
+      for (const lang of navLangs) {
+        if (!lang) continue;
+        const lower = String(lang).trim().toLowerCase();
+        if (!lower) continue;
+        if (lower.startsWith('ko')) return 'ko';
+      }
+    }
+    return 'en';
+  }
+
   global.I18N.registerLanguage('en', en);
   global.I18N.registerLanguage('ko', ko);
-  global.I18N.init('ko');
+  global.I18N.init(detectInitialLanguage());
 })(typeof window !== 'undefined' ? window : globalThis);

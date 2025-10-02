@@ -294,10 +294,10 @@ function setLocaleFromEnvironment(api) {
     ? String(window.WEBSWING_DEVICE_LOCALE).toLowerCase()
     : '';
   if (locale.startsWith('ko')) {
-    try { api.setLanguage('ko'); } catch (_) {}
+    try { api.setLanguage('ko', { manual: false }); } catch (_) {}
     return true;
   }
-  try { api.setLanguage('en'); } catch (_) {}
+  try { api.setLanguage('en', { manual: false }); } catch (_) {}
   return true;
 }
 

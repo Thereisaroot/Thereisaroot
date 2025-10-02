@@ -509,6 +509,15 @@ function formatLifeAdError(err) {
   }
 }
 
+function isNoAdAvailableError(reason) {
+  if (!reason || typeof reason !== 'string') return false;
+  const normalized = reason.toLowerCase();
+  return normalized.includes('no ad to show')
+    || normalized.includes('no ad available')
+    || normalized.includes('ads not available')
+    || normalized.includes('no fill');
+}
+
 function triggerLifeAd(autoStart = false) {
   if (!IS_NATIVE_APP) return false;
   if (typeof ensureDailyState === 'function') ensureDailyState();
@@ -550,7 +559,15 @@ function triggerLifeAd(autoStart = false) {
   }).catch((_err) => {
     console.log('[LifeAd] showLifeAd failed:', _err);
     const fallbackGain = 2;
-    const reasonText = formatLifeAdError(_err);
+    const rawReason = formatLifeAdError(_err);
+    if (isNoAdAvailableError(rawReason)) {
+      lifeAdStatus = 'error';
+      lifeAdMessage = t('ads.lifeUnavailable');
+      lifeAdAutoStart = false;
+      if (uiButtons && uiButtons.gameover) uiButtons.gameover = [];
+      return;
+    }
+    const reasonText = rawReason;
     const noLivesBeforeAd = nativeLivesRemaining() <= 0;
     if (noLivesBeforeAd) {
       grantDailyLives(fallbackGain);
@@ -579,9 +596,8 @@ function getAdRewardState(key) {
     adRewardState[key] = { status: 'idle', message: null };
   }
   const state = adRewardState[key];
-  if (state.status !== 'loading' && !isDailyRewardClaimed(key)) {
+  if (state.status !== 'loading' && !isDailyRewardClaimed(key) && !state.message) {
     state.status = 'idle';
-    state.message = null;
   }
   return state;
 }
@@ -666,8 +682,10 @@ function startRewardAd(key) {
     if (typeof buildShopCards === 'function') buildShopCards();
   }).catch((_err) => {
     console.log('[AdShop] showRewardedAd failed:', _err);
+    const reasonText = formatLifeAdError(_err);
+    const noFill = isNoAdAvailableError(reasonText);
     state.status = 'error';
-    state.message = t('ads.lifeError');
+    state.message = noFill ? null : t('ads.lifeError');
     uiButtons.shop.cards = [];
     uiButtons.shop.buttons = [];
     if (typeof buildShopCards === 'function') buildShopCards();

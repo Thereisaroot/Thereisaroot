@@ -1,8 +1,10 @@
 (function (global) {
   const STORAGE_KEY = 'webswing_lang';
+  const MANUAL_KEY = 'webswing_lang_manual';
   const languages = {};
   const listeners = new Set();
   let currentLang = 'en';
+  let manualSelection = false;
 
   function isObject(value) {
     return value && typeof value === 'object' && !Array.isArray(value);
@@ -18,6 +20,13 @@
       }
     }
     return out;
+  }
+
+  function normalizeLangKey(value) {
+    if (value == null) return null;
+    const str = String(value).trim();
+    if (!str) return null;
+    return str.toLowerCase();
   }
 
   function getValue(obj, path) {
@@ -68,24 +77,57 @@
     }
   }
 
-  function resolveLang(preferred) {
-    if (preferred && languages[preferred]) return preferred;
-    const stored = readStoredLanguage();
-    if (stored && languages[stored]) return stored;
-    if (stored && typeof stored === 'string' && stored.includes('-')) {
-      const baseStored = stored.split('-')[0];
-      if (languages[baseStored]) return baseStored;
+  function readManualSelection() {
+    try {
+      if (!global.localStorage) return false;
+      return global.localStorage.getItem(MANUAL_KEY) === '1';
+    } catch (_) {
+      return false;
     }
-    if (preferred && preferred.includes('-')) {
-      const base = preferred.split('-')[0];
-      if (languages[base]) return base;
+  }
+
+  function writeManualSelection(value) {
+    manualSelection = Boolean(value);
+    try {
+      if (!global.localStorage) return;
+      if (manualSelection) {
+        global.localStorage.setItem(MANUAL_KEY, '1');
+      } else {
+        global.localStorage.removeItem(MANUAL_KEY);
+      }
+    } catch (_) {}
+  }
+
+  manualSelection = readManualSelection();
+
+  function shouldPreferStoredLang(lang) {
+    if (!lang || !languages[lang]) return false;
+    if (manualSelection) return true;
+    return lang === 'ko';
+  }
+
+  function resolveLang(preferred) {
+    const normalizedPreferred = normalizeLangKey(preferred);
+    const storedRaw = readStoredLanguage();
+    const stored = normalizeLangKey(storedRaw);
+    if (shouldPreferStoredLang(stored)) return stored;
+    if (stored && stored.includes('-')) {
+      const baseStored = stored.split('-')[0];
+      if (shouldPreferStoredLang(baseStored)) return baseStored;
+    }
+    if (normalizedPreferred && languages[normalizedPreferred]) return normalizedPreferred;
+    if (normalizedPreferred && normalizedPreferred.includes('-')) {
+      const basePreferred = normalizedPreferred.split('-')[0];
+      if (languages[basePreferred]) return basePreferred;
     }
     if (typeof navigator !== 'undefined') {
       const navLangs = navigator.languages || [navigator.language || navigator.userLanguage];
       for (const lang of navLangs) {
-        if (languages[lang]) return lang;
-        if (lang && lang.includes('-')) {
-          const base = lang.split('-')[0];
+        const normalizedNav = normalizeLangKey(lang);
+        if (!normalizedNav) continue;
+        if (languages[normalizedNav]) return normalizedNav;
+        if (normalizedNav.includes('-')) {
+          const base = normalizedNav.split('-')[0];
           if (languages[base]) return base;
         }
       }
@@ -151,10 +193,20 @@
     }
   }
 
-  function setLanguage(lang) {
+  function setLanguage(lang, options) {
     if (!lang || !languages[lang]) return;
-    if (lang === currentLang) return;
+    const isManual = !options || options.manual !== false;
+    if (lang === currentLang) {
+      if (options && options.manual === false) {
+        writeManualSelection(false);
+        try {
+          if (global.localStorage) global.localStorage.setItem(STORAGE_KEY, lang);
+        } catch (_) {}
+      }
+      return;
+    }
     currentLang = lang;
+    writeManualSelection(isManual);
     try {
       if (global.localStorage) {
         global.localStorage.setItem(STORAGE_KEY, lang);
@@ -196,8 +248,16 @@
   }
 
   function init(defaultLang) {
-    if (!defaultLang) defaultLang = currentLang;
-    currentLang = resolveLang(defaultLang);
+    const normalizedDefault = normalizeLangKey(defaultLang);
+    currentLang = resolveLang(normalizedDefault);
+    if (!manualSelection) {
+      try {
+        if (global.localStorage) {
+          global.localStorage.setItem(STORAGE_KEY, currentLang);
+        }
+      } catch (_) {}
+      writeManualSelection(false);
+    }
     notify();
     if (typeof document !== 'undefined') {
       if (document.readyState === 'loading') {
@@ -218,6 +278,7 @@
     t: translate,
     applyDom,
     init,
+    isManualSelection: () => manualSelection,
   };
 
   global.I18N = api;

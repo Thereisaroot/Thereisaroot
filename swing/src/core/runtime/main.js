@@ -8,6 +8,19 @@ function applyStoredLanguagePreference() {
   if (!api || typeof api.setLanguage !== 'function') return;
   const stored = (typeof loadLanguagePreference === 'function') ? loadLanguagePreference() : null;
   if (stored) {
+    let manualStored = false;
+    try {
+      manualStored = localStorage.getItem('webswing_lang_manual') === '1';
+    } catch (_) {}
+    if (!manualStored) {
+      const current = (typeof api.getLanguage === 'function') ? api.getLanguage() : null;
+      if (current && current !== stored) {
+        try {
+          localStorage.setItem('webswing_lang', current);
+        } catch (_) {}
+      }
+      return;
+    }
     const available = typeof api.getAvailableLanguages === 'function'
       ? api.getAvailableLanguages()
       : null;
@@ -20,8 +33,9 @@ function applyStoredLanguagePreference() {
     const applied = setLocaleFromEnvironment(api);
     if (applied) return;
   }
-  if (typeof api.getLanguage === 'function' && api.getLanguage() !== 'en') {
-    api.setLanguage('en');
+  const current = (typeof api.getLanguage === 'function') ? api.getLanguage() : null;
+  if (!current) {
+    api.setLanguage('en', { manual: false });
   }
 }
 
