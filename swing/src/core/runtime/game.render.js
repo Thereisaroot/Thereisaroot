@@ -23,6 +23,87 @@ function drawUIButtonRect(g, button, options = {}) {
   if (label) g.fillText(label, textX, textY);
 }
 
+const GAME_OVER_TIP_KEYS = [
+  'gameOver.tips.jumpItem',
+  'gameOver.tips.wizard',
+  'gameOver.tips.fever',
+  'gameOver.tips.records',
+  'gameOver.tips.scoreHint',
+  'gameOver.tips.airJump',
+];
+
+function performDetach(powerRatio = 0) {
+  const tip = player.rope ? player.rope.tip(simTime) : { vx: 0, vy: 0, th: 0 };
+  player.mode = 'free';
+  const upFactor = 0.8 + 0.2 * Math.cos(tip.th || 0);
+  const js = CONFIG.jumpSpeedScale || 1;
+  const speedMultiplier = fastModeEnabled ? 1.5 : 1.0;
+  const baseForward = CONFIG.baseVx * js;
+  let detVx = Math.max(
+    CONFIG.minVx,
+    Math.min(CONFIG.maxVx, ((tip.vx || 0) * js + baseForward) * speedMultiplier)
+  );
+  let detVy = (tip.vy || 0) * js - (CONFIG.jumpImpulse * upFactor * js);
+
+  if (powerRatio > 0) {
+    const clampedRatio = Math.max(0, Math.min(1, powerRatio));
+    detVx = Math.max(
+      CONFIG.minVx,
+      Math.min(CONFIG.maxVx, detVx + POWER_JUMP_FORWARD_BONUS * clampedRatio)
+    );
+    detVy -= POWER_JUMP_VERTICAL_BONUS * clampedRatio;
+  }
+
+  lastDetachedRope = player.rope;
+  player.rope = null;
+  catchLockUntil = simTime + 0.2;
+
+  const abilityBonus = characterAirJumpBonus();
+  const baseAir = Math.max(0, 1 + (shopInv.plusJump ? 1 : 0) + abilityBonus);
+  airJumpsLeft = baseAir + (pendingExtraJump ? 1 : 0);
+  usedFlyThisRun = false;
+  usedAirJumps = 0;
+
+  if (pendingSizeScale && pendingSizeScale > 0) {
+    player.sizeScale = pendingSizeScale;
+    pendingSizeScale = 0;
+  } else {
+    player.sizeScale = 1;
+  }
+  pendingExtraJump = false;
+
+  if (characterIs('wizard')) {
+    const wizardSpeed = Math.max(0, CONFIG.wizardJumpSpeed || 0);
+    const wizardImpulse = Math.max(0, CONFIG.wizardJumpImpulse || CONFIG.jumpImpulse);
+    detVx = Math.max(CONFIG.minVx, Math.min(CONFIG.maxVx, wizardSpeed * speedMultiplier));
+    detVy = -wizardImpulse;
+    wizardFloatTimer = 2.0;
+    wizardSpinTimer = wizardFloatTimer;
+    const spinRevs = CONFIG.wizardSpinRevolutions || 0;
+    wizardSpinRate = (spinRevs > 0 && wizardSpinTimer > 0)
+      ? ((Math.PI * 2 * spinRevs) / wizardSpinTimer)
+      : 0;
+  } else {
+    wizardFloatTimer = 0;
+    wizardSpinTimer = 0;
+    wizardSpinRate = 0;
+  }
+
+  const slowLevel = shopInv.slowLevel || 0;
+  if (slowLevel > 0 && slowMoTimer <= 0 && slowMoCooldown <= 0 && slowMoPendingTimer <= 0) {
+    const slowChance = Math.min(1, slowLevel * 0.1);
+    if (Math.random() < slowChance) {
+      slowMoPendingTimer = SLOW_MO_TRIGGER_DELAY;
+      slowMoPendingEffect = { x: player.x, y: player.y - 24 };
+      slowMoCooldown = SLOW_MO_COOLDOWN + SLOW_MO_TRIGGER_DELAY;
+    }
+  }
+
+  player.vx = detVx;
+  player.vy = detVy;
+  consumePowerCharge();
+}
+
 function triggerSlowMoImmediate(effectX, effectY, cooldown = SLOW_MO_COOLDOWN) {
   slowMoPendingTimer = 0;
   slowMoPendingEffect = null;
@@ -771,72 +852,31 @@ function updateRun(dt) {
   }
 
   // Input
-  if (Input.anyPressed()) {
-    // Record press start for long-press detection
+  const justPressed = Input.anyPressed();
+  if (justPressed) {
     pressStartAt = simTime;
     flyLongPressTriggered = false;
-    if (player.mode === 'attached') {
-      // Detach with momentum-carry jump
-      const tip = player.rope ? player.rope.tip(simTime) : { vx: 0, vy: 0, th: 0 };
-      player.mode = 'free';
-      // carry over momentum from swing and add forward + upward impulse
-      const upFactor = 0.8 + 0.2 * Math.cos(tip.th || 0); // near bottom stronger
-      const js = CONFIG.jumpSpeedScale || 1;
-      const speedMultiplier = fastModeEnabled ? 1.5 : 1.0;
-      const baseForward = CONFIG.baseVx * js;
-      let detVx = Math.max(CONFIG.minVx, Math.min(CONFIG.maxVx, ((tip.vx || 0) * js + baseForward) * speedMultiplier));
-      let detVy = (tip.vy || 0) * js - (CONFIG.jumpImpulse * upFactor * js);
-      // prevent instant re-catch on the same rope
-      lastDetachedRope = player.rope;
-      player.rope = null;
-      catchLockUntil = simTime + 0.2; // 200ms lock
-      // Base additional jumps: 1 for all levels; items can add more
-      const abilityBonus = characterAirJumpBonus();
-      const baseAir = Math.max(0, 1 + (shopInv.plusJump ? 1 : 0) + abilityBonus);
-      airJumpsLeft = baseAir + (pendingExtraJump ? 1 : 0);
-      // Reset per-jump fly availability on jump count reset (new jump phase)
-      usedFlyThisRun = false;
-      usedAirJumps = 0;
-      // consume pending size scale on detach
-      if (pendingSizeScale && pendingSizeScale > 0) {
-        player.sizeScale = pendingSizeScale;
-        pendingSizeScale = 0;
-      } else {
-        player.sizeScale = 1;
+  }
+
+  if (player.mode === 'attached') {
+    if (powerChargeActive) {
+      if (Input.down) {
+        powerCharge = Math.min(1, powerCharge + baseDt / POWER_CHARGE_SECONDS);
       }
-      pendingExtraJump = false; // consume
-      if (characterIs('wizard')) {
-        const wizardSpeed = Math.max(0, CONFIG.wizardJumpSpeed || 0);
-        const wizardImpulse = Math.max(0, CONFIG.wizardJumpImpulse || CONFIG.jumpImpulse);
-        detVx = Math.max(CONFIG.minVx, Math.min(CONFIG.maxVx, wizardSpeed * speedMultiplier));
-        detVy = -wizardImpulse;
-        wizardFloatTimer = 2.0;
-        wizardSpinTimer = wizardFloatTimer;
-        const spinRevs = CONFIG.wizardSpinRevolutions || 0;
-        wizardSpinRate = (spinRevs > 0 && wizardSpinTimer > 0) ? ((Math.PI * 2 * spinRevs) / wizardSpinTimer) : 0;
-      } else {
-        wizardFloatTimer = 0;
-        wizardSpinTimer = 0;
-        wizardSpinRate = 0;
+      if (!Input.down) {
+        performDetach(powerCharge);
       }
-      const slowLevel = shopInv.slowLevel || 0;
-      if (slowLevel > 0 && slowMoTimer <= 0 && slowMoCooldown <= 0 && slowMoPendingTimer <= 0) {
-        const slowChance = Math.min(1, slowLevel * 0.1);
-        if (Math.random() < slowChance) {
-          slowMoPendingTimer = SLOW_MO_TRIGGER_DELAY;
-          slowMoPendingEffect = { x: player.x, y: player.y - 24 };
-          slowMoCooldown = SLOW_MO_COOLDOWN + SLOW_MO_TRIGGER_DELAY;
-        }
-      }
-      player.vx = detVx;
-      player.vy = detVy;
-    } else {
-      // allow air flaps? keep as single impulse only when pressed; optional
-      if (airJumpsLeft > 0) {
-        player.airFlap();
-        airJumpsLeft -= 1;
-        usedAirJumps += 1;
-      }
+    } else if (powerChargeAvailable && justPressed) {
+      powerChargeActive = true;
+      powerCharge = 0;
+    } else if (justPressed) {
+      performDetach(0);
+    }
+  } else if (justPressed) {
+    if (airJumpsLeft > 0) {
+      player.airFlap();
+      airJumpsLeft -= 1;
+      usedAirJumps += 1;
     }
   }
   // Reset fly when not holding
@@ -851,9 +891,9 @@ function updateRun(dt) {
   // Update stage bullets (after stage 5)
   const currentStage = Math.floor(score / 20) + 1;
   if (currentStage > 5 && !starModeActive) {
-    // Calculate bullet interval: starts at 10s, decreases by 1s every 5 stages, minimum 5s
+    // Calculate bullet interval: starts at 6s, decreases by 1s every 5 stages, minimum 3s
     const stagesAbove5 = Math.floor((currentStage - 1) / 5);
-    stageBulletInterval = Math.max(5, 10 - stagesAbove5);
+    stageBulletInterval = Math.max(3, 6 - stagesAbove5);
 
     // Spawn bullets
     stageBulletTimer += baseDt;
@@ -903,6 +943,7 @@ function updateRun(dt) {
           player.vy = 100;
           stageBullets.splice(i, 1);
           spawnEffect('burst', player.x, player.y);
+          consumePowerCharge();
           continue;
         }
       }
@@ -992,6 +1033,7 @@ function updateRun(dt) {
       boxes.length = 0;
       player.rope = newWebRope;
       player.mode = 'attached';
+      onPlayerAttached();
       player.x = targetWorldX - camera.x;
       player.y = targetWorldY;
       player.vx = 0;
@@ -1087,6 +1129,7 @@ function updateRun(dt) {
     player.rope.breakAt = null;
     player.rope = null;
     catchLockUntil = simTime + 0.1;
+    consumePowerCharge();
   }
 
   // Update effects
@@ -1133,6 +1176,7 @@ function updateRun(dt) {
         // Attach
         player.mode = 'attached';
         player.rope = rope;
+        onPlayerAttached();
         addToPlayerStat && addToPlayerStat('ropesCaught', 1);
         wizardFloatTimer = 0;
         wizardSpinTimer = 0;
@@ -1229,6 +1273,7 @@ function updateRun(dt) {
       ropes.push(webRope);
       player.rope = webRope;
       player.mode = 'attached';
+      onPlayerAttached();
       const tipNow = webRope.tip(simTime);
       player.x = tipNow.x;
       player.y = tipNow.y;
@@ -1272,6 +1317,7 @@ function updateRun(dt) {
       ropes.push(revivalRope);
       player.rope = revivalRope;
       player.mode = 'attached';
+      onPlayerAttached();
       const tipNow = revivalRope.tip(simTime);
       player.x = tipNow.x;
       player.y = tipNow.y;
@@ -1326,6 +1372,16 @@ function updateRun(dt) {
     const summaryExp = earnedExpCore + stageGateExpBonusThisRun;
     lastEarned = summaryMoney;
     lastExpEarned = summaryExp;
+    if (summaryMoney <= 0 && summaryExp <= 0) {
+      const availableTips = GAME_OVER_TIP_KEYS.filter((key) => t(key) !== key);
+      if (availableTips.length) {
+        gameOverTipKey = availableTips[Math.floor(Math.random() * availableTips.length)];
+      } else {
+        gameOverTipKey = null;
+      }
+    } else {
+      gameOverTipKey = null;
+    }
     // Compute potential level-up BEFORE applying demo resets (based on EXP)
     const prevLevel = getLevelByExp(exp);
     const newLevel = getLevelByExp(exp + earnedExpCore);
@@ -1669,6 +1725,18 @@ function renderRun(g) {
     const ratio = Math.max(0, Math.min(1, rem / (CONFIG.starDuration || 3.0)));
     g.fillStyle = '#ffd966';
     g.fillRect(bx, by, bw * ratio, bh);
+  } else if (player.mode === 'attached' && (powerChargeActive || (powerCharge > 0 && powerChargeAvailable))) {
+    g.textAlign = 'center';
+    g.fillStyle = '#8fd6ff';
+    g.font = `12px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+    g.fillText(t('hud.power'), CONFIG.width / 2, 10);
+    const bw = 120, bh = 6;
+    const bx = (CONFIG.width - bw) / 2;
+    const by = 26;
+    g.fillStyle = 'rgba(255,255,255,0.15)';
+    g.fillRect(bx, by, bw, bh);
+    g.fillStyle = '#8fd6ff';
+    g.fillRect(bx, by, bw * Math.max(0, Math.min(1, powerCharge)), bh);
   }
   // Pending item indicators (move to left side, below level)
   g.textAlign = 'left';
@@ -2009,9 +2077,15 @@ function renderGameOver(g) {
         nextText = t('gameOver.maxLevel');
       }
     }
-    const earnedText = (lastEarned > 0 || lastExpEarned > 0)
-      ? t('gameOver.earned', { money: lastEarned, exp: lastExpEarned })
-      : t('gameOver.earnedHint');
+    let earnedText;
+    if (lastEarned > 0 || lastExpEarned > 0) {
+      earnedText = t('gameOver.earned', { money: lastEarned, exp: lastExpEarned });
+    } else if (gameOverTipKey) {
+      const tipLabel = t('gameOver.tipLabel');
+      earnedText = `${tipLabel}: ${t(gameOverTipKey)}`;
+    } else {
+      earnedText = t('gameOver.earnedHint');
+    }
     // Next Target line with Score font size (12px)
     g.font = `12px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
     g.fillText(nextText, CONFIG.width / 2, y0);
@@ -2059,7 +2133,7 @@ function renderGameOver(g) {
         gameOverMenuButtons.forEach((button) => drawUIButtonRect(g, button));
         const messageAnchor = gameOverMenuButtons[gameOverMenuButtons.length - 1];
         if (gameOverMenuMessage && messageAnchor) {
-          const msgY = messageAnchor.y + messageAnchor.h + 18;
+          const msgY = messageAnchor.y + messageAnchor.h + 8;
           drawCenteredText(g, gameOverMenuMessage, msgY, 9, '#ffb347');
         }
       }

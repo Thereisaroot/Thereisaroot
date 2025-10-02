@@ -1024,6 +1024,11 @@ let tailorCashBonusThisRun = 0; // Extra $ from Tailor rope catches this run
 let stageGateCashBonusThisRun = 0;
 let stageGateExpBonusThisRun = 0;
 let hudConsumables = [];
+let gameOverTipKey = null;
+let powerCharge = 0;
+let powerChargeActive = false;
+let powerChargeAvailable = true;
+let powerChargeFirstJumpPending = true;
 // Web rope creation marker (explicitly declared to avoid implicit globals)
 let webRopeJustCreated = false;
 // Prevent double rope buffering within one update step
@@ -1051,8 +1056,44 @@ const SLOW_MO_TRIGGER_DELAY = 0.2;
 const COMBO_BONUS_PER_LEVEL = 1;
 const LUCKY_BONUS_PER_LEVEL = 0.05;
 const FEVER_BONUS_SECONDS = 1;
+const POWER_CHARGE_SECONDS = 1.2;
+const POWER_JUMP_FORWARD_BONUS = 140;
+const POWER_JUMP_VERTICAL_BONUS = 240;
 const TUTORIAL_STEP_DURATION = 6;
 const TAILOR_EXTRA_ROPE_CHANCE = 0.5;
+
+function onPlayerAttached() {
+  powerCharge = 0;
+  powerChargeActive = false;
+  if (powerChargeFirstJumpPending || characterIs('springman')) {
+    powerChargeAvailable = true;
+  } else {
+    powerChargeAvailable = false;
+  }
+}
+
+function consumePowerCharge() {
+  if (powerChargeFirstJumpPending) powerChargeFirstJumpPending = false;
+  powerCharge = 0;
+  powerChargeActive = false;
+  powerChargeAvailable = false;
+}
+
+function computeBossDifficulty(stageNumber) {
+  const encounterCount = bossProgress ? (bossProgress.encounterCount || 0) : 0;
+  const level = Math.max(0, encounterCount - 1);
+  const stageBonus = Math.max(0, stageNumber - 3) * 0.05;
+  const intensity = level + stageBonus;
+  const multiplier = 1 + Math.max(0, intensity) * 0.2;
+  const rewardMultiplier = 1 + Math.max(0, intensity) * 0.25;
+  return {
+    encounterCount,
+    level,
+    intensity,
+    multiplier,
+    rewardMultiplier,
+  };
+}
 
 const STAGE_COLORS = [
   '#0f1a2a', // initial default
@@ -1177,6 +1218,7 @@ function resetBossProgress() {
     triggeredStages: new Set(),
     lastType: null,
     active: false,
+    encounterCount: 0,
   };
   bossState = null;
   applyBossBackground(false);
@@ -1341,7 +1383,9 @@ function startBossStage(stageNumber, entryRope) {
   applyBossBackground(false);
   const type = pickBossType(stageNumber);
   bossProgress.triggeredStages.add(stageNumber);
+  bossProgress.encounterCount = (bossProgress.encounterCount || 0) + 1;
   bossProgress.active = true;
+  const difficulty = computeBossDifficulty(stageNumber);
 
   const restoreCameraX = camera.x;
   const entryAnchorX = entryRope.anchorX;
@@ -1353,6 +1397,7 @@ function startBossStage(stageNumber, entryRope) {
     active: true,
     stageNumber,
     type,
+    difficulty,
     phase: 'bounce',
     timer: 0,
     entryDuration: 1.8,
@@ -1379,6 +1424,7 @@ function startBossStage(stageNumber, entryRope) {
   player.mode = 'ascend';
   player.vx = 0;
   player.vy = 0;
+  consumePowerCharge();
   entryRope.A = 0;
   entryRope.omega = 0;
   entryRope.phi = 0;
@@ -1504,6 +1550,9 @@ function beginBossPop() {
 function initBossBattle() {
   if (!bossState) return;
   const basePlayerX = CONFIG.width * 0.35;
+  const difficulty = bossState.difficulty || computeBossDifficulty(bossState.stageNumber || 3);
+  const diffIntensity = Math.max(0, difficulty.intensity || 0);
+  const rewardMultiplier = Math.max(1, difficulty.rewardMultiplier || 1);
   ropes.length = 0;
   boxes.length = 0;
   player.rope = null;
@@ -1525,64 +1574,86 @@ function initBossBattle() {
     jumpPower: CONFIG.jumpImpulse * 0.9,
     bossTimer: 0,
     hudMessage: '',
+    rewardMultiplier,
   };
 
   if (bossState.type === 'bullet') {
+    const bulletTotalShots = Math.max(10, Math.round(12 + diffIntensity * 6));
+    const bulletShotInterval = Math.max(0.5, 1.0 - diffIntensity * 0.12);
+    const bulletShotCooldown = Math.max(0.3, bulletShotInterval * 0.6);
+    const bulletHitLimit = Math.max(2, Math.round(4 - diffIntensity * 0.5));
+    const bulletBossSpeed = 90 + diffIntensity * 20;
+    const bulletSpeed = 220 + diffIntensity * 45;
+    const bulletVolleyMax = Math.max(2, Math.min(3, 1 + Math.floor(diffIntensity)));
+    const bulletAimFrequency = Math.max(2, Math.round(4 - diffIntensity * 0.5));
     bossState.battle = {
       ...battleBase,
       bossY: CONFIG.height * 0.35,
       bossDir: 1,
-      bossSpeed: 90,
+      bossSpeed: bulletBossSpeed,
       bossMinY: 60,
       bossMaxY: CONFIG.height * 0.65,
       bossOffsetX: CONFIG.width - 8,
       shotsFired: 0,
-      totalShots: 15,
-      shotInterval: 1.0,
-      shotCooldown: 0.6,
+      totalShots: bulletTotalShots,
+      shotInterval: bulletShotInterval,
+      shotCooldown: bulletShotCooldown,
       bullets: [],
       dodged: 0,
       hitsTaken: 0,
-      hitLimit: 4,
-      bulletSpeed: 220,
+      hitLimit: bulletHitLimit,
+      bulletSpeed,
       failOnHit: false,
       nextVolleySize: 1,
-      topLeftAimFrequency: 4,
+      volleyMax: bulletVolleyMax,
+      topLeftAimFrequency: bulletAimFrequency,
       topLeftTarget: { x: 40, y: 48 },
     };
   } else if (bossState.type === 'slam') {
+    const slamDuration = Math.max(6, 10 - diffIntensity * 1.0);
+    const slamSuccessThreshold = Math.round(50 + diffIntensity * 12);
+    const slamMaxScoreJumps = Math.round(slamSuccessThreshold + 30 + diffIntensity * 15);
+    const slamJumpPower = 320 + diffIntensity * 30;
+    const slamBaseGravity = CONFIG.gravity * (1.35 + diffIntensity * 0.12);
     bossState.battle = {
       ...battleBase,
-      duration: 10.0,
+      duration: slamDuration,
       bossX: CONFIG.width * 0.46,
       bossY: CONFIG.height * 0.32,
       bossRadius: 70,
       hitCount: 0,
       hitCooldown: 0,
       jumpCount: 0,
-      successThreshold: 50,
-      maxScoreJumps: 80,
-      jumpPower: 320,
-      baseGravity: CONFIG.gravity * 1.35,
+      successThreshold: slamSuccessThreshold,
+      maxScoreJumps: slamMaxScoreJumps,
+      jumpPower: slamJumpPower,
+      baseGravity: slamBaseGravity,
     };
   } else if (bossState.type === 'collect') {
+    const collectTotalShots = Math.max(8, Math.round(10 + diffIntensity * 4));
+    const collectShotInterval = Math.max(0.6, 1.1 - diffIntensity * 0.12);
+    const collectShotCooldown = Math.max(0.3, collectShotInterval * 0.5);
+    const collectMissLimit = Math.max(2, Math.round(5 - diffIntensity * 0.7));
+    const collectTravelSpeedX = 160 + diffIntensity * 35;
+    const collectTravelSpeedY = 60 + diffIntensity * 20;
+    const collectBossSpeed = 70 + diffIntensity * 18;
     bossState.battle = {
       ...battleBase,
       bossY: CONFIG.height * 0.30,
       bossDir: 1,
-      bossSpeed: 70,
+      bossSpeed: collectBossSpeed,
       bossMinY: 60,
       bossMaxY: CONFIG.height * 0.6,
       shotsFired: 0,
-      totalShots: 10,
-      shotInterval: 1.1,
-      shotCooldown: 0.5,
+      totalShots: collectTotalShots,
+      shotInterval: collectShotInterval,
+      shotCooldown: collectShotCooldown,
       boxes: [],
       collected: 0,
       missed: 0,
-      missLimit: 5,
-      travelSpeedX: 160,
-      travelSpeedY: 60,
+      missLimit: collectMissLimit,
+      travelSpeedX: collectTravelSpeedX,
+      travelSpeedY: collectTravelSpeedY,
     };
   }
   bossState.phase = 'battle';
@@ -1730,7 +1801,9 @@ function updateBossTypeBullet(dt, battle) {
   if (battle.shotsFired >= battle.totalShots && battle.bullets.length === 0) {
     if ((battle.hitsTaken || 0) < (battle.hitLimit || 1)) {
       const accuracy = battle.totalShots > 0 ? Math.max(0, Math.min(1, battle.dodged / battle.totalShots)) : 0;
-      const reward = Math.max(0, Math.round(accuracy * 20));
+      const rewardBase = Math.max(0, Math.round(accuracy * 20));
+      const rewardMultiplier = battle.rewardMultiplier || (bossState && bossState.difficulty && bossState.difficulty.rewardMultiplier) || 1;
+      const reward = Math.max(rewardBase, Math.round(rewardBase * rewardMultiplier));
       triggerBossSuccess({ score: reward, cash: reward });
     } else {
       triggerBossFailure('hit');
@@ -1783,7 +1856,9 @@ function spawnBossBullet(battle) {
       target: aimTopLeft ? 'topLeft' : 'player',
     });
   }
-  battle.nextVolleySize = desiredVolley === 1 ? 2 : 1;
+  const volleyMax = Math.max(2, battle.volleyMax || 2);
+  const nextVolley = desiredVolley >= volleyMax ? 1 : Math.min(volleyMax, desiredVolley + 1);
+  battle.nextVolleySize = nextVolley;
 }
 
 function updateBossTypeSlam(dt, battle) {
@@ -1801,7 +1876,9 @@ function updateBossTypeSlam(dt, battle) {
     const clamped = Math.min(jumps, maxScoreJumps);
     const span = Math.max(1, maxScoreJumps - successThreshold);
     const rawReward = (clamped - successThreshold) / span * 20;
-    const reward = jumps >= successThreshold ? Math.max(0, Math.min(20, Math.round(rawReward))) : 0;
+    const rewardBase = jumps >= successThreshold ? Math.max(0, Math.min(20, Math.round(rawReward))) : 0;
+    const rewardMultiplier = (battle && battle.rewardMultiplier) || (bossState && bossState.difficulty && bossState.difficulty.rewardMultiplier) || 1;
+    const reward = Math.max(rewardBase, Math.round(rewardBase * rewardMultiplier));
     triggerBossOutcome({ success: jumps >= successThreshold, score: reward, cash: reward });
     return;
   }
@@ -1850,13 +1927,17 @@ function updateBossTypeCollect(dt, battle) {
   }
 
   if (battle.collected >= battle.totalShots) {
-    const reward = battle.collected * 2;
+    const rewardBase = battle.collected * 2;
+    const rewardMultiplier = (battle && battle.rewardMultiplier) || (bossState && bossState.difficulty && bossState.difficulty.rewardMultiplier) || 1;
+    const reward = Math.max(rewardBase, Math.round(rewardBase * rewardMultiplier));
     triggerBossSuccess({ score: reward, cash: reward });
     return;
   }
 
   if (battle.shotsFired >= battle.totalShots && battle.boxes.length === 0) {
-    const reward = battle.collected * 2;
+    const rewardBase = battle.collected * 2;
+    const rewardMultiplier = (battle && battle.rewardMultiplier) || (bossState && bossState.difficulty && bossState.difficulty.rewardMultiplier) || 1;
+    const reward = Math.max(rewardBase, Math.round(rewardBase * rewardMultiplier));
     if (battle.missed >= battle.missLimit) {
       triggerBossFailure('missed_boxes');
     } else {
@@ -2257,6 +2338,7 @@ function spawnInitialRope() {
   player.x = tip.x;
   player.y = tip.y;
   player.vy = tip.vy;
+  onPlayerAttached();
 }
 
 function planNextRope() {
@@ -2539,12 +2621,17 @@ function resetRun() {
   gameOverMenuMessageTimer = 0;
   bossOutcomeBanner = null;
   bossOutcomeTimer = 0;
+  if (typeof gameOverTipKey !== 'undefined') gameOverTipKey = null;
   showGuide = false;
   tutorialButtonRect = null;
   tutorialStepIndex = 0;
   tutorialStepTimer = 0;
   rouletteState = null;
   rouletteSummary = null;
+  powerCharge = 0;
+  powerChargeActive = false;
+  powerChargeAvailable = true;
+  powerChargeFirstJumpPending = true;
 
   resetStageState();
 

@@ -190,6 +190,7 @@
       best: 'BEST {best}',
       savings: '$ {amount}',
       fever: 'FEVER',
+      power: 'POWER',
       level: 'LV {level}',
     },
     stage: {
@@ -266,6 +267,15 @@
       maxLevel: 'Max level reached!',
       earned: 'Gained: ${money} / +{exp}P',
       earnedHint: 'Earn $ and P by scoring over 5',
+      tipLabel: 'TIP',
+      tips: {
+        jumpItem: 'Aim for the Jump+ item.',
+        wizard: 'Wizard hard to earn many points.',
+        fever: 'Fever helps you keep combos.',
+        records: 'Records grants rewards.',
+        scoreHint: 'Over 5P to earning $ and EXP.',
+        airJump: 'Try jumps while in the air.',
+      },
       stats: 'EXP: {exp}P | ${savings}',
       rouletteResult: 'Roulette: {before} {op} {value} = {after}',
       roulettePending: 'Roulette: {op} {value}',
@@ -397,6 +407,11 @@
         name: 'Tailor',
         summary: 'Adds bonus rope\n+$1 on catch',
         help: '50% chance to stitch an extra rope; catching it grants +$1.',
+      },
+      springman: {
+        name: 'Springman',
+        summary: 'Charge every\nrope jump',
+        help: 'Hold while attached to fill a power gauge. Release to leap farther on each detach.',
       },
       bird: {
         name: 'Bird',
@@ -595,6 +610,7 @@
       best: 'BEST {best}',
       savings: '$ {amount}',
       fever: 'FEVER',
+      power: 'POWER',
       level: 'LV {level}',
     },
     stage: {
@@ -671,6 +687,15 @@
       maxLevel: '최대 레벨에 도달했습니다!',
       earned: '획득: ${money} / +{exp}P',
       earnedHint: '점수 5 이상이면 $와 경험치를 얻습니다',
+      tipLabel: '팁',
+      tips: {
+        jumpItem: '어렵다면 점프+ 아이템을 목표로 하세요.',
+        wizard: '위자드는 점수를 많이 얻지는 못해요.',
+        fever: '피버는 콤보를 쉽게 이어줍니다.',
+        records: '기록을 달성하면 보상이 있습니다.',
+        scoreHint: '5P를 넘겨야 돈과 경험치를 받을 수 있어요.',
+        airJump: '공중에서 추가 점프를 해보세요.',
+      },
       stats: '경험치: {exp}P | ${savings}',
       rouletteResult: '룰렛: {before} {op} {value} = {after}',
       roulettePending: '룰렛: {op} {value}',
@@ -802,6 +827,11 @@
         name: '테일러',
         summary: '추가 로프\n잡으면 +$1',
         help: '50% 확률로 아래에 로프를 생성하고\n잡으면 $1을 얻습니다.',
+      },
+      springman: {
+        name: '스프링맨',
+        summary: '붙어있을 때\n파워 점프',
+        help: '로프에 매달린 채로 누르고 있으면 파워 게이지가 차고, 손을 떼면 더 멀리 점프합니다.',
       },
       bird: {
         name: '버드',
