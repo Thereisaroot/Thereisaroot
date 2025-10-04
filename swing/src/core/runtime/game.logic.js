@@ -226,7 +226,7 @@ function ensurePlayGateStub() {
     Cap.Plugins.PlayGate = {
       showRewardedAd(options) { return invoke('showRewardedAd', options); },
       showLifeAd(options) { return invoke('showLifeAd', options); },
-      showAlert(options) { return invoke('showAlert', options); },
+      showAlert(options) { return invoke('showAlert', options); }, 
     };
   }
   return Cap.Plugins.PlayGate;
