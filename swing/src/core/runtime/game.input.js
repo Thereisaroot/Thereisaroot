@@ -104,6 +104,8 @@ window.addEventListener('keydown', (e) => {
   else if (e.code === 'Escape') UI.keyPressed = 'Escape';
   else if (e.code === 'ArrowDown') UI.keyPressed = 'ArrowDown';
   else if (e.code === 'ArrowUp') UI.keyPressed = 'ArrowUp';
+  else if (e.code === 'ArrowLeft') UI.keyPressed = 'ArrowLeft';
+  else if (e.code === 'ArrowRight') UI.keyPressed = 'ArrowRight';
   else if (e.code === 'Enter') UI.keyPressed = 'Enter';
 });
 window.addEventListener('keyup', (e) => {

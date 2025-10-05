@@ -176,12 +176,25 @@ function tick(now) {
 
   // Update with fixed dt
   while (acc >= dt) {
-    if (State.current === 'intro') updateIntro(dt);
-    else if (State.current === 'run') updateRun(dt);
-    else if (State.current === 'gameover') updateGameOver(dt);
-    else if (State.current === 'shop') updateShop(dt);
-    else if (State.current === 'boss_pending') updateBossPending(dt);
-    else if (State.current === 'boss') updateBoss(dt);
+    let popupActive = false;
+    if (typeof SkillSystem !== 'undefined' && SkillSystem && typeof SkillSystem.update === 'function') {
+      const skillStatus = SkillSystem.update(dt);
+      if (skillStatus && skillStatus.active) {
+        popupActive = true;
+        if (typeof handleSkillSelectionInput === 'function') {
+          handleSkillSelectionInput(dt);
+        }
+      }
+    }
+
+    if (!popupActive) {
+      if (State.current === 'intro') updateIntro(dt);
+      else if (State.current === 'run') updateRun(dt);
+      else if (State.current === 'gameover') updateGameOver(dt);
+      else if (State.current === 'shop') updateShop(dt);
+      else if (State.current === 'boss_pending') updateBossPending(dt);
+      else if (State.current === 'boss') updateBoss(dt);
+    }
     acc -= dt;
     Input.endFrame();
   }

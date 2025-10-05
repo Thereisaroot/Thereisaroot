@@ -89,6 +89,16 @@ function performDetach(powerRatio = 0) {
     wizardSpinRate = 0;
   }
 
+  if (typeof SkillSystem !== 'undefined' && SkillSystem && typeof SkillSystem.getSkillLevel === 'function') {
+    const boostLevel = SkillSystem.getSkillLevel('power_boost');
+    if (boostLevel > 0) {
+      const multiplier = 1 + 0.3 * boostLevel;
+      detVx *= multiplier;
+      detVy *= multiplier;
+      detVx = Math.max(CONFIG.minVx, Math.min(CONFIG.maxVx, detVx));
+    }
+  }
+
   const slowLevel = shopInv.slowLevel || 0;
   if (slowLevel > 0 && slowMoTimer <= 0 && slowMoCooldown <= 0 && slowMoPendingTimer <= 0) {
     const slowChance = Math.min(1, slowLevel * 0.1);
@@ -803,6 +813,433 @@ function drawRope(g, rope) {
     g.textBaseline = 'bottom';
     g.fillText('!', tx, ty - 6);
     g.restore();
+  }
+}
+
+
+const skillIconCache = new Map();
+let lastSkillOverlayLayout = null;
+
+function getSkillIconImage(skillId) {
+  if (!SkillSystem || typeof SkillSystem.getSkillIconPath !== 'function') return null;
+  const mode = (SkillSystem.getIconMode && SkillSystem.getIconMode()) || SkillData.DEFAULT_ICON_MODE || 'pixel';
+  const key = `${skillId}:${mode}`;
+  let cached = skillIconCache.get(key);
+  if (!cached) {
+    const path = SkillSystem.getSkillIconPath(skillId, mode);
+    if (!path) return null;
+    const img = new Image();
+    img.src = path;
+    cached = { img, path, mode };
+    skillIconCache.set(key, cached);
+  }
+  return cached.img;
+}
+
+function pointInRect(px, py, rect) {
+  if (!rect) return false;
+  return px >= rect.x && px <= rect.x + rect.w && py >= rect.y && py <= rect.y + rect.h;
+}
+
+function computeSkillOverlayLayout(popup) {
+  if (!popup) {
+    lastSkillOverlayLayout = null;
+    return null;
+  }
+  const marginX = Math.max(12, CONFIG.width * 0.05);
+  const containerW = Math.max(360, CONFIG.width - marginX * 2);
+  const maxContainerH = Math.min(CONFIG.height * 0.85, 680); // Increased max height for more cards
+  const headerH = 72;
+  const footerH = 76;
+  const cardCount = Math.max(1, popup.cards.length);
+
+  const cardHeight = 94; // A fixed, consistent height for each skill card.
+  const verticalGap = 16; // The space between cards.
+
+  // Calculate the total height required for the container based on the number of cards.
+  const requiredAreaH = (cardHeight * cardCount) + (verticalGap * Math.max(0, cardCount - 1));
+  const requiredContainerH = headerH + footerH + requiredAreaH;
+
+  // The final container height is the required height, but clamped to the maximum allowed.
+  let containerH = Math.min(maxContainerH, requiredContainerH);
+  if (cardCount === 4) {
+    containerH = Math.min(maxContainerH, containerH + 70);
+  }
+  const containerX = marginX;
+  const containerY = Math.max(12, (CONFIG.height - containerH) / 2);
+
+  // The area available for cards is the container height minus header and footer.
+  const cardAreaH = containerH - headerH - footerH;
+
+  let cardWidth = Math.min(containerW - 48, Math.max(320, CONFIG.width * 0.6));
+  cardWidth = Math.min(cardWidth + 10, containerW - 24); // Add 10px, but keep at least 12px side padding
+  const cards = [];
+  
+  // Center the block of cards vertically within the available card area.
+  const cardBlockH = (cardHeight * cardCount) + (verticalGap * Math.max(0, cardCount - 1));
+  let cardY = containerY + headerH + Math.max(0, (cardAreaH - cardBlockH) / 2);
+  const cardX = containerX + (containerW - cardWidth) / 2;
+
+  for (let i = 0; i < cardCount; i++) {
+    cards.push({ x: cardX, y: cardY, w: cardWidth, h: cardHeight });
+    cardY += cardHeight + verticalGap;
+  }
+
+  const buttonHeight = 36;
+  const buttonWidth = Math.min(200, containerW * 0.3);
+  const buttonY = containerY + containerH - footerH + (footerH - buttonHeight) / 2;
+  
+  const rerollButton = popup.rerollsRemaining > 0 ? {
+    x: containerX + 24,
+    y: buttonY,
+    w: buttonWidth,
+    h: buttonHeight,
+  } : null;
+  
+  const iconButton = {
+    x: containerX + containerW - buttonWidth - 24,
+    y: buttonY,
+    w: buttonWidth,
+    h: buttonHeight,
+  };
+
+  lastSkillOverlayLayout = {
+    container: { x: containerX, y: containerY, w: containerW, h: containerH },
+    cards,
+    rerollButton,
+    iconButton,
+    headerH,
+    footerH,
+  };
+  return lastSkillOverlayLayout;
+}
+
+function wrapSkillLines(str, maxWidth, g) {
+  if (!str) return [];
+  const lines = [];
+  const approxCharWidth = (g && typeof g.measureText === 'function') ? (g.measureText('Ｍ').width || g.measureText('가').width || 10) : 10;
+  const maxChars = Math.max(6, Math.floor(maxWidth / (approxCharWidth || 1)) - 5);
+  const segments = String(str).split(/\n+/);
+  for (const segment of segments) {
+    const words = segment.split(/\s+/);
+    let current = '';
+    for (const rawWord of words) {
+      let word = rawWord.trim();
+      if (!word) continue;
+      const candidate = current ? `${current} ${word}` : word;
+      if (candidate.length > maxChars) {
+        if (current) {
+          lines.push(current);
+          current = word;
+        } else {
+          current = word;
+        }
+        while (current.length > maxChars) {
+          lines.push(current.slice(0, maxChars));
+          current = current.slice(maxChars);
+        }
+      } else {
+        current = candidate;
+        continue;
+      }
+    }
+    if (current) lines.push(current);
+  }
+  return lines;
+}
+
+function renderSkillSelectionOverlay(g) {
+  if (!SkillSystem || typeof SkillSystem.getPopupState !== 'function') return;
+  const popup = SkillSystem.getPopupState();
+  if (!popup) {
+    lastSkillOverlayLayout = null;
+    return;
+  }
+  const layout = computeSkillOverlayLayout(popup);
+  const container = layout.container;
+
+  g.save();
+  g.fillStyle = 'rgba(0, 0, 0, 0.45)';
+  g.fillRect(0, 0, CONFIG.width, CONFIG.height);
+  g.restore();
+
+  g.save();
+  g.fillStyle = 'rgba(14,22,34,0.96)';
+  g.strokeStyle = '#8aa4ff';
+  g.lineWidth = 2;
+  g.beginPath();
+  g.rect(container.x, container.y, container.w, container.h);
+  g.fill();
+  g.stroke();
+  g.restore();
+
+  g.save();
+  g.textAlign = 'center';
+  g.textBaseline = 'top';
+  g.fillStyle = '#ffffff';
+  g.font = `14px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+  g.fillText(t('skills.overlay.title'), container.x + container.w / 2, container.y + 16);
+  const timerText = t('skills.overlay.timer', { seconds: Math.max(0, Math.ceil(popup.timer)) });
+  g.fillStyle = '#b4c0d9';
+  g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+  g.fillText(timerText, container.x + container.w / 2, container.y + 36);
+  g.restore();
+
+  if (layout.rerollButton) {
+    const rerollRect = layout.rerollButton;
+    g.save();
+    g.fillStyle = 'rgba(36,52,74,0.86)';
+    g.strokeStyle = '#9fb5d8';
+    g.lineWidth = 2;
+    g.beginPath();
+    g.rect(rerollRect.x, rerollRect.y, rerollRect.w, rerollRect.h);
+    g.fill();
+    g.stroke();
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+    const label = popup.rerollsRemaining > 1
+      ? t('skills.overlay.rerollCount', { count: popup.rerollsRemaining })
+      : t('skills.overlay.reroll');
+    g.fillStyle = '#ffffff';
+    g.fillText(label, rerollRect.x + rerollRect.w / 2, rerollRect.y + rerollRect.h / 2 + 1);
+    g.restore();
+  }
+
+  if (layout.iconButton) {
+    const iconRect = layout.iconButton;
+    g.save();
+    g.fillStyle = 'rgba(36,52,74,0.86)';
+    g.strokeStyle = '#9fb5d8';
+    g.lineWidth = 2;
+    g.beginPath();
+    g.rect(iconRect.x, iconRect.y, iconRect.w, iconRect.h);
+    g.fill();
+    g.stroke();
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+    const currentMode = (SkillSystem.getIconMode && SkillSystem.getIconMode()) || 'pixel';
+    const modeKey = currentMode === 'pixel' ? 'skills.overlay.iconModePixel' : 'skills.overlay.iconModeHi';
+    g.fillStyle = '#ffffff';
+    g.fillText(t(modeKey), iconRect.x + iconRect.w / 2, iconRect.y + iconRect.h / 2 + 1);
+    g.restore();
+  }
+
+  const cardNameFont = `12px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+  const levelFont = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+  const descFont = `7px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+
+  layout.cards.forEach((rect, index) => {
+    const card = popup.cards[index];
+    const selected = index === popup.selectedIndex;
+    g.save();
+    g.fillStyle = selected ? 'rgba(96,132,255,0.42)' : 'rgba(22,34,52,0.88)';
+    g.strokeStyle = selected ? '#9ab4ff' : '#3c4d70';
+    g.lineWidth = selected ? 3 : 2;
+    g.beginPath();
+    g.rect(rect.x, rect.y, rect.w, rect.h);
+    g.fill();
+    g.stroke();
+
+    const padding = 10;
+    const iconSide = Math.min(rect.h - padding * 2, 96);
+    const iconX = rect.x + padding;
+    const iconY = rect.y + (rect.h - iconSide) / 2;
+    const img = getSkillIconImage(card.id);
+    if (img && img.complete) {
+      g.drawImage(img, iconX, iconY, iconSide, iconSide);
+    } else {
+      g.fillStyle = 'rgba(25,38,60,0.6)';
+      g.fillRect(iconX, iconY, iconSide, iconSide);
+    }
+
+    const textX = iconX + iconSide + padding;
+    const textWidth = rect.x + rect.w - padding - textX;
+    const nameKey = SkillData.getSkillNameKey(card.id);
+    const name = nameKey ? t(nameKey) : card.id;
+    g.fillStyle = '#ffffff';
+    g.textAlign = 'left';
+    g.textBaseline = 'top';
+    g.font = cardNameFont;
+    g.fillText(name, textX, rect.y + padding);
+
+    const level = SkillSystem.getSkillLevel ? SkillSystem.getSkillLevel(card.id) : 0;
+    const levelLabel = t('skills.overlay.levelLabel', { level });
+    g.font = levelFont;
+    g.fillStyle = '#b4c0d9';
+    g.fillText(levelLabel, textX, rect.y + padding + 22);
+
+    let descY = rect.y + padding + 42;
+    const def = SkillData.getSkillDefinition(card.id);
+    const maxLevel = def ? (def.maxLevel || 1) : 1;
+    const nextLevel = Math.min(maxLevel, (level || 0) + 1);
+    const descKey = SkillData.getSkillLevelKey(card.id, nextLevel);
+    const descText = descKey ? t(descKey) : '';
+    if (descText) {
+      g.font = descFont;
+      g.fillStyle = '#c5d4f1';
+      const descLines = wrapSkillLines(descText, textWidth, g);
+      const lineGap = 12;
+      descLines.forEach((line) => {
+        g.fillText(line, textX, descY);
+        descY += lineGap;
+      });
+    }
+
+    if (def && def.type === 'hidden') {
+      const reqIds = SkillData.getHiddenSkillRequirements(card.id) || [];
+      if (reqIds.length) {
+        const names = reqIds.map((id) => {
+          const key = SkillData.getSkillNameKey(id);
+          return key ? t(key) : id;
+        }).join(' + ');
+        const reqText = t('skills.overlay.requires', { list: `${names} Lv3` });
+        g.font = descFont;
+        g.fillStyle = '#8aa4ff';
+        const reqLines = wrapSkillLines(reqText, textWidth, g);
+        const lineGap = 12;
+        reqLines.forEach((line) => {
+          g.fillText(line, textX, descY);
+          descY += lineGap;
+        });
+      }
+    }
+
+    g.restore();
+  });
+}
+
+function renderSkillHud(g) {
+  if (!SkillSystem || typeof SkillSystem.getActiveSkills !== 'function') return;
+  const skills = SkillSystem.getActiveSkills();
+  const panelW = 200;
+  const lineGap = 14;
+  const baseH = 34;
+  const panelH = skills.length > 0 ? baseH + skills.length * lineGap : baseH + lineGap;
+  const px = CONFIG.width - panelW - 12;
+  const py = CONFIG.height - panelH - 12;
+  g.save();
+  g.fillStyle = 'rgba(14,22,34,0.82)';
+  g.strokeStyle = '#5c82ff';
+  g.lineWidth = 2;
+  g.beginPath();
+  g.rect(px, py, panelW, panelH);
+  g.fill();
+  g.stroke();
+  g.textAlign = 'left';
+  g.textBaseline = 'top';
+  g.fillStyle = '#9fb5d8';
+  g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+  g.fillText(t('skills.overlay.hudTitle'), px + 12, py + 10);
+  if (!skills.length) {
+    g.fillStyle = '#c5d4f1';
+    g.font = `9px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+    g.fillText(t('skills.overlay.emptyHud'), px + 12, py + 24);
+    g.restore();
+    return;
+  }
+  let offsetY = py + 24;
+  skills.forEach((entry) => {
+    const nameKey = SkillData.getSkillNameKey(entry.id);
+    const name = nameKey ? t(nameKey) : entry.id;
+    const levelLabel = t('skills.overlay.levelLabel', { level: entry.level });
+    g.fillStyle = '#ffffff';
+    g.font = `9px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+    g.fillText(name, px + 12, offsetY);
+    g.textAlign = 'right';
+    g.fillStyle = '#ffe066';
+    g.fillText(levelLabel, px + panelW - 12, offsetY);
+    g.textAlign = 'left';
+    offsetY += lineGap;
+  });
+  g.restore();
+}
+
+function handleSkillSelectionInput(dt) {
+  if (!SkillSystem || typeof SkillSystem.getPopupState !== 'function') return;
+  const popup = SkillSystem.getPopupState();
+  if (!popup) return;
+  const layout = computeSkillOverlayLayout(popup) || lastSkillOverlayLayout;
+  if (!layout) return;
+
+  const now = performance.now ? performance.now() : Date.now();
+  const lockMillis = popup.createdAtMillis != null ? popup.createdAtMillis : (popup.createdAt || 0);
+  const lockActive = now - lockMillis < 1000;
+  if (lockActive) {
+    if (UI && UI.reset) UI.reset();
+    if (UI) UI.keyPressed = null;
+    return;
+  }
+
+  const key = UI ? UI.keyPressed : null;
+  if (key) {
+    if (key === 'ArrowRight') {
+      SkillSystem.moveSelection(1);
+    } else if (key === 'ArrowLeft') {
+      SkillSystem.moveSelection(-1);
+    } else if (key === 'Space' || key === 'Enter') {
+      if (popup.selectedIndex < 0 && !(SkillSystem.setSelectionIndex && popup.cards.length === 1)) {
+        if (UI) UI.keyPressed = null;
+        return;
+      }
+      const index = popup.selectedIndex >= 0 ? popup.selectedIndex : 0;
+      if (SkillSystem.setSelectionIndex && popup.selectedIndex < 0) SkillSystem.setSelectionIndex(index);
+      const card = popup.cards[index];
+      if (card) {
+        if (SkillSystem.completeSelectionById) SkillSystem.completeSelectionById(card.id);
+        else SkillSystem.completeSelection(index);
+      }
+      if (UI && UI.reset) UI.reset();
+      if (UI) UI.keyPressed = null;
+      return;
+    }
+    if (UI) UI.keyPressed = null;
+  }
+
+  if (Input && Input.justPressed && (!UI || !UI.clicked)) {
+    if (popup.selectedIndex < 0) {
+      return;
+    }
+    const index = popup.selectedIndex;
+    const card = popup.cards[index];
+    if (card) {
+      if (SkillSystem.completeSelectionById) SkillSystem.completeSelectionById(card.id);
+      else SkillSystem.completeSelection(index);
+    }
+    if (UI && UI.reset) UI.reset();
+    return;
+  }
+
+  if (UI && UI.clicked) {
+    const mx = UI.mx;
+    const my = UI.my;
+    let handled = false;
+    if (layout.rerollButton && pointInRect(mx, my, layout.rerollButton)) {
+      if (SkillSystem.rerollSelection && popup.rerollsRemaining > 0) {
+        handled = Boolean(SkillSystem.rerollSelection());
+      }
+    } else if (layout.iconButton && pointInRect(mx, my, layout.iconButton)) {
+      if (SkillSystem.setIconMode) {
+        const currentMode = (SkillSystem.getIconMode && SkillSystem.getIconMode()) || 'pixel';
+        const nextMode = currentMode === 'pixel' ? 'hi' : 'pixel';
+        SkillSystem.setIconMode(nextMode, true);
+        skillIconCache.clear();
+      }
+      handled = true;
+    } else if (layout.cards && layout.cards.length) {
+      layout.cards.forEach((rect, index) => {
+        if (!handled && pointInRect(mx, my, rect)) {
+          const card = popup.cards[index];
+          if (SkillSystem.setSelectionIndex) SkillSystem.setSelectionIndex(index);
+          if (SkillSystem.completeSelectionById) SkillSystem.completeSelectionById(card.id);
+          else SkillSystem.completeSelection(index);
+          handled = true;
+        }
+      });
+    }
+    if (UI.reset) UI.reset();
+    if (handled) return;
   }
 }
 
@@ -1752,6 +2189,8 @@ function renderRun(g) {
   g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
   g.fillText(t('hud.level', { level: getLevelByExp(exp) }), 12, 46);
 
+  renderSkillHud(g);
+  renderSkillSelectionOverlay(g);
 }
 
 function renderBoss(g) {
@@ -1836,6 +2275,7 @@ function renderBoss(g) {
     }
   }
   g.restore();
+  renderSkillHud(g);
 }
 
 if (typeof globalThis !== 'undefined') {
@@ -1851,17 +2291,17 @@ function renderRouletteOverlay(g) {
   const boxW = 60;
   const boxH = 42;
   const gap = 16;
-  const centerX = CONFIG.width / 2;
-  const x1 = centerX - boxW - gap / 2;
-  const x2 = centerX + gap / 2;
+  const originX = 28;
+  const x1 = originX;
+  const x2 = originX + boxW + gap;
   const y = groundY + 8;
 
   g.save();
-  g.textAlign = 'center';
+  g.textAlign = 'left';
   g.textBaseline = 'top';
   g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
   g.fillStyle = '#ffffff';
-  g.fillText(t('roulette.title'), centerX, y - 14);
+  g.fillText(t('roulette.title'), originX, y - 14);
 
   function drawCell(x, label, highlight) {
     g.fillStyle = highlight ? 'rgba(47,71,99,0.42)' : 'rgba(34,51,74,0.32)';
@@ -1882,11 +2322,12 @@ function renderRouletteOverlay(g) {
   drawCell(x1, displayOp, settled);
   drawCell(x2, String(displayValue), settled);
 
-  g.textAlign = 'center';
+  g.textAlign = 'left';
   g.textBaseline = 'top';
   g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+  const textY = y + boxH + 6;
   if (rouletteState.spinning) {
-    g.fillText(t('roulette.spinning'), centerX, y + boxH + 6);
+    g.fillText(t('roulette.spinning'), originX, textY);
   } else if (rouletteSummary && rouletteState.applied) {
     const opSymbol = rouletteSummary.op === 'x' ? '×' : rouletteSummary.op;
     g.fillText(t('roulette.formula', {
@@ -1894,9 +2335,9 @@ function renderRouletteOverlay(g) {
       op: opSymbol,
       value: rouletteSummary.value,
       after: rouletteSummary.after,
-    }), centerX, y + boxH + 6);
+    }), originX, textY);
   } else if (settled) {
-    g.fillText(t('roulette.locked'), centerX, y + boxH + 6);
+    g.fillText(t('roulette.locked'), originX, textY);
   }
 
   g.restore();

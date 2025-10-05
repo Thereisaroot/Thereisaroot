@@ -4,7 +4,8 @@
     { id: 'buds', type: 'level', maxLevel: 6, price: 50, minLevel: 5, unlock: { type: 'level', value: 5 } },
     { id: 'plusjump', type: 'single', price: 150, minLevel: 2, unlock: { type: 'level', value: 2 } },
     { id: 'fly', type: 'single', price: 300, minLevel: 10, unlock: { type: 'level', value: 2 } },
-    { id: 'big', type: 'level', maxLevel: 10, price: 20, minLevel: 5, unlock: { type: 'level', value: 5 } },
+    //big's maxLevel is players level
+    { id: 'big', type: 'level', maxLevel: 10, price: 20, minLevel: 5, unlock: { type: 'level', value: 5 } }, // NOTE: maxLevel is dynamically capped by player's current level in game.shop.js
     { id: 'gamble', type: 'consumable', price: 10, minLevel: 1, unlock: { type: 'level', value: 1 } },
     { id: 'magnet', type: 'level', maxLevel: 5, price: 50, minLevel: 5, unlock: { type: 'level', value: 5 } },
     { id: 'combo', type: 'level', maxLevel: 3, price: 80, minLevel: 10, unlock: { type: 'level', value: 10 } },

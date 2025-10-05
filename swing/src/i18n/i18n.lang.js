@@ -1,7 +1,8 @@
 (function (global) {
   if (!global.I18N) return;
 
-  const en = {
+  const translations = {};
+  translations.en = {
     meta: {
       title: 'Boing! Boing!',
       canvasLabel: 'Boing! Boing! Canvas',
@@ -419,9 +420,110 @@
         help: 'Allows Fly activation any time once the Fly item is owned.',
       },
     },
+    skills: {
+      overlay: {
+        title: 'Skill Select',
+        timer: 'Auto pick in {seconds}s',
+        help: 'Details',
+        helpClose: 'Back',
+        reroll: 'Reroll',
+        rerollCount: 'Reroll ×{count}',
+        hudTitle: 'Skills',
+        emptyHud: 'No skills yet',
+        levelLabel: 'Lv {level}',
+        requires: 'Requires {list}',
+        iconModePixel: 'Icon: Pixel',
+        iconModeHi: 'Icon: High',
+      },
+      cards: {
+        power_boost: {
+          name: 'Charge Impact',
+          level1: '+30% rope jump thrust.',
+        level2: '+60% rope jump thrust.',
+        level3: '+90% rope jump thrust.',
+        },
+        rope_glide: {
+          name: 'Rope Glide',
+          level1: '0.5s after detach: gravity reduced by 20%.',
+        level2: '0.8s after detach: gravity reduced by 35%.',
+        level3: '1.2s after detach: gravity reduced by 50%.',
+        },
+        air_combo: {
+          name: 'Air Combo',
+          level1: '20% chance: air-jump catches still grant combo.',
+        level2: '40% chance: air-jump catches advance combo.',
+        level3: '60% chance + $1 bonus on successful air-jump catches.',
+        },
+        drone_support: {
+          name: 'Support Drone',
+          level1: 'Deploy a roaming drone that becomes a rope when you collide. Small hitbox.',
+        level2: 'Drone pause hitbox enlarged for easier catches.',
+        level3: 'Spawn two drones with large rope hitboxes.',
+        },
+        cash_magnet: {
+          name: 'Cash Magnet',
+          level1: 'Pickup radius +15px.',
+        level2: 'Pickup radius +30px.',
+        level3: 'Pickup radius +50px and chests grant +$1.',
+        },
+        stage_focus: {
+          name: 'Stage Focus',
+          level1: 'Stage gates present +1 extra card.',
+        level2: 'Gain 1 reroll button at stage gates.',
+        level3: 'Reroll button usable twice per gate.',
+        },
+        fever_extension: {
+          name: 'Fever Extension',
+          level1: 'Fever duration +20%.',
+        level2: 'Fever duration +35%.',
+        level3: 'Fever duration +50% & instant power charge on entry.',
+        },
+        rope_shortener: {
+          name: 'Rope Shortener',
+          level1: 'Main rope spacing reduced by 5%.',
+        level2: 'Main rope spacing reduced by 10%.',
+        level3: 'Main rope spacing reduced by 15% with periodic auto-optimisation.',
+        },
+        sky_harvest: {
+          name: 'Sky Harvest',
+          level1: 'Airborne item catches grant +$1.',
+        level2: 'Airborne item catches grant +$2.',
+        level3: 'Airborne item catches grant +$3 and +1 EXP.',
+        },
+        void_magnet: {
+          name: 'Void Magnet',
+          level1: 'Every 20s a small black hole pulls nearby items into cash.',
+        level2: 'Black hole pull radius increased.',
+        level3: 'Black hole converts pulled items into +$2 each.',
+        },
+        spider_guard: {
+          name: 'Spider Guard',
+          level1: 'Roaming spider spawns trampolines along the ground.',
+        level2: 'Trampolines launch higher and linger longer.',
+        level3: 'Spawns two webs, covering more ground for safety.',
+        },
+        frenzy_feather: {
+          name: 'Frenzy Feather',
+          level1: 'During fever, airborne pickups add drone stacks (+0.5s each).',
+        level2: 'Drone stacks also add +$1 when fever ends.',
+        level3: 'Stacks grant +$2 on fever end and extend max stacks.',
+        },
+        combo_master: {
+          name: 'Combo Master',
+          level1: 'All rope catches advance combo regardless of jump method.',
+        level2: 'Combo never resets from air jumps.',
+        level3: 'Combo gains +$1 per chain.',
+        },
+        drone_collector: {
+          name: 'Drone Collector',
+          level1: 'Support drones vacuum nearby items while paused.',
+        level2: 'Vacuum radius greatly increased.',
+        level3: 'Two drones collect across a wide radius.',
+        },
+      },
+    },
   };
-
-  const ko = {
+  translations.ko = {
     meta: {
       title: 'Boing! Boing!',
       canvasLabel: 'Boing! Boing! 캔버스',
@@ -839,6 +941,108 @@
         help: '플라이 아이템을 보유하면 언제든지 비행을 발동할 수 있습니다.',
       },
     },
+    skills: {
+      overlay: {
+        title: '스킬 선택',
+        timer: '{seconds}초 후 자동 선택',
+        help: '설명',
+        helpClose: '닫기',
+        reroll: '다시 뽑기',
+        rerollCount: '다시 뽑기 ×{count}',
+        hudTitle: '스킬',
+        emptyHud: '획득한 스킬 없음',
+        levelLabel: 'Lv {level}',
+        requires: '필요 조건: {list}',
+        iconModePixel: '아이콘: 픽셀',
+        iconModeHi: '아이콘: 고해상도',
+      },
+      cards: {
+        power_boost: {
+          name: '차지 임팩트',
+          level1: '로프 점프 추진력 +30%.',
+        level2: '로프 점프 추진력 +60%.',
+        level3: '로프 점프 추진력 +90%.',
+        },
+        rope_glide: {
+          name: '로프 글라이드',
+          level1: '점프 후 0.5초간 중력 20% 감소.',
+        level2: '점프 후 0.8초간 중력 35% 감소.',
+        level3: '점프 후 1.2초간 중력 50% 감소.',
+        },
+        air_combo: {
+          name: '에어 콤보',
+          level1: '20% 확률로 공중 점프 캐치도 콤보 유지.',
+        level2: '40% 확률로 공중 점프 캐치도 콤보 유지.',
+        level3: '60% 확률 + 성공 시 추가 $1.',
+        },
+        drone_support: {
+          name: '서포트 드론',
+          level1: '충돌 시 멈춰 로프가 되는 드론 1기(작은 히트박스).',
+        level2: '드론 멈춤 히트박스 확대.',
+        level3: '드론 2기 소환, 큰 히트박스.',
+        },
+        cash_magnet: {
+          name: '캐시 마그넷',
+          level1: '아이템 흡입 반경 +15px.',
+        level2: '아이템 흡입 반경 +30px.',
+        level3: '아이템 흡입 반경 +50px, 상자 +$1.',
+        },
+        stage_focus: {
+          name: '스테이지 포커스',
+          level1: '스테이지 게이트마다 카드 +1장.',
+        level2: '스테이지 게이트에서 다시 뽑기 1회 제공.',
+        level3: '스테이지 게이트에서 다시 뽑기 2회 가능.',
+        },
+        fever_extension: {
+          name: '피버 익스텐션',
+          level1: '피버 지속 +20%.',
+        level2: '피버 지속 +35%.',
+        level3: '피버 지속 +50% + 피버 진입 시 즉시 파워 충전.',
+        },
+        rope_shortener: {
+          name: '로프 쇼트너',
+          level1: '주요 로프 간격 5% 감소.',
+        level2: '주요 로프 간격 10% 감소.',
+        level3: '주요 로프 간격 15% 감소 + 주기적 자동 최적화.',
+        },
+        sky_harvest: {
+          name: '스카이 하베스트',
+          level1: '공중 아이템 +$1.',
+        level2: '공중 아이템 +$2.',
+        level3: '공중 아이템 +$3 + EXP +1.',
+        },
+        void_magnet: {
+          name: '보이드 마그넷',
+          level1: '20초마다 주변 아이템을 끌어모으는 블랙홀 생성.',
+        level2: '블랙홀 흡입 반경 증가.',
+        level3: '블랙홀에 빨려든 아이템당 +$2.',
+        },
+        spider_guard: {
+          name: '스파이더 가드',
+          level1: '맵을 순찰하며 거미줄 트램폴린 생성.',
+        level2: '트램폴린 높이·지속 증가.',
+        level3: '트램폴린을 2개까지 생성해 더 넓은 범위 보호.',
+        },
+        frenzy_feather: {
+          name: '프렌지 페더',
+          level1: '피버 중 공중 아이템 획득 시 드론 스택(+0.5초).',
+        level2: '스택당 피버 종료 시 +$1.',
+        level3: '스택당 +$2 및 최대 스택 증가.',
+        },
+        combo_master: {
+          name: '콤보 마스터',
+          level1: '모든 로프 캐치가 콤보를 유지.',
+        level2: '공중 점프 캐치도 콤보 유지.',
+        level3: '콤보당 추가 $1.',
+        },
+        drone_collector: {
+          name: '드론 콜렉터',
+          level1: '정지한 드론이 주변 아이템을 흡수.',
+        level2: '흡수 반경 대폭 확대.',
+        level3: '두 드론이 넓은 범위 아이템 흡수.',
+        },
+      },
+    },
   };
 
   function detectInitialLanguage() {
@@ -888,7 +1092,8 @@
     return 'en';
   }
 
-  global.I18N.registerLanguage('en', en);
-  global.I18N.registerLanguage('ko', ko);
+  Object.keys(translations).forEach((locale) => {
+    global.I18N.registerLanguage(locale, translations[locale]);
+  });
   global.I18N.init(detectInitialLanguage());
 })(typeof window !== 'undefined' ? window : globalThis);

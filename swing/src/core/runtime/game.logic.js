@@ -1408,6 +1408,9 @@ function grantStageGateReward(triggerRope) {
   if (typeof addToPlayerStat === 'function') addToPlayerStat('totalExpEarned', STAGE_GATE_BONUS_EXP);
   if (typeof addToPlayerStat === 'function') addToPlayerStat('totalCashEarned', STAGE_GATE_BONUS_CASH);
   try { localStorage.setItem(EXP_KEY, String(exp)); } catch (_) {}
+  if (typeof SkillSystem !== 'undefined' && SkillSystem && typeof SkillSystem.queueSelection === 'function') {
+    SkillSystem.queueSelection('stage_reward', { stage: stageNumber });
+  }
   if (stageNumber != null) maybeTriggerBossStage(stageNumber, triggerRope);
 }
 
@@ -1504,6 +1507,9 @@ function startBossStage(stageNumber, entryRope) {
 }
 
 function updateBossPending(dt) {
+  if (typeof SkillSystem !== 'undefined' && SkillSystem && typeof SkillSystem.getPopupState === 'function' && SkillSystem.getPopupState()) {
+    return;
+  }
   if (!bossState || !bossState.active) {
     State.current = 'run';
     return;
@@ -1730,6 +1736,9 @@ function initBossBattle() {
 }
 
 function updateBoss(dt) {
+  if (typeof SkillSystem !== 'undefined' && SkillSystem && typeof SkillSystem.getPopupState === 'function' && SkillSystem.getPopupState()) {
+    return;
+  }
   if (!bossState || !bossState.active) return;
   simTime += dt;
 
@@ -2745,6 +2754,11 @@ function resetRun() {
   wizardSpinTimer = 0;
   wizardSpinRate = 0;
   tailorCashBonusThisRun = 0;
+
+  if (typeof SkillSystem !== 'undefined' && SkillSystem && typeof SkillSystem.resetRunState === 'function') {
+    SkillSystem.resetRunState();
+    SkillSystem.queueSelection('start');
+  }
 }
 
 function drawBackground(g) {

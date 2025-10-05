@@ -108,8 +108,7 @@ function isItemSoldOut(it) {
   if (it.type === 'level') {
     // dynamic caps by item
     let maxLv;
-    if (it.id === 'buds') maxLv = currentBodySides();
-    else if (it.id === 'big') maxLv = getLevelByExp(exp);
+    if (it.id === 'big') maxLv = getLevelByExp(exp);
     else maxLv = it.maxLevel || 1;
     return getItemLevel(it) >= maxLv;
   }
@@ -1443,8 +1442,12 @@ function tryPurchase(id) {
     if (current >= 3) { shopConfirm = null; return; }
     savings -= price; shopInv.glowLevel = current + 1; saveShopInv(shopInv);
   } else if (id === 'buds') {
-    const maxLv = currentBodySides();
-    savings -= price; shopInv.budsLevel = Math.min(maxLv, (shopInv.budsLevel || 0) + 1); saveShopInv(shopInv);
+    const maxLv = it.maxLevel || 6;
+    const current = shopInv.budsLevel || 0;
+    if (current >= maxLv) { shopConfirm = null; return; }
+    savings -= price;
+    shopInv.budsLevel = current + 1;
+    saveShopInv(shopInv);
   } else if (id === 'plusjump') {
     savings -= price; shopInv.plusJump = true; saveShopInv(shopInv);
   } else if (id === 'fly') {
