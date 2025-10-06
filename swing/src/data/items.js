@@ -13,6 +13,8 @@
     { id: 'lucky', type: 'level', maxLevel: 5, price: 50, minLevel: 2, unlock: { type: 'level', value: 2 } },
     { id: 'revival', type: 'single', price: 999, minLevel: 10, unlock: { type: 'level', value: 10 } },
     { id: 'fever', type: 'level', maxLevel: 3, price: 50, minLevel: 5, unlock: { type: 'level', value: 5 } },
+    { id: 'skill_card_plus', type: 'single', price: 1000, minLevel: 6, unlock: { type: 'level', value: 6 } },
+    { id: 'skill_reroll', type: 'level', maxLevel: 3, price: 500, minLevel: 6, unlock: { type: 'level', value: 6 } },
   ];
 
   const ITEM_ART = {
@@ -226,6 +228,44 @@
         '.YOOOOY.',
         'YOOOOOOY',
         'YYYYYYYY',
+      ],
+    },
+    skill_card_plus: {
+      palette: {
+        '.': null,
+        B: '#2c3e50',
+        C: '#4a90e2',
+        L: '#a4c2f4',
+        P: '#f7fbff',
+      },
+      pixels: [
+        '..BBBB..',
+        '.BCCCB..',
+        'BCPPLCBB',
+        'BCPPLCBB',
+        'BCPPLCBB',
+        '.BCCCB..',
+        '..BBBB..',
+        '...BB...',
+      ],
+    },
+    skill_reroll: {
+      palette: {
+        '.': null,
+        B: '#2c3e50',
+        G: '#2ecc71',
+        L: '#a2f2c2',
+        W: '#f7fbff',
+      },
+      pixels: [
+        '..BBBB..',
+        '.BGGGB..',
+        'BGWWWGGB',
+        'BGWGGWGB',
+        'BGWWWGGB',
+        '.BGGGB..',
+        '..BBBB..',
+        '...BB...',
       ],
     },
   };

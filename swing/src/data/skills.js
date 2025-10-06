@@ -1,19 +1,6 @@
 (function (global) {
   const ICON_BASE_PATH = 'assets/skills/';
-  const ICON_VARIANTS = {
-    hi: (id) => `${ICON_BASE_PATH}${id}.png`,
-    pixel: (id) => `${ICON_BASE_PATH}${id}_pixel.png`,
-  };
-  const ICON_MODE_STORAGE_KEY = 'webswing_skill_icon_mode';
-  const DEFAULT_ICON_MODE = 'pixel';
 
-  let skillIconMode = DEFAULT_ICON_MODE;
-  try {
-    const stored = localStorage.getItem(ICON_MODE_STORAGE_KEY);
-    if (stored && ICON_VARIANTS[stored]) {
-      skillIconMode = stored;
-    }
-  } catch (_) {}
 
   const BASIC_SKILLS = [
     {
@@ -104,7 +91,7 @@
       id: 'void_magnet',
       type: 'hidden',
       rarity: 'epic',
-      maxLevel: 3,
+      maxLevel: 1,
       tags: ['economy'],
       iconSlug: 'void_magnet',
       nameKey: 'skills.cards.void_magnet.name',
@@ -114,7 +101,7 @@
       id: 'spider_guard',
       type: 'hidden',
       rarity: 'epic',
-      maxLevel: 3,
+      maxLevel: 1,
       tags: ['defense'],
       iconSlug: 'spider_guard',
       nameKey: 'skills.cards.spider_guard.name',
@@ -124,7 +111,7 @@
       id: 'frenzy_feather',
       type: 'hidden',
       rarity: 'epic',
-      maxLevel: 3,
+      maxLevel: 1,
       tags: ['fever', 'air'],
       iconSlug: 'frenzy_feather',
       nameKey: 'skills.cards.frenzy_feather.name',
@@ -134,7 +121,7 @@
       id: 'combo_master',
       type: 'hidden',
       rarity: 'epic',
-      maxLevel: 3,
+      maxLevel: 1,
       tags: ['air', 'power'],
       iconSlug: 'combo_master',
       nameKey: 'skills.cards.combo_master.name',
@@ -144,7 +131,7 @@
       id: 'drone_collector',
       type: 'hidden',
       rarity: 'epic',
-      maxLevel: 3,
+      maxLevel: 1,
       tags: ['control', 'economy'],
       iconSlug: 'drone_collector',
       nameKey: 'skills.cards.drone_collector.name',
@@ -165,26 +152,10 @@
     return BASIC_SKILL_MAP[id] || HIDDEN_SKILL_MAP[id] || null;
   }
 
-  function getSkillIconPath(id, mode) {
+  function getSkillIconPath(id) {
     const skill = getSkillDefinition(id);
     if (!skill) return null;
-    const variant = ICON_VARIANTS[mode] ? mode : skillIconMode;
-    const resolver = ICON_VARIANTS[variant] || ICON_VARIANTS[DEFAULT_ICON_MODE];
-    return resolver ? resolver(skill.iconSlug || skill.id) : null;
-  }
-
-  function setSkillIconMode(mode, persist) {
-    if (!ICON_VARIANTS[mode]) return;
-    skillIconMode = mode;
-    if (persist) {
-      try {
-        localStorage.setItem(ICON_MODE_STORAGE_KEY, mode);
-      } catch (_) {}
-    }
-  }
-
-  function getSkillIconMode() {
-    return skillIconMode;
+    return `${ICON_BASE_PATH}${skill.iconSlug || skill.id}.png`;
   }
 
   function getHiddenSkillRequirements(id) {
@@ -216,12 +187,8 @@
     listSkills,
     getSkillDefinition,
     getSkillIconPath,
-    getSkillIconMode,
-    setSkillIconMode,
     getHiddenSkillRequirements,
     getSkillNameKey,
     getSkillLevelKey,
-    DEFAULT_ICON_MODE,
-    ICON_MODE_STORAGE_KEY,
   };
 })(typeof window !== 'undefined' ? window : globalThis);

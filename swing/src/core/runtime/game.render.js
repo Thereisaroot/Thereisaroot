@@ -822,15 +822,14 @@ let lastSkillOverlayLayout = null;
 
 function getSkillIconImage(skillId) {
   if (!SkillSystem || typeof SkillSystem.getSkillIconPath !== 'function') return null;
-  const mode = (SkillSystem.getIconMode && SkillSystem.getIconMode()) || SkillData.DEFAULT_ICON_MODE || 'pixel';
-  const key = `${skillId}:${mode}`;
+  const key = skillId; // Key is just the ID now
   let cached = skillIconCache.get(key);
   if (!cached) {
-    const path = SkillSystem.getSkillIconPath(skillId, mode);
+    const path = SkillSystem.getSkillIconPath(skillId); // No mode passed
     if (!path) return null;
     const img = new Image();
     img.src = path;
-    cached = { img, path, mode };
+    cached = { img, path }; // No mode stored
     skillIconCache.set(key, cached);
   }
   return cached.img;
@@ -885,29 +884,21 @@ function computeSkillOverlayLayout(popup) {
     cardY += cardHeight + verticalGap;
   }
 
-  const buttonHeight = 36;
-  const buttonWidth = Math.min(200, containerW * 0.3);
-  const buttonY = containerY + containerH - footerH + (footerH - buttonHeight) / 2;
+  const buttonHeight = 31;
+  const buttonWidth = Math.min(210, containerW * 0.3 + 10);
+  const buttonY = containerY + containerH - footerH + (footerH - buttonHeight) / 2 + 15;
   
   const rerollButton = popup.rerollsRemaining > 0 ? {
-    x: containerX + 24,
+    x: containerX + containerW - buttonWidth - 24,
     y: buttonY,
     w: buttonWidth,
     h: buttonHeight,
   } : null;
   
-  const iconButton = {
-    x: containerX + containerW - buttonWidth - 24,
-    y: buttonY,
-    w: buttonWidth,
-    h: buttonHeight,
-  };
-
   lastSkillOverlayLayout = {
     container: { x: containerX, y: containerY, w: containerW, h: containerH },
     cards,
     rerollButton,
-    iconButton,
     headerH,
     footerH,
   };
@@ -918,7 +909,14 @@ function wrapSkillLines(str, maxWidth, g) {
   if (!str) return [];
   const lines = [];
   const approxCharWidth = (g && typeof g.measureText === 'function') ? (g.measureText('Ｍ').width || g.measureText('가').width || 10) : 10;
-  const maxChars = Math.max(6, Math.floor(maxWidth / (approxCharWidth || 1)) - 5);
+  let langBuffer = 8;
+  if (typeof I18N !== 'undefined' && I18N && typeof I18N.getLanguage === 'function') {
+    const currentLang = I18N.getLanguage();
+    if (currentLang && currentLang.toLowerCase().startsWith('ko')) {
+      langBuffer = 15;
+    }
+  }
+  const maxChars = Math.max(6, Math.floor(maxWidth / (approxCharWidth || 1)) - langBuffer);
   const segments = String(str).split(/\n+/);
   for (const segment of segments) {
     const words = segment.split(/\s+/);
@@ -1003,26 +1001,6 @@ function renderSkillSelectionOverlay(g) {
       : t('skills.overlay.reroll');
     g.fillStyle = '#ffffff';
     g.fillText(label, rerollRect.x + rerollRect.w / 2, rerollRect.y + rerollRect.h / 2 + 1);
-    g.restore();
-  }
-
-  if (layout.iconButton) {
-    const iconRect = layout.iconButton;
-    g.save();
-    g.fillStyle = 'rgba(36,52,74,0.86)';
-    g.strokeStyle = '#9fb5d8';
-    g.lineWidth = 2;
-    g.beginPath();
-    g.rect(iconRect.x, iconRect.y, iconRect.w, iconRect.h);
-    g.fill();
-    g.stroke();
-    g.textAlign = 'center';
-    g.textBaseline = 'middle';
-    g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-    const currentMode = (SkillSystem.getIconMode && SkillSystem.getIconMode()) || 'pixel';
-    const modeKey = currentMode === 'pixel' ? 'skills.overlay.iconModePixel' : 'skills.overlay.iconModeHi';
-    g.fillStyle = '#ffffff';
-    g.fillText(t(modeKey), iconRect.x + iconRect.w / 2, iconRect.y + iconRect.h / 2 + 1);
     g.restore();
   }
 
@@ -1219,14 +1197,6 @@ function handleSkillSelectionInput(dt) {
       if (SkillSystem.rerollSelection && popup.rerollsRemaining > 0) {
         handled = Boolean(SkillSystem.rerollSelection());
       }
-    } else if (layout.iconButton && pointInRect(mx, my, layout.iconButton)) {
-      if (SkillSystem.setIconMode) {
-        const currentMode = (SkillSystem.getIconMode && SkillSystem.getIconMode()) || 'pixel';
-        const nextMode = currentMode === 'pixel' ? 'hi' : 'pixel';
-        SkillSystem.setIconMode(nextMode, true);
-        skillIconCache.clear();
-      }
-      handled = true;
     } else if (layout.cards && layout.cards.length) {
       layout.cards.forEach((rect, index) => {
         if (!handled && pointInRect(mx, my, rect)) {

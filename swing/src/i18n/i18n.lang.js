@@ -372,6 +372,14 @@
         name: 'Fever+',
         description: 'Extends star mode by +1 second per level.',
       },
+      skill_card_plus: {
+        name: 'Skill Card+',
+        description: 'Skill selections display +1 extra card.',
+      },
+      skill_reroll: {
+        name: 'Skill Reroll',
+        description: '+1 skill reroll per run for each level (max 3).',
+      },
     },
     chars: {
       default: {
@@ -468,9 +476,9 @@
         },
         stage_focus: {
           name: 'Stage Focus',
-          level1: 'Stage gates present +1 extra card.',
-        level2: 'Gain 1 reroll button at stage gates.',
-        level3: 'Reroll button usable twice per gate.',
+          level1: 'Stage gate rope requirement reduced by 1.',
+        level2: 'Stage gate rope requirement reduced by 2.',
+        level3: 'Stage gate rope requirement reduced by 3.',
         },
         fever_extension: {
           name: 'Fever Extension',
@@ -893,6 +901,14 @@
         name: '피버+',
         description: '스타 모드 지속 시간이 레벨당 +1초 늘어납니다.',
       },
+      skill_card_plus: {
+        name: '스킬카드+',
+        description: '스킬 선택 팝업에서 카드가 한 장 더 등장합니다.',
+      },
+      skill_reroll: {
+        name: '스킬 리롤',
+        description: '레벨마다 런당 스킬 리롤 횟수가 +1 증가합니다 (최대 3).',
+      },
     },
     chars: {
       default: {
@@ -977,7 +993,7 @@
         },
         drone_support: {
           name: '서포트 드론',
-          level1: '충돌 시 멈춰 로프가 되는 드론 1기(작은 히트박스).',
+          level1: '충돌 시 멈춰 로프가 되는 드론 1기',
         level2: '드론 멈춤 히트박스 확대.',
         level3: '드론 2기 소환, 큰 히트박스.',
         },
@@ -989,9 +1005,9 @@
         },
         stage_focus: {
           name: '스테이지 포커스',
-          level1: '스테이지 게이트마다 카드 +1장.',
-        level2: '스테이지 게이트에서 다시 뽑기 1회 제공.',
-        level3: '스테이지 게이트에서 다시 뽑기 2회 가능.',
+          level1: '스테이지 전환에 필요한 로프 개수 1 감소.',
+        level2: '스테이지 전환에 필요한 로프 개수 2 감소.',
+        level3: '스테이지 전환에 필요한 로프 개수 3 감소.',
         },
         fever_extension: {
           name: '피버 익스텐션',

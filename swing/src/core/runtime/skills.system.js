@@ -45,13 +45,10 @@
 
   function queueSelection(context, meta) {
     const baseMeta = Object.assign({ cardCount: 3, rerolls: 0 }, meta || {});
-    if (context === 'stage_reward') {
-      const focusLevel = getSkillLevel('stage_focus');
-      if (focusLevel >= 1) {
-        baseMeta.cardCount = Math.max(baseMeta.cardCount, 4);
-      }
-      if (focusLevel >= 2) {
-        baseMeta.rerolls = Math.max(baseMeta.rerolls, focusLevel === 2 ? 1 : 2);
+    if (typeof shopInv !== 'undefined' && shopInv) {
+      const rerollBonus = Math.max(0, Number(shopInv.skillRerollLevel) || 0);
+      if (rerollBonus > 0) {
+        baseMeta.rerolls = (Number(baseMeta.rerolls) || 0) + rerollBonus;
       }
     }
     state.queue.push({ context, meta: baseMeta });
@@ -128,7 +125,11 @@
 
   function computeCardCount(contextMeta) {
     const base = Math.max(1, contextMeta && contextMeta.cardCount ? contextMeta.cardCount : 3);
-    return base;
+    let bonus = 0;
+    if (typeof shopInv !== 'undefined' && shopInv && shopInv.skillCardPlus) {
+      bonus += 1;
+    }
+    return base + bonus;
   }
 
   function preparePopup() {
@@ -301,8 +302,7 @@
     getSkillIconPath: SkillData.getSkillIconPath,
     getSkillDefinition: SkillData.getSkillDefinition,
     getActiveSkills: serializeActiveSkills,
-    getIconMode: SkillData.getSkillIconMode,
-    setIconMode: SkillData.setSkillIconMode,
+
     evaluateHiddenUnlocks,
     getUnlockedHidden: () => Array.from(state.unlockedHidden),
     selectionsThisRun: () => state.selectionsThisRun,

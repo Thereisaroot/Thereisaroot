@@ -1276,10 +1276,21 @@ let transitionStartX = 0;
 let transitionEndX = 0;
 let pendingStageGate = null;
 
+function getStageFocusReduction() {
+  if (typeof SkillSystem === 'undefined' || !SkillSystem || typeof SkillSystem.getSkillLevel !== 'function') {
+    return 0;
+  }
+  const level = SkillSystem.getSkillLevel('stage_focus');
+  return Math.max(0, Math.min(3, Number(level) || 0));
+}
+
 function getRopesPerStage() {
   const raw = Number(CONFIG.stageRopesPerStage);
-  if (!Number.isFinite(raw) || raw <= 0) return 10;
-  return Math.max(1, Math.floor(raw));
+  const base = (!Number.isFinite(raw) || raw <= 0) ? 10 : Math.max(1, Math.floor(raw));
+  const reduction = getStageFocusReduction();
+  if (reduction <= 0) return base;
+  const maxReduction = Math.max(0, base - 1);
+  return Math.max(1, base - Math.min(reduction, maxReduction));
 }
 
 function resetBossProgress() {
