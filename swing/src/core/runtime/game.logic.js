@@ -1090,6 +1090,7 @@ let wizardSpinTimer = 0;
 let wizardSpinRate = 0;
 let activeRevivalCharges = 0; // Revival charges remaining this run
 let tailorCashBonusThisRun = 0; // Extra $ from Tailor rope catches this run
+let skillCashBonusThisRun = 0; // Extra cash earned from skills this run
 let stageGateCashBonusThisRun = 0;
 let stageGateExpBonusThisRun = 0;
 let hudConsumables = [];
@@ -1111,6 +1112,10 @@ const boxes = [];
 let pendingExtraJump = false;
 let pendingCatchR = 0;
 let pendingSizeScale = 0;
+let voidMagnetTimer = 0;
+let voidMagnetNodes = [];
+let frenzyFeatherQueue = 0;
+let frenzyFeatherTickTimer = 0;
 
 // Stage bullets system (after stage 5)
 let stageBullets = [];
@@ -1130,6 +1135,11 @@ const POWER_JUMP_FORWARD_BONUS = 140;
 const POWER_JUMP_VERTICAL_BONUS = 240;
 const TUTORIAL_STEP_DURATION = 6;
 const TAILOR_EXTRA_ROPE_CHANCE = 0.5;
+const VOID_MAGNET_INTERVAL = 20;
+const VOID_MAGNET_LIFETIME = 3;
+const VOID_MAGNET_RADIUS = 200;
+const VOID_MAGNET_PULL_SPEED = 260;
+const ROPE_SHORTENER_SPACING_SCALE = [1, 0.95, 0.9, 0.85];
 
 function onPlayerAttached() {
   powerCharge = 0;
@@ -1409,15 +1419,20 @@ function grantStageGateReward(triggerRope) {
   if (pendingStageGate) pendingStageGate.rewarded = true;
   score += STAGE_GATE_BONUS_SCORE;
   exp += STAGE_GATE_BONUS_EXP;
+  let stageCash = STAGE_GATE_BONUS_CASH;
+  if (typeof SkillSystem !== 'undefined' && SkillSystem && typeof SkillSystem.getSkillLevel === 'function') {
+    const level = SkillSystem.getSkillLevel('cash_magnet');
+    if (Number.isFinite(level) && level >= 3) stageCash += 1;
+  }
   spawnEffect('combo', player.x, player.y + 26, t('effects.stageBonus', {
-    cash: STAGE_GATE_BONUS_CASH,
+    cash: stageCash,
   }));
-  savings += STAGE_GATE_BONUS_CASH;
-  stageGateCashBonusThisRun += STAGE_GATE_BONUS_CASH;
+  savings += stageCash;
+  stageGateCashBonusThisRun += stageCash;
   stageGateExpBonusThisRun += STAGE_GATE_BONUS_EXP;
   try { localStorage.setItem(SAVINGS_KEY, String(savings)); } catch (_) {}
   if (typeof addToPlayerStat === 'function') addToPlayerStat('totalExpEarned', STAGE_GATE_BONUS_EXP);
-  if (typeof addToPlayerStat === 'function') addToPlayerStat('totalCashEarned', STAGE_GATE_BONUS_CASH);
+  if (typeof addToPlayerStat === 'function') addToPlayerStat('totalCashEarned', stageCash);
   try { localStorage.setItem(EXP_KEY, String(exp)); } catch (_) {}
   if (typeof SkillSystem !== 'undefined' && SkillSystem && typeof SkillSystem.queueSelection === 'function') {
     SkillSystem.queueSelection('stage_reward', { stage: stageNumber });
@@ -2437,6 +2452,14 @@ function planNextRope() {
   const x0 = currentTip.x;
   const y0 = currentTip.y;
   const s = lv1Scale(exp);
+  let ropeShortenerScale = 1;
+  if (typeof SkillSystem !== 'undefined' && SkillSystem && typeof SkillSystem.getSkillLevel === 'function') {
+    const level = SkillSystem.getSkillLevel('rope_shortener');
+    if (Number.isFinite(level) && level > 0) {
+      const idx = Math.max(0, Math.min(ROPE_SHORTENER_SPACING_SCALE.length - 1, Math.floor(level)));
+      ropeShortenerScale = ROPE_SHORTENER_SPACING_SCALE[idx] || 1;
+    }
+  }
   const anchorBaseY = CONFIG.ceilingY;
   // estimate velocities after detach
   const vxEst = (player.mode === 'free') ? Math.max(CONFIG.minVx, Math.min(CONFIG.maxVx, player.vx)) : ((CONFIG.baseVx + 40) * speedMultiplier);
@@ -2469,10 +2492,12 @@ function planNextRope() {
     const useShort = shortPick || (Math.random() < CONFIG.DshortProb);
     let D = useShort ? randRange(CONFIG.DshortMin * s, CONFIG.Dmin * s) : randRange(CONFIG.Dmin * s, CONFIG.Dmax * s);
     D *= randRange(CONFIG.spacingJitterMin, CONFIG.spacingJitterMax);
+    D *= ropeShortenerScale;
     if (demoActive) D *= 0.7; // Demo mode spacing reduction
     const baseX = prev ? prev.anchorX : x0;
     // Prefer spawning near the right edge with inward jitter
-    const desiredEdgeX = camera.x + (CONFIG.maxAnchorX * s) - randRange(8, CONFIG.edgeSpawnJitter * s);
+    const edgeJitterMax = Math.max(8, CONFIG.edgeSpawnJitter * s * ropeShortenerScale);
+    const desiredEdgeX = camera.x + (CONFIG.maxAnchorX * s * ropeShortenerScale) - randRange(8, edgeJitterMax);
     let anchorX;
     if (useShort && shortPick) {
       // For short ropes, keep spacing tight and avoid forcing to the edge
@@ -2484,7 +2509,8 @@ function planNextRope() {
     }
     // Ensure minimum gap from previous rope if exists
     if (prev) {
-      const minGap = useShort ? CONFIG.DshortMin * 0.9 : CONFIG.Dmin * 0.7;
+      const minGapBase = useShort ? CONFIG.DshortMin * 0.9 : CONFIG.Dmin * 0.7;
+      const minGap = minGapBase * ropeShortenerScale;
       if (anchorX - prev.anchorX < minGap) {
         continue;
       }
@@ -2544,8 +2570,9 @@ function planNextRope() {
   const kOmega = 1.0;
   const theta_hit = 0;
   const t_hit = 0.8;
-  const desiredEdgeX2 = camera.x + (CONFIG.maxAnchorX * s) - randRange(8, CONFIG.edgeSpawnJitter * s);
-  let anchorX = Math.max((prev ? prev.anchorX + CONFIG.Dmin * s : x0 + CONFIG.Dmin * s), desiredEdgeX2);
+  const edgeJitterMax2 = Math.max(8, CONFIG.edgeSpawnJitter * s * ropeShortenerScale);
+  const desiredEdgeX2 = camera.x + (CONFIG.maxAnchorX * s * ropeShortenerScale) - randRange(8, edgeJitterMax2);
+  let anchorX = Math.max((prev ? prev.anchorX + CONFIG.Dmin * s * ropeShortenerScale : x0 + CONFIG.Dmin * s * ropeShortenerScale), desiredEdgeX2);
   let anchorY = anchorBaseY + dropPx;
   if (lowVariant) {
     const clearanceLimit = groundY - CONFIG.lowRopeFloorClearance - anchorY;
@@ -2738,6 +2765,10 @@ function resetRun() {
   // Ensure fever state is cleared on fresh run
   starModeActive = false;
   starModeEndTime = 0;
+  voidMagnetTimer = VOID_MAGNET_INTERVAL;
+  voidMagnetNodes.length = 0;
+  frenzyFeatherQueue = 0;
+  frenzyFeatherTickTimer = 0;
   const consumableResult = applyRunConsumables(shopInv);
   shopInv = consumableResult.shopInv;
   activeRevivalCharges = consumableResult.activeRevivalCharges;
@@ -2765,6 +2796,7 @@ function resetRun() {
   wizardSpinTimer = 0;
   wizardSpinRate = 0;
   tailorCashBonusThisRun = 0;
+  skillCashBonusThisRun = 0;
 
   if (typeof SkillSystem !== 'undefined' && SkillSystem && typeof SkillSystem.resetRunState === 'function') {
     SkillSystem.resetRunState();

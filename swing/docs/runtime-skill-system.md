@@ -29,7 +29,7 @@
 | ID | 이름 | 태그 | 설명(Lv1→Lv3) |
 |----|------|------|----------------|
 | `power_boost` | 차지 임팩트 | power | 로프에서 점프할 때마다 추진력이 레벨당 +30% 강화되어 Lv1/2/3에서 +30%/+60%/+90% 적용 |
-| `rope_glide` | 로프 글라이드 | flight | 로프에서 점프 후 0.5/0.8/1.2초간 중력 20/35/50% 감소 |
+| `rope_glide` | 로프 글라이드 | flight | 로프 히트박스 +10/+20/+30px |
 | `air_combo` | 에어 콤보 | air | 원래는 1번 점프로 로프를 잡아야만 콤보가 올라가지만, 이 스킬을 통해 **추가점프로 로프를 잡아도 콤보가 증가**. **Lv1:** 20% 확률로 무조건 콤보 +1. **Lv2:** 확률 40%. **Lv3:** 확률 60% + 추가점프로 잡을 때 캐시 +1 |
 | `drone_support` | 서포트 드론 | control | 드론이 자유롭게 돌아다니다가 **캐릭터와 충돌 시 해당 위치에서 멈춰 로프 역할**을 수행. 캐릭터가 다시 점프하면 드론은 다시 자유 비행을 시작. 비행 중 아이템을 만나면 자동으로 수집. **Lv1:** 작은 히트박스. **Lv2:** 히트박스 확대. **Lv3:** 드론 2마리 등장 + 큰 히트박스 |
 | `cash_magnet` | 캐시 마그넷 | economy | 아이템 흡입 반경 +15/+30/+50px, Lv3에서 상자 획득 캐시 +1 |
@@ -43,22 +43,21 @@
 | ID | 이름 | 조합식(둘 다 Lv3) | 효과 |
 |----|------|------------------|------|
 | `void_magnet` | 보이드 마그넷 | `cash_magnet` + `sky_harvest` | 20초마다 블랙홀 생성, 주변 아이템을 끌어당겨 캐시 변환 |
-| `spider_guard` | 스파이더 가드 | `drone_support` + `rope_glide` | 맵 땅 부분을 거미가 돌아다니다가 랜덤 위치에 거미줄 트램폴린 생성. 캐릭터가 닿으면 떨어지지 않고 튕겨 하늘로 상승 |
-| `frenzy_feather` | 프렌지 페더 | `fever_extension` + `sky_harvest` | 피버 중 공중 아이템 획득 시 드론 스택 생성, 스택당 피버 타임 +0.5초, 종료 시 캐시 +스택*2 |
+| `spider_guard` | 스파이더 가드 | `drone_support` + `rope_glide` | 드론이 거미로 변신하며, 맵 땅 부분을 거미가 돌아다니다가 랜덤 위치에 거미줄 트램폴린 생성. 캐릭터가 닿으면 떨어지지 않고 튕겨 하늘로 상승 |
+| `frenzy_feather` | 프렌지 페더 | `fever_extension` + `sky_harvest` | 피버 중 공중 아이템 획득 시 0.2초마다 캐시 +1(획득 시 캐릭터 위에 `+$1` 표기) |
 | `combo_master` | 콤보 마스터 | `air_combo` + `rope_glide` | 로프를 어떤 방식으로든 잡을 때마다 **100% 확률로 콤보 +1**이며, 추가로 콤보마다 캐시 +1 |
-| `drone_collector` | 드론 콜렉터 | `drone_support` + `cash_magnet` | 드론이 멈춰 로프 역할을 하는 동시에 근처 아이템을 자동 수집하며, 두 드론 모두 넓은 반경에서 아이템을 흡수합니다. |
+| `drone_collector` | 드론 콜렉터 | `drone_support` + `cash_magnet` | 드론이 멈춰 로프 역할을 하는 동시에, 움직일 떄 근처 아이템을 자동 수집하며, 두 드론 모두 넓은 반경에서 아이템을 흡수합니다. |
 
 ## 카드 팝업 UI 흐름
 
-### 아이콘 자산 및 토글
-- `assets/skills/` 디렉터리에 스킬 ID와 동일한 파일명이 존재하며, `skillId.png`(고해상도)와 `skillId_pixel.png`(픽셀감 강조) 두 가지 버전을 보관한다.
-- 초기 단계에서는 모든 스킬이 `power_boost` 아이콘을 공유하도록 복사해 두었고, 실제 픽셀아트가 완성되면 동일 파일명으로 교체하면 된다.
-- 런타임에서는 설정 플래그(예: `SkillIconMode = 'hi' | 'pixel'`)에 따라 카드 UI·HUD에서 사용할 경로를 선택하도록 설계하고, 추후 사용자 옵션 또는 디버그 토글로 전환할 수 있게 한다.
+### 아이콘 자산
+- `assets/skills/` 디렉터리에 스킬 ID와 동일한 파일명이 존재하며, `skillId.png` 단일 버전으로 관리한다.
+- 초기 단계에서는 모든 스킬이 `power_boost` 아이콘을 공유하도록 복사해 두었고, 실제 아트가 완성되면 동일 파일명으로 교체하면 된다.
+- 페이지 최초 로딩 시 모든 스킬 아이콘을 프리로드해 두고, 이후 런타임에서는 캐시된 이미지를 그대로 사용한다.
 
 ### UI 레이아웃 및 표시
 - 카드 팝업은 화면 좌우 여백만 남기고 꽉 차게 배치되며, 카드들은 세로로 한 장씩 정렬되어 각각의 영역을 넘치지 않도록 한다.
 - 각 카드는 좌측 아이콘, 우측 텍스트 패널(이름·현재 레벨·다음 레벨 효과 설명)으로 구성되며, 설명은 자동 줄바꿈으로 카드 영역 안에 맞춰 표시된다.
-- 하단 오른쪽에는 아이콘 모드 토글 버튼을 두어 픽셀/고해상도 이미지를 즉시 전환할 수 있다.
 
 1. **트리거**: `showSkillCardPopup(context)` 호출 (context: `start`, `stage_reward`, `hidden_unlock` 등)
 2. **카드 풀 선정**:
@@ -109,21 +108,22 @@ function evaluateHiddenUnlocks() {
 - [ ] 스킬 효과 반영: 기존 시스템(점프/로프/아이템 등)과 연동
   - [x] `power_boost`
   - [x] `stage_focus`
-  - [ ] `rope_glide`
-  - [ ] `air_combo`
+  - [x] `rope_glide`
+  - [x] `air_combo`
   - [ ] `drone_support`
-  - [ ] `cash_magnet`
-  - [ ] `fever_extension`
-  - [ ] `rope_shortener`
-  - [ ] `sky_harvest`
-  - [ ] `void_magnet`
+  - [x] `cash_magnet`
+  - [x] `fever_extension`
+  - [x] `rope_shortener`
+  - [x] `sky_harvest`
+  - [x] `void_magnet`
   - [ ] `spider_guard`
-  - [ ] `frenzy_feather`
-  - [ ] `combo_master`
+  - [x] `frenzy_feather`
+  - [x] `combo_master`
   - [ ] `drone_collector`
-- [x] 스킬 아이콘 로더/토글 구현(`SkillIconMode` 플래그 및 hi/pixel 경로 선택)
-- [ ] 최종 픽셀 아트 교체 시 `assets/skills/skillId(_pixel).png` 파일 교체 및 문서 갱신
+- [x] 스킬 아이콘 로더 구현(초기 리소스 매핑)
+- [ ] 최종 스킬 아트 교체 시 `assets/skills/skillId.png` 파일 교체 및 문서 갱신
 - [ ] 스테이지·보스 중 스킬 팝업 발동 시 실제 플레이 정지 여부 플레이 테스트
-- [ ] 픽셀/고해상도 아이콘 전환 후 i18n 번들 누락 없는지 회귀 테스트
+- [ ] 기록 메뉴에 히든 스킬 항목 추가: 최초엔 모두 `???` 표시, 각 히든 스킬을 처음 획득하면 해당 카드의 조합식을 공개
+- [ ] 페이지 최초 로드시 스킬 아이콘 프리로드 파이프라인 구축(후속 런에서는 캐시 사용)
 
 ---

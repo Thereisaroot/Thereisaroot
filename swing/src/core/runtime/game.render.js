@@ -32,6 +32,13 @@ const GAME_OVER_TIP_KEYS = [
   'gameOver.tips.airJump',
 ];
 
+const ROPE_GLIDE_CATCH_BONUS = [0, 10, 20, 30];
+const ROPE_GLIDE_HANDLE_SCALE = [1, 1.25, 1.45, 1.65];
+const AIR_COMBO_TRIGGER_CHANCE = [0, 0.2, 0.4, 0.6];
+const CASH_MAGNET_PULL_BONUS = [0, 15, 30, 50];
+const SKY_HARVEST_CASH_BONUS = [0, 1, 2, 3];
+const FEVER_EXTENSION_BONUS = [0, 0.2, 0.35, 0.5];
+
 function performDetach(powerRatio = 0) {
   const tip = player.rope ? player.rope.tip(simTime) : { vx: 0, vy: 0, th: 0 };
   player.mode = 'free';
@@ -762,11 +769,21 @@ function drawRope(g, rope) {
   const dx = tx - sx;
   const dy = ty - sy;
   const length = Math.hypot(dx, dy) || 1;
-  const hx = tx - (dx / length) * 12;
-  const hy = ty - (dy / length) * 12;
+  let ropeGlideVisualLevel = 0;
+  if (typeof SkillSystem !== 'undefined' && SkillSystem && typeof SkillSystem.getSkillLevel === 'function') {
+    const lvl = SkillSystem.getSkillLevel('rope_glide');
+    if (Number.isFinite(lvl) && lvl > 0) {
+      ropeGlideVisualLevel = Math.max(0, Math.floor(lvl));
+    }
+  }
+  const handleScale = ROPE_GLIDE_HANDLE_SCALE[Math.min(ropeGlideVisualLevel, ROPE_GLIDE_HANDLE_SCALE.length - 1)] || 1;
+  const gripOffset = 12 * handleScale;
+  const hx = tx - (dx / length) * gripOffset;
+  const hy = ty - (dy / length) * gripOffset;
   g.save();
   g.translate(hx, hy);
   g.rotate(Math.atan2(dy, dx));
+  g.scale(handleScale, handleScale);
   const gripW = 18;
   const gripH = 6;
   g.fillStyle = '#132235';
@@ -1219,6 +1236,78 @@ function updateRun(dt) {
     dt *= SLOW_MO_SCALE;
   }
   simTime += dt;
+  let ropeGlideLevel = 0;
+  let airComboLevel = 0;
+  let cashMagnetLevel = 0;
+  let skyHarvestLevel = 0;
+  let feverExtensionLevel = 0;
+  let voidMagnetActive = false;
+  let frenzyFeatherActive = false;
+  let comboMasterActive = false;
+  if (typeof SkillSystem !== 'undefined' && SkillSystem && typeof SkillSystem.getSkillLevel === 'function') {
+    const ropeGlideRaw = SkillSystem.getSkillLevel('rope_glide');
+    if (Number.isFinite(ropeGlideRaw) && ropeGlideRaw > 0) {
+      ropeGlideLevel = Math.max(0, Math.floor(ropeGlideRaw));
+    }
+    const airComboRaw = SkillSystem.getSkillLevel('air_combo');
+    if (Number.isFinite(airComboRaw) && airComboRaw > 0) {
+      airComboLevel = Math.max(0, Math.floor(airComboRaw));
+    }
+    const cashMagnetRaw = SkillSystem.getSkillLevel('cash_magnet');
+    if (Number.isFinite(cashMagnetRaw) && cashMagnetRaw > 0) {
+      cashMagnetLevel = Math.max(0, Math.floor(cashMagnetRaw));
+    }
+    const skyHarvestRaw = SkillSystem.getSkillLevel('sky_harvest');
+    if (Number.isFinite(skyHarvestRaw) && skyHarvestRaw > 0) {
+      skyHarvestLevel = Math.max(0, Math.floor(skyHarvestRaw));
+    }
+    const feverRaw = SkillSystem.getSkillLevel('fever_extension');
+    if (Number.isFinite(feverRaw) && feverRaw > 0) {
+      feverExtensionLevel = Math.max(0, Math.floor(feverRaw));
+    }
+    voidMagnetActive = SkillSystem.getSkillLevel('void_magnet') > 0;
+    frenzyFeatherActive = SkillSystem.getSkillLevel('frenzy_feather') > 0;
+    comboMasterActive = SkillSystem.getSkillLevel('combo_master') > 0;
+  }
+  const ropeGlideCatchBonus = ROPE_GLIDE_CATCH_BONUS[Math.min(ropeGlideLevel, ROPE_GLIDE_CATCH_BONUS.length - 1)] || 0;
+  const airComboChance = AIR_COMBO_TRIGGER_CHANCE[Math.min(airComboLevel, AIR_COMBO_TRIGGER_CHANCE.length - 1)] || 0;
+  const cashMagnetPullBonus = CASH_MAGNET_PULL_BONUS[Math.min(cashMagnetLevel, CASH_MAGNET_PULL_BONUS.length - 1)] || 0;
+  const feverDurationBonusPct = FEVER_EXTENSION_BONUS[Math.min(feverExtensionLevel, FEVER_EXTENSION_BONUS.length - 1)] || 0;
+  if (voidMagnetActive) {
+    voidMagnetTimer -= baseDt;
+    if (voidMagnetTimer <= 0) {
+      voidMagnetTimer += VOID_MAGNET_INTERVAL;
+      const node = {
+        x: player.x,
+        y: player.y,
+        life: VOID_MAGNET_LIFETIME,
+      };
+      voidMagnetNodes.push(node);
+      spawnEffect('burst', node.x, node.y - 12);
+    }
+  } else {
+    voidMagnetTimer = VOID_MAGNET_INTERVAL;
+    if (voidMagnetNodes.length) voidMagnetNodes.length = 0;
+  }
+  for (let i = voidMagnetNodes.length - 1; i >= 0; i--) {
+    const node = voidMagnetNodes[i];
+    node.life -= baseDt;
+    if (node.life <= 0) {
+      voidMagnetNodes.splice(i, 1);
+    }
+  }
+  if (!starModeActive || !frenzyFeatherActive) {
+    frenzyFeatherQueue = 0;
+    frenzyFeatherTickTimer = 0;
+  } else if (frenzyFeatherQueue > 0) {
+    frenzyFeatherTickTimer -= baseDt;
+    while (frenzyFeatherQueue > 0 && frenzyFeatherTickTimer <= 0) {
+      frenzyFeatherTickTimer += 0.2;
+      frenzyFeatherQueue -= 1;
+      skillCashBonusThisRun += 1;
+      spawnEffect('combo', player.x, player.y - 18, t('effects.cashEarned', { cash: 1 }));
+    }
+  }
   if (slowMoPendingTimer > 0) {
     slowMoPendingTimer = Math.max(0, slowMoPendingTimer - baseDt);
     if (slowMoPendingTimer <= 0) {
@@ -1365,17 +1454,42 @@ function updateRun(dt) {
   // Box pickup
   const magnetLevel = shopInv.magnetLevel || 0;
   const baseCatchR = CONFIG.catchBase;
-  const magnetPullR = baseCatchR + magnetLevel * 10;
+  const magnetPullR = baseCatchR + magnetLevel * 10 + cashMagnetPullBonus;
   const magnetPullSpeed = 140 + magnetLevel * 60; // px/s pull toward player when within magnet radius
   const budHitZones = computeBudHitZones();
 
   for (const b of boxes) {
     if (!b.active) continue;
+    if (voidMagnetActive && voidMagnetNodes.length && b.kind !== 'star') {
+      let consumedByVoid = false;
+      for (const node of voidMagnetNodes) {
+        const ndx = node.x - b.x;
+        const ndy = node.y - b.y;
+        const distNode = Math.hypot(ndx, ndy);
+        if (distNode <= VOID_MAGNET_RADIUS) {
+          const pullStep = VOID_MAGNET_PULL_SPEED * dt;
+          if (distNode <= Math.max(12, pullStep)) {
+            b.active = false;
+            consumedByVoid = true;
+            skillCashBonusThisRun += 1;
+            spawnEffect('combo', node.x, node.y - 12, t('effects.cashEarned', { cash: 1 }));
+            break;
+          }
+          const nx = ndx / (distNode || 1);
+          const ny = ndy / (distNode || 1);
+          b.x += nx * pullStep;
+          b.y += ny * pullStep;
+        }
+      }
+      if (consumedByVoid) {
+        continue;
+      }
+    }
     let dx = b.x - player.x;
     let dy = b.y - player.y;
     let dist = Math.hypot(dx, dy);
 
-    if (magnetLevel > 0 && dist > baseCatchR && dist <= magnetPullR) {
+    if ((magnetLevel > 0 || cashMagnetLevel > 0) && dist > baseCatchR && dist <= magnetPullR) {
       const pullStep = magnetPullSpeed * dt;
       const nx = dx / (dist || 1);
       const ny = dy / (dist || 1);
@@ -1404,11 +1518,14 @@ function updateRun(dt) {
     addToPlayerStat && addToPlayerStat('itemsCollected', 1);
     const wobble = Math.sin(simTime * 3 + (b.phase || 0)) * 6;
     const displayY = b.y + wobble;
+    const caughtInAir = (player.mode === 'free');
 
     if (b.kind === 'star') {
       starModeActive = true;
       const feverBonus = (shopInv.feverLevel || 0) * FEVER_BONUS_SECONDS;
-      starModeEndTime = simTime + (CONFIG.starDuration || 3.0) + feverBonus;
+      const baseFeverDuration = (CONFIG.starDuration || 3.0);
+      const skillBonus = baseFeverDuration * feverDurationBonusPct;
+      starModeEndTime = simTime + baseFeverDuration + feverBonus + skillBonus;
       const worldX = b.x;
       const worldY = b.y;
       const targetWorldX = worldX;
@@ -1473,6 +1590,23 @@ function updateRun(dt) {
           nextShuffle: 0,
         };
         rouletteSummary = null;
+      }
+      if (skyHarvestLevel > 0 && caughtInAir) {
+        const bonusCash = SKY_HARVEST_CASH_BONUS[Math.min(skyHarvestLevel, SKY_HARVEST_CASH_BONUS.length - 1)] || 0;
+        if (bonusCash > 0) {
+          skillCashBonusThisRun += bonusCash;
+          spawnEffect('combo', player.x, player.y - 18, t('effects.cashEarned', { cash: bonusCash }));
+        }
+        if (skyHarvestLevel >= 3) {
+          exp += 1;
+          if (typeof addToPlayerStat === 'function') addToPlayerStat('totalExpEarned', 1);
+          try { localStorage.setItem(EXP_KEY, String(exp)); } catch (_) {}
+          spawnEffect('combo', player.x, player.y - 6, '+1 EXP');
+        }
+      }
+      if (frenzyFeatherActive && starModeActive && caughtInAir) {
+        if (frenzyFeatherQueue === 0) frenzyFeatherTickTimer = 0;
+        frenzyFeatherQueue += 1;
       }
     }
   }
@@ -1563,6 +1697,7 @@ function updateRun(dt) {
       const dy = by - player.y;
       const glowBonus = shopInv.glowLevel ? (shopInv.glowLevel * 0.1 * CONFIG.catchBase) : 0;
       let catchR = (pendingCatchR > 0 ? pendingCatchR : CONFIG.catchBase) + glowBonus;
+      catchR += ropeGlideCatchBonus;
       if (starModeActive) catchR *= 1.5;
       let withinCatch = Math.hypot(dx, dy) <= catchR;
 
@@ -1594,7 +1729,17 @@ function updateRun(dt) {
         const tipNow = rope.tip(simTime);
         spawnEffect(kind, tipNow.x, tipNow.y);
 
-        const comboEligible = starModeActive || usedAirJumps === 0;
+        let comboEligible = starModeActive || usedAirJumps === 0;
+        let airComboTriggered = false;
+        if (!comboEligible && airComboLevel > 0 && usedAirJumps > 0 && airComboChance > 0) {
+          if (Math.random() < airComboChance) {
+            comboEligible = true;
+            airComboTriggered = true;
+          }
+        }
+        if (comboMasterActive) {
+          comboEligible = true;
+        }
         if (comboEligible) {
           comboCount++;
           if (characterIs('pirate') && comboCount >= 2) {
@@ -1605,6 +1750,10 @@ function updateRun(dt) {
           }
         } else {
           comboCount = 0;
+        }
+        if (airComboTriggered && airComboLevel >= 3) {
+          skillCashBonusThisRun += 1;
+          spawnEffect('combo', player.x, player.y - 18, t('effects.cashEarned', { cash: 1 }));
         }
         const comboLevel = shopInv.comboLevel || 0;
         rewardGain = Math.max(1, Math.round(rewardGain));
@@ -1617,6 +1766,11 @@ function updateRun(dt) {
         let scoreGain = rewardGain;
         if (characterIs('knight')) scoreGain *= 2;
         score += scoreGain;
+        if (comboMasterActive && comboEligible && comboCount > 0) {
+          const comboCash = Math.max(1, comboCount);
+          skillCashBonusThisRun += comboCash;
+          spawnEffect('combo', player.x, player.y - 42, t('effects.cashEarned', { cash: comboCash }));
+        }
         if (tailorCatchBonus > 0) {
           tailorCashBonusThisRun += tailorCatchBonus;
           spawnEffect('combo', player.x, player.y - 18, t('effects.tailorBonus', { amount: `$${tailorCatchBonus}` }));
@@ -1746,6 +1900,7 @@ function updateRun(dt) {
     let earnedExpCore = baseEarned;
     if (characterIs('pirate')) earnedMoneyCore += pirateBonusThisRun;
     earnedMoneyCore += tailorCashBonusThisRun;
+    earnedMoneyCore += skillCashBonusThisRun;
     if (characterIs('knight')) {
       earnedMoneyCore *= 2;
       earnedExpCore *= 2;
@@ -1811,6 +1966,7 @@ function updateRun(dt) {
       } catch(_){}
     }
       tailorCashBonusThisRun = 0;
+      skillCashBonusThisRun = 0;
       pirateBonusThisRun = 0;
       stageGateCashBonusThisRun = 0;
       stageGateExpBonusThisRun = 0;

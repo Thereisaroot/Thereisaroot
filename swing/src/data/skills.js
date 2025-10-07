@@ -1,5 +1,5 @@
 (function (global) {
-  const ICON_BASE_PATH = 'assets/skills/';
+  const ICON_BASE_PATH = 'assets/skills/icon/';
 
 
   const BASIC_SKILLS = [
@@ -155,7 +155,8 @@
   function getSkillIconPath(id) {
     const skill = getSkillDefinition(id);
     if (!skill) return null;
-    return `${ICON_BASE_PATH}${skill.iconSlug || skill.id}.png`;
+    const slug = skill.iconSlug || skill.id;
+    return `${ICON_BASE_PATH}${slug}_icon.png`;
   }
 
   function getHiddenSkillRequirements(id) {

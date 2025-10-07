@@ -452,9 +452,9 @@
         },
         rope_glide: {
           name: 'Rope Glide',
-          level1: '0.5s after detach: gravity reduced by 20%.',
-        level2: '0.8s after detach: gravity reduced by 35%.',
-        level3: '1.2s after detach: gravity reduced by 50%.',
+          level1: 'Rope catch radius +10px.',
+        level2: 'Rope catch radius +20px.',
+        level3: 'Rope catch radius +30px.',
         },
         air_combo: {
           name: 'Air Combo',
@@ -981,9 +981,9 @@
         },
         rope_glide: {
           name: '로프 글라이드',
-          level1: '점프 후 0.5초간 중력 20% 감소.',
-        level2: '점프 후 0.8초간 중력 35% 감소.',
-        level3: '점프 후 1.2초간 중력 50% 감소.',
+          level1: '로프 잡기 히트박스 +10px.',
+        level2: '로프 잡기 히트박스 +20px.',
+        level3: '로프 잡기 히트박스 +30px.',
         },
         air_combo: {
           name: '에어 콤보',
