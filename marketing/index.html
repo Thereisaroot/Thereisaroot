@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Boing! Boing! | Rope Swing Runner</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f7f7fb;
+      --fg: #1a1a1f;
+      --accent: #ff6b6b;
+      --accent-dark: #ff4e4e;
+      --muted: #5f5f6b;
+      --card: #ffffff;
+      --shadow: rgba(0, 0, 0, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Helvetica Neue", "Apple SD Gothic Neo", "Noto Sans KR", -apple-system, BlinkMacSystemFont, sans-serif;
+      color: var(--fg);
+      background: linear-gradient(135deg, #e3f0ff 0%, #fef5ff 60%, #fff 100%);
+    }
+
+    main {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 64px 20px 80px;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 980px;
+      background: rgba(255, 255, 255, 0.92);
+      border-radius: 24px;
+      box-shadow: 0 24px 48px -24px rgba(102, 51, 153, 0.4);
+      padding: 56px 56px 64px;
+      backdrop-filter: blur(16px);
+    }
+
+    .hero {
+      text-align: center;
+    }
+
+    .logo-text {
+      font-size: 48px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin: 0 0 12px;
+    }
+
+    .tagline {
+      font-size: 22px;
+      font-weight: 600;
+      color: var(--fg);
+      line-height: 1.4;
+      margin: 0 0 32px;
+    }
+
+    .callout {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 20px;
+      border-radius: 999px;
+      background: rgba(255, 107, 107, 0.12);
+      color: var(--accent);
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      margin-bottom: 48px;
+    }
+
+    .grid {
+      display: grid;
+      gap: 28px;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    }
+
+    .card {
+      background: var(--card);
+      border-radius: 20px;
+      padding: 28px;
+      box-shadow: 0 18px 36px -24px rgba(26, 26, 31, 0.4);
+      transition: transform 0.25s ease, box-shadow 0.25s ease;
+    }
+
+    .card:hover {
+      transform: translateY(-6px);
+      box-shadow: 0 28px 56px -28px rgba(255, 107, 107, 0.45);
+    }
+
+    .card h2 {
+      font-size: 20px;
+      margin: 0 0 12px;
+      color: var(--accent-dark);
+    }
+
+    .card p, .card ul, .card li {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      font-size: 16px;
+      line-height: 1.6;
+      color: var(--muted);
+    }
+
+    .card ul {
+      display: grid;
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    footer {
+      margin-top: 64px;
+      text-align: center;
+      font-size: 14px;
+      color: rgba(26, 26, 31, 0.55);
+      letter-spacing: 0.04em;
+    }
+
+    @media (max-width: 640px) {
+      main {
+        padding: 40px 16px 64px;
+      }
+
+      .container {
+        padding: 40px 24px 48px;
+        border-radius: 20px;
+      }
+
+      .logo-text {
+        font-size: 40px;
+      }
+
+      .tagline {
+        font-size: 18px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="container">
+      <header class="hero">
+        <div class="callout">Boing! Boing! Rope Swing Runner</div>
+        <h1 class="logo-text">Boing! Boing!</h1>
+        <p class="tagline">로프 스윙 러너 Boing! 에서 완벽한 캐치를 노리고 보상을 모아보세요.<br>Aim for the perfect catch in Boing! Boing! and collect every reward.</p>
+      </header>
+
+      <div class="grid">
+        <article class="card">
+          <h2>짬푸 짬푸! · Jump! Jump!</h2>
+          <p>스테이지를 가로지르며 호쾌한 스윙 액션으로 다음 캐치를 노리세요.<br>Swing through each stage, chaining catches for a thrilling rush.</p>
+        </article>
+
+        <article class="card">
+          <h2>아이템 &amp; 피버 모드 · Items &amp; Fever Mode</h2>
+          <ul>
+            <li>상자에서 확장 아이템을 획득하고 스타 모드로 폭발적인 점수를 노려보세요.</li>
+            <li>Open crates to unlock extension items and trigger Star Mode for explosive scores.</li>
+          </ul>
+        </article>
+
+        <article class="card">
+          <h2>상점 &amp; 성장 · Shop &amp; Progression</h2>
+          <ul>
+            <li>경험치로 레벨을 올리고, 코인으로 아이템/캐릭터를 구매해 플레이 스타일을 바꿔 보세요.</li>
+            <li>Level up with experience, spend coins on items and characters, and tailor your playstyle.</li>
+          </ul>
+        </article>
+
+        <article class="card">
+          <h2>다국어 지원 · Multilingual Support</h2>
+          <ul>
+            <li>SETTINGS 메뉴에서 한국어와 영어를 즉시 전환할 수 있습니다.</li>
+            <li>Switch between Korean and English anytime from the SETTINGS menu.</li>
+          </ul>
+        </article>
+      </div>
+
+      <footer>
+        Boing! Boing! © 2024 All rights reserved.
+      </footer>
+    </section>
+  </main>
+</body>
+</html>
