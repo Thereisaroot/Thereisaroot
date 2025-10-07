@@ -1,6 +1,9 @@
 (function (global) {
   const RANDOM = Math.random;
   const MAX_SELECTION_TIME = 10; // seconds
+  const ROLL_ANIMATION_DURATION = 1.2; // seconds
+  const FLIP_STAGGER = 0.15; // seconds between card flips
+  const FLIP_DURATION = 0.36; // seconds per card flip
   const RARITY_WEIGHT = {
     common: 6,
     rare: 3,
@@ -165,6 +168,10 @@
       rerollsRemaining: Math.max(0, Number.isFinite(meta.rerolls) ? meta.rerolls : 0),
       showDetails: false,
       createdAtMillis: performance.now ? performance.now() : Date.now(),
+      rollTimer: ROLL_ANIMATION_DURATION,
+      rollDuration: ROLL_ANIMATION_DURATION,
+      rollFlipDuration: FLIP_DURATION,
+      rollFlipStagger: FLIP_STAGGER,
     };
   }
 
@@ -200,8 +207,21 @@
 
   function update(dt) {
     if (!state.popup) return { active: false };
-    state.popup.timer = Math.max(0, state.popup.timer - dt);
     let auto = null;
+    if (state.popup.rollTimer && state.popup.rollTimer > 0) {
+      state.popup.rollTimer = Math.max(0, state.popup.rollTimer - dt);
+      if (state.popup.rollTimer <= 0) {
+        state.popup.rollTimer = 0;
+        state.popup.timer = MAX_SELECTION_TIME;
+        state.popup.selectedIndex = -1;
+      }
+      return {
+        active: true,
+        rolling: true,
+        autoSelected: null,
+      };
+    }
+    state.popup.timer = Math.max(0, state.popup.timer - dt);
     if (state.popup.timer <= 0) {
       const randomIndex = Math.floor(RANDOM() * state.popup.cards.length);
       auto = completeSelection(randomIndex);
@@ -213,7 +233,7 @@
   }
 
   function moveSelection(delta) {
-    if (!state.popup || !state.popup.cards.length) return;
+    if (!state.popup || state.popup.rollTimer > 0 || !state.popup.cards.length) return;
     const count = state.popup.cards.length;
     const current = state.popup.selectedIndex;
     if (current < 0) {
@@ -225,14 +245,14 @@
   }
 
   function setSelectionIndex(index) {
-    if (!state.popup || !state.popup.cards.length) return;
+    if (!state.popup || state.popup.rollTimer > 0 || !state.popup.cards.length) return;
     const count = state.popup.cards.length;
     const clamped = Math.max(0, Math.min(count - 1, index));
     state.popup.selectedIndex = clamped;
   }
 
   function toggleDetails(force) {
-    if (!state.popup) return;
+    if (!state.popup || state.popup.rollTimer > 0) return;
     if (typeof force === 'boolean') {
       state.popup.showDetails = force;
     } else {
@@ -241,7 +261,7 @@
   }
 
   function rerollSelection() {
-    if (!state.popup || state.popup.rerollsRemaining <= 0) return false;
+    if (!state.popup || state.popup.rollTimer > 0 || state.popup.rerollsRemaining <= 0) return false;
     const pool = buildCardPool();
     if (!pool.length) return false;
     const currentIds = new Set(state.popup.cards.map((card) => card.id));
@@ -266,6 +286,10 @@
     state.popup.showDetails = false;
     state.popup.timer = MAX_SELECTION_TIME;
     state.popup.createdAtMillis = performance.now ? performance.now() : Date.now();
+    state.popup.rollTimer = ROLL_ANIMATION_DURATION;
+    state.popup.rollDuration = ROLL_ANIMATION_DURATION;
+    state.popup.rollFlipDuration = FLIP_DURATION;
+    state.popup.rollFlipStagger = FLIP_STAGGER;
     if (state.popup.meta) {
       state.popup.meta.rerolls = state.popup.rerollsRemaining;
       state.popup.meta.cardCount = newCards.length;

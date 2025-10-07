@@ -38,6 +38,10 @@ const AIR_COMBO_TRIGGER_CHANCE = [0, 0.2, 0.4, 0.6];
 const CASH_MAGNET_PULL_BONUS = [0, 15, 30, 50];
 const SKY_HARVEST_CASH_BONUS = [0, 1, 2, 3];
 const FEVER_EXTENSION_BONUS = [0, 0.2, 0.35, 0.5];
+const VOID_MAGNET_INTERVAL_SEC = (typeof VOID_MAGNET_INTERVAL === 'number') ? VOID_MAGNET_INTERVAL : 20;
+const VOID_MAGNET_LIFETIME_SEC = (typeof VOID_MAGNET_LIFETIME === 'number') ? VOID_MAGNET_LIFETIME : 3;
+const VOID_MAGNET_RADIUS_PX = (typeof VOID_MAGNET_RADIUS === 'number') ? VOID_MAGNET_RADIUS : 200;
+const VOID_MAGNET_PULL_SPEED_PX = (typeof VOID_MAGNET_PULL_SPEED === 'number') ? VOID_MAGNET_PULL_SPEED : 260;
 
 function performDetach(powerRatio = 0) {
   const tip = player.rope ? player.rope.tip(simTime) : { vx: 0, vy: 0, th: 0 };
@@ -991,18 +995,22 @@ function renderSkillSelectionOverlay(g) {
   g.save();
   g.textAlign = 'center';
   g.textBaseline = 'top';
+  const rolling = popup.rollTimer && popup.rollTimer > 0;
   g.fillStyle = '#ffffff';
   g.font = `14px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
   g.fillText(t('skills.overlay.title'), container.x + container.w / 2, container.y + 16);
-  const timerText = t('skills.overlay.timer', { seconds: Math.max(0, Math.ceil(popup.timer)) });
-  g.fillStyle = '#b4c0d9';
-  g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-  g.fillText(timerText, container.x + container.w / 2, container.y + 36);
+  if (!rolling) {
+    g.fillStyle = '#b4c0d9';
+    g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+    const timerText = t('skills.overlay.timer', { seconds: Math.max(0, Math.ceil(popup.timer)) });
+    g.fillText(timerText, container.x + container.w / 2, container.y + 36);
+  }
   g.restore();
 
   if (layout.rerollButton) {
     const rerollRect = layout.rerollButton;
     g.save();
+    if (rolling) g.globalAlpha = 1;
     g.fillStyle = 'rgba(36,52,74,0.86)';
     g.strokeStyle = '#9fb5d8';
     g.lineWidth = 2;
@@ -1025,80 +1033,118 @@ function renderSkillSelectionOverlay(g) {
   const levelFont = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
   const descFont = `7px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
 
+  const rollDuration = popup.rollDuration || 0;
+  const flipDuration = (popup.rollFlipDuration || 0.6) * 0.6;
+  const flipStagger = (popup.rollFlipStagger || 0.25) * 0.6;
+  const elapsedRoll = rolling ? Math.max(0, rollDuration - popup.rollTimer) : rollDuration;
+
   layout.cards.forEach((rect, index) => {
     const card = popup.cards[index];
-    const selected = index === popup.selectedIndex;
+    const selected = !rolling && index === popup.selectedIndex;
+    const flipStart = index * flipStagger;
+    const cardProgress = rolling ? Math.max(0, Math.min(1, (elapsedRoll - flipStart) / flipDuration)) : 1;
+    const flipping = rolling && cardProgress < 1;
+    const facingFront = !rolling || cardProgress >= 0.5;
+    const angle = Math.PI * (1 - Math.min(1, cardProgress));
+    const absScale = flipping ? Math.max(0.08, Math.abs(Math.cos(angle))) : 1;
+
     g.save();
+    g.translate(rect.x + rect.w / 2, rect.y + rect.h / 2);
+    if (flipping) g.scale(absScale, 1);
+    g.translate(-rect.w / 2, -rect.h / 2);
+
     g.fillStyle = selected ? 'rgba(96,132,255,0.42)' : 'rgba(22,34,52,0.88)';
-    g.strokeStyle = selected ? '#9ab4ff' : '#3c4d70';
+    g.strokeStyle = selected ? '#9ab4ff' : 'rgba(60,77,112,0.9)';
     g.lineWidth = selected ? 3 : 2;
     g.beginPath();
-    g.rect(rect.x, rect.y, rect.w, rect.h);
+    g.rect(0, 0, rect.w, rect.h);
     g.fill();
     g.stroke();
 
     const padding = 10;
     const iconSide = Math.min(rect.h - padding * 2, 96);
-    const iconX = rect.x + padding;
-    const iconY = rect.y + (rect.h - iconSide) / 2;
-    const img = getSkillIconImage(card.id);
-    if (img && img.complete) {
-      g.drawImage(img, iconX, iconY, iconSide, iconSide);
+    const iconX = padding;
+    const iconY = (rect.h - iconSide) / 2;
+
+    if (facingFront) {
+      const img = getSkillIconImage(card.id);
+      if (img && img.complete) {
+        g.drawImage(img, iconX, iconY, iconSide, iconSide);
+      } else {
+        g.fillStyle = 'rgba(25,38,60,0.6)';
+        g.fillRect(iconX, iconY, iconSide, iconSide);
+      }
     } else {
-      g.fillStyle = 'rgba(25,38,60,0.6)';
+      g.fillStyle = 'rgba(36,48,70,0.9)';
       g.fillRect(iconX, iconY, iconSide, iconSide);
+      g.strokeStyle = 'rgba(124,146,192,0.7)';
+      g.lineWidth = 2;
+      g.strokeRect(iconX + 4, iconY + 4, iconSide - 8, iconSide - 8);
+      g.font = `18px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+      g.fillStyle = '#9ab4ff';
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillText('?', iconX + iconSide / 2, iconY + iconSide / 2 + 1);
     }
 
-    const textX = iconX + iconSide + padding;
-    const textWidth = rect.x + rect.w - padding - textX;
-    const nameKey = SkillData.getSkillNameKey(card.id);
-    const name = nameKey ? t(nameKey) : card.id;
-    g.fillStyle = '#ffffff';
-    g.textAlign = 'left';
-    g.textBaseline = 'top';
-    g.font = cardNameFont;
-    g.fillText(name, textX, rect.y + padding);
+    if (facingFront) {
+      const textX = iconX + iconSide + padding;
+      const textWidth = rect.w - padding - textX;
+      const nameKey = SkillData.getSkillNameKey(card.id);
+      const name = nameKey ? t(nameKey) : card.id;
+      g.fillStyle = '#ffffff';
+      g.textAlign = 'left';
+      g.textBaseline = 'top';
+      g.font = cardNameFont;
+      g.fillText(name, textX, padding);
 
-    const level = SkillSystem.getSkillLevel ? SkillSystem.getSkillLevel(card.id) : 0;
-    const levelLabel = t('skills.overlay.levelLabel', { level });
-    g.font = levelFont;
-    g.fillStyle = '#b4c0d9';
-    g.fillText(levelLabel, textX, rect.y + padding + 22);
+      const currentLevel = SkillSystem.getSkillLevel ? (SkillSystem.getSkillLevel(card.id) || 0) : 0;
+      const levelLabel = t('skills.overlay.levelLabel', { level: currentLevel });
+      g.font = levelFont;
+      g.fillStyle = '#b4c0d9';
+      g.fillText(levelLabel, textX, padding + 22);
 
-    let descY = rect.y + padding + 42;
-    const def = SkillData.getSkillDefinition(card.id);
-    const maxLevel = def ? (def.maxLevel || 1) : 1;
-    const nextLevel = Math.min(maxLevel, (level || 0) + 1);
-    const descKey = SkillData.getSkillLevelKey(card.id, nextLevel);
-    const descText = descKey ? t(descKey) : '';
-    if (descText) {
-      g.font = descFont;
-      g.fillStyle = '#c5d4f1';
-      const descLines = wrapSkillLines(descText, textWidth, g);
-      const lineGap = 12;
-      descLines.forEach((line) => {
-        g.fillText(line, textX, descY);
-        descY += lineGap;
-      });
-    }
-
-    if (def && def.type === 'hidden') {
-      const reqIds = SkillData.getHiddenSkillRequirements(card.id) || [];
-      if (reqIds.length) {
-        const names = reqIds.map((id) => {
-          const key = SkillData.getSkillNameKey(id);
-          return key ? t(key) : id;
-        }).join(' + ');
-        const reqText = t('skills.overlay.requires', { list: `${names} Lv3` });
+      let descY = padding + 42;
+      const def = SkillData.getSkillDefinition(card.id);
+      const maxLevel = def ? (def.maxLevel || 1) : 1;
+      const nextLevel = Math.min(maxLevel, currentLevel + 1);
+      const descKey = SkillData.getSkillLevelKey(card.id, nextLevel);
+      const descText = descKey ? t(descKey) : '';
+      if (descText) {
         g.font = descFont;
-        g.fillStyle = '#8aa4ff';
-        const reqLines = wrapSkillLines(reqText, textWidth, g);
+        g.fillStyle = '#c5d4f1';
+        const descLines = wrapSkillLines(descText, textWidth, g);
         const lineGap = 12;
-        reqLines.forEach((line) => {
+        descLines.forEach((line) => {
           g.fillText(line, textX, descY);
           descY += lineGap;
         });
       }
+
+      if (def && def.type === 'hidden') {
+        const reqIds = SkillData.getHiddenSkillRequirements(card.id) || [];
+        if (reqIds.length) {
+          const names = reqIds.map((id) => {
+            const key = SkillData.getSkillNameKey(id);
+            return key ? t(key) : id;
+          }).join(' + ');
+          const reqText = t('skills.overlay.requires', { list: `${names} Lv3` });
+          g.font = descFont;
+          g.fillStyle = '#8aa4ff';
+          const reqLines = wrapSkillLines(reqText, textWidth, g);
+          const lineGap = 12;
+          reqLines.forEach((line) => {
+            g.fillText(line, textX, descY);
+            descY += lineGap;
+          });
+        }
+      }
+    } else if (flipping) {
+      g.font = descFont;
+      g.fillStyle = '#8aa4ff';
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillText(t('skills.overlay.flipping'), rect.w / 2, rect.h / 2);
     }
 
     g.restore();
@@ -1155,6 +1201,11 @@ function handleSkillSelectionInput(dt) {
   if (!SkillSystem || typeof SkillSystem.getPopupState !== 'function') return;
   const popup = SkillSystem.getPopupState();
   if (!popup) return;
+  if (popup.rollTimer && popup.rollTimer > 0) {
+    if (UI && UI.reset) UI.reset();
+    if (UI) UI.keyPressed = null;
+    return;
+  }
   const layout = computeSkillOverlayLayout(popup) || lastSkillOverlayLayout;
   if (!layout) return;
 
@@ -1276,17 +1327,17 @@ function updateRun(dt) {
   if (voidMagnetActive) {
     voidMagnetTimer -= baseDt;
     if (voidMagnetTimer <= 0) {
-      voidMagnetTimer += VOID_MAGNET_INTERVAL;
+      voidMagnetTimer += VOID_MAGNET_INTERVAL_SEC;
       const node = {
         x: player.x,
         y: player.y,
-        life: VOID_MAGNET_LIFETIME,
+        life: VOID_MAGNET_LIFETIME_SEC,
       };
       voidMagnetNodes.push(node);
       spawnEffect('burst', node.x, node.y - 12);
     }
   } else {
-    voidMagnetTimer = VOID_MAGNET_INTERVAL;
+    voidMagnetTimer = VOID_MAGNET_INTERVAL_SEC;
     if (voidMagnetNodes.length) voidMagnetNodes.length = 0;
   }
   for (let i = voidMagnetNodes.length - 1; i >= 0; i--) {
@@ -1466,8 +1517,8 @@ function updateRun(dt) {
         const ndx = node.x - b.x;
         const ndy = node.y - b.y;
         const distNode = Math.hypot(ndx, ndy);
-        if (distNode <= VOID_MAGNET_RADIUS) {
-          const pullStep = VOID_MAGNET_PULL_SPEED * dt;
+        if (distNode <= VOID_MAGNET_RADIUS_PX) {
+          const pullStep = VOID_MAGNET_PULL_SPEED_PX * dt;
           if (distNode <= Math.max(12, pullStep)) {
             b.active = false;
             consumedByVoid = true;
