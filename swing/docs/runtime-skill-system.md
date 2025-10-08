@@ -110,16 +110,16 @@ function evaluateHiddenUnlocks() {
   - [x] `stage_focus`
   - [x] `rope_glide`
   - [x] `air_combo`
-  - [ ] `drone_support`
+  - [x] `drone_support`
   - [x] `cash_magnet`
   - [x] `fever_extension`
   - [x] `rope_shortener`
   - [x] `sky_harvest`
   - [x] `void_magnet`
-  - [ ] `spider_guard`
+  - [x] `spider_guard`
   - [x] `frenzy_feather`
   - [x] `combo_master`
-  - [ ] `drone_collector`
+  - [x] `drone_collector`
 - [x] 스킬 아이콘 로더 구현(초기 리소스 매핑)
 - [ ] 기록 메뉴에 히든 스킬 항목 추가: 최초엔 모두 `???` 표시, 각 히든 스킬을 처음 획득하면 해당 카드의 조합식을 공개
 - [ ] 페이지 최초 로드시 스킬 아이콘 프리로드 파이프라인 구축(후속 런에서는 캐시 사용)
