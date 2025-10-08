@@ -1,5 +1,6 @@
 (function (global) {
   const ITEM_SPECS = [
+    { id: 'powerjump', type: 'single', price: 1, minLevel: 1, unlock: { type: 'level', value: 1 } },
     { id: 'glow', type: 'level', maxLevel: 3, price: 50, minLevel: 2, unlock: { type: 'level', value: 2 } },
     { id: 'buds', type: 'level', maxLevel: 6, price: 50, minLevel: 5, unlock: { type: 'level', value: 5 } },
     { id: 'plusjump', type: 'single', price: 150, minLevel: 2, unlock: { type: 'level', value: 2 } },
@@ -12,6 +13,7 @@
     { id: 'slow', type: 'level', maxLevel: 5, price: 100, minLevel: 15, unlock: { type: 'level', value: 15 } },
     { id: 'lucky', type: 'level', maxLevel: 5, price: 50, minLevel: 2, unlock: { type: 'level', value: 2 } },
     { id: 'revival', type: 'single', price: 999, minLevel: 10, unlock: { type: 'level', value: 10 } },
+    { id: 'startskill', type: 'single', price: 10000, minLevel: 2, unlock: { type: 'level', value: 2 } },
     { id: 'fever', type: 'level', maxLevel: 3, price: 50, minLevel: 5, unlock: { type: 'level', value: 5 } },
     { id: 'skill_card_plus', type: 'single', price: 1000, minLevel: 6, unlock: { type: 'level', value: 6 } },
     { id: 'skill_reroll', type: 'level', maxLevel: 3, price: 500, minLevel: 6, unlock: { type: 'level', value: 6 } },
@@ -68,6 +70,24 @@
         '..ABBA..',
         '..ABBA..',
         '..ABBA..',
+      ],
+    },
+    powerjump: {
+      palette: {
+        '.': null,
+        S: '#f1f3f5',
+        M: '#adb5bd',
+        D: '#868e96',
+      },
+      pixels: [
+        '..SSSS..',
+        '.SMMMMS.',
+        'SMSSSMMS',
+        '.SMMMMS.',
+        '..SSSS..',
+        '...DD...',
+        '..DDDD..',
+        '........',
       ],
     },
     fly: {
@@ -211,6 +231,25 @@
         '..RRR...',
         '...R....',
         '........',
+      ],
+    },
+    startskill: {
+      palette: {
+        '.': null,
+        B: '#1f2933',
+        C: '#3a86ff',
+        L: '#a5d8ff',
+        S: '#ffe066',
+      },
+      pixels: [
+        'BBBBBBBB',
+        'BCLLLLCB',
+        'BCLSSLCB',
+        'BCLSSLCB',
+        'BCLLLLCB',
+        'BCLCCLCB',
+        'BCLLLLCB',
+        'BBBBBBBB',
       ],
     },
     fever: {

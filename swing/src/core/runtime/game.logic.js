@@ -981,13 +981,14 @@ function buildGameOverButtons() {
     });
   }
 
-  if (lvl >= 8) {
+  if (lvl >= 15) {
     const fw = 200;
     const fh = 32;
     const fx = Math.floor((CONFIG.width - fw) / 2);
-    const fy = (gameOverMenuButtons.length > 0)
+    const baseFy = (gameOverMenuButtons.length > 0)
       ? gameOverMenuButtons[gameOverMenuButtons.length - 1].y + menuHeight + 28
       : Math.floor(CONFIG.height * 0.82);
+    const fy = baseFy + 35;
     const fastButton = new UIButton(fx, fy, fw, fh, () => t('game.fastToggle', { state: commonText(fastModeEnabled ? 'on' : 'off') }), () => {
       fastModeEnabled = !fastModeEnabled;
       localStorage.setItem('webswing_fastmode_v1', fastModeEnabled ? '1' : '0');
@@ -1097,8 +1098,8 @@ let hudConsumables = [];
 let gameOverTipKey = null;
 let powerCharge = 0;
 let powerChargeActive = false;
-let powerChargeAvailable = true;
-let powerChargeFirstJumpPending = true;
+let powerChargeAvailable = false;
+let powerChargeFirstJumpPending = false;
 // Web rope creation marker (explicitly declared to avoid implicit globals)
 let webRopeJustCreated = false;
 // Prevent double rope buffering within one update step
@@ -1122,6 +1123,71 @@ let stageBullets = [];
 let stageBulletTimer = 0;
 let stageBulletInterval = 10; // Start at 10 seconds
 let activeBudsCount = 0; // Runtime buds count (reset per run)
+let supportDrones = [];
+let spiderWebs = [];
+let nextSupportDroneId = 1;
+
+const BASE_LOW_ROPE_CHANCE = CONFIG.lowRopeChance;
+const stageDifficultyState = {
+  bulletVolley: 1,
+  bulletSpeedMultiplier: 1,
+  bulletIntervalOverride: null,
+  infiniteBulletMode: false,
+  cashPerDodgedBullet: 0,
+  gameClearShown: false,
+};
+
+function resetStageDifficulty() {
+  stageDifficultyState.bulletVolley = 1;
+  stageDifficultyState.bulletSpeedMultiplier = 1;
+  stageDifficultyState.bulletIntervalOverride = null;
+  stageDifficultyState.infiniteBulletMode = false;
+  stageDifficultyState.cashPerDodgedBullet = 0;
+  stageDifficultyState.gameClearShown = false;
+  CONFIG.lowRopeChance = BASE_LOW_ROPE_CHANCE;
+}
+
+function showGameClearBanner() {
+  if (typeof t !== 'function') return;
+  bossOutcomeBanner = {
+    success: true,
+    rewardScore: 0,
+    rewardCash: 0,
+    reason: null,
+    customMessage: t('game.clearMessage'),
+  };
+  bossOutcomeTimer = 4.0;
+}
+
+function applyStageDifficulty(stageNumber) {
+  const prevInfinite = stageDifficultyState.infiniteBulletMode;
+
+  stageDifficultyState.bulletVolley = stageNumber >= 30 ? 3 : (stageNumber >= 20 ? 2 : 1);
+  stageDifficultyState.bulletSpeedMultiplier = stageNumber >= 40 ? 1.5 : 1.0;
+  const ropeChanceMultiplier = stageNumber >= 20 ? 2 : 1;
+  CONFIG.lowRopeChance = Math.min(0.9, BASE_LOW_ROPE_CHANCE * ropeChanceMultiplier);
+
+  if (stageNumber >= 60) {
+    stageDifficultyState.infiniteBulletMode = true;
+    stageDifficultyState.bulletIntervalOverride = 2;
+    stageDifficultyState.bulletVolley = 5;
+    stageDifficultyState.cashPerDodgedBullet = 1;
+    stageBulletTimer = 0;
+  } else {
+    stageDifficultyState.infiniteBulletMode = false;
+    stageDifficultyState.bulletIntervalOverride = null;
+    stageDifficultyState.cashPerDodgedBullet = 0;
+  }
+
+  if (stageDifficultyState.infiniteBulletMode && !stageDifficultyState.gameClearShown) {
+    stageDifficultyState.gameClearShown = true;
+    showGameClearBanner();
+  }
+
+  if (!stageDifficultyState.infiniteBulletMode && prevInfinite) {
+    stageBulletTimer = 0;
+  }
+}
 
 const SLOW_MO_SCALE = 0.65;
 const SLOW_MO_DURATION = 0.9;
@@ -1384,6 +1450,7 @@ function registerMainRopeSpawn(anchorX, prevAnchorX) {
       ropeId: gateRope ? gateRope.id : null,
       rewarded: false,
     };
+    applyStageDifficulty(newStage + 1);
   }
 }
 
@@ -1696,6 +1763,7 @@ function initBossBattle() {
       bossMaxY: CONFIG.height * 0.65,
       bossOffsetX: CONFIG.width - 8,
       shotsFired: 0,
+      shotsDisplay: 0,
       totalShots: bulletTotalShots,
       shotInterval: bulletShotInterval,
       shotCooldown: bulletShotCooldown,
@@ -1949,6 +2017,7 @@ function spawnBossBullet(battle) {
     const vx = (dx / mag) * speed;
     const vy = (dy / mag) * speed;
     battle.shotsFired += 1;
+    battle.shotsDisplay = (battle.shotsDisplay || 0) + 1;
     battle.bullets.push({
       x: spawnBaseX,
       y: spawnY,
@@ -2746,10 +2815,12 @@ function resetRun() {
   rouletteSummary = null;
   powerCharge = 0;
   powerChargeActive = false;
-  powerChargeAvailable = true;
-  powerChargeFirstJumpPending = true;
+  powerChargeFirstJumpPending = Boolean(shopInv.powerJump);
+  powerChargeAvailable = powerChargeFirstJumpPending || characterIs('springman');
 
   resetStageState();
+  resetStageDifficulty();
+  applyStageDifficulty(currentStageIndex + 1);
 
   player.reset();
   score = 0;
@@ -2761,6 +2832,20 @@ function resetRun() {
   boxes.length = 0;
   stageBullets = [];
   stageBulletTimer = 0;
+  if (Array.isArray(supportDrones)) {
+    while (supportDrones.length) {
+      const drone = supportDrones.pop();
+      if (typeof releaseSupportDrone === 'function') {
+        releaseSupportDrone(drone);
+      } else if (drone && drone.rope) {
+        const idx = ropes.indexOf(drone.rope);
+        if (idx >= 0) ropes.splice(idx, 1);
+      }
+    }
+  }
+  supportDrones.length = 0;
+  spiderWebs.length = 0;
+  nextSupportDroneId = 1;
   activeBudsCount = shopInv.budsLevel || 0; // Reset buds count from shop level
   // Ensure fever state is cleared on fresh run
   starModeActive = false;
@@ -2800,7 +2885,10 @@ function resetRun() {
 
   if (typeof SkillSystem !== 'undefined' && SkillSystem && typeof SkillSystem.resetRunState === 'function') {
     SkillSystem.resetRunState();
-    SkillSystem.queueSelection('start');
+    const hasStartSkill = shopInv && shopInv.startSkill;
+    if (hasStartSkill && typeof SkillSystem.queueSelection === 'function') {
+      SkillSystem.queueSelection('start');
+    }
   }
 }
 

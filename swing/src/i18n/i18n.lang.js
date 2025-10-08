@@ -230,6 +230,7 @@
     },
     game: {
       fastToggle: 'FAST MODE: {state}',
+      clearMessage: 'GAME CLEAR! Endless barrage unlocked.',
     },
     ads: {
       lifeCounter: 'LIVES {current}/{max}',
@@ -336,6 +337,10 @@
         name: '+Jump',
         description: 'Grants one extra air jump while free.',
       },
+      powerjump: {
+        name: 'Power Jump',
+        description: 'Unlocks the charged launch once per run.',
+      },
       fly: {
         name: 'Fly',
         description: 'Enables long-press flight once per run.',
@@ -368,6 +373,10 @@
         name: 'Revival',
         description: 'Revive once after the Robot rescue fails when you hit the ground.',
       },
+      startskill: {
+        name: 'Start Skill',
+        description: 'Gain a skill card choice right at the start of the run.',
+      },
       fever: {
         name: 'Fever+',
         description: 'Extends star mode by +1 second per level.',
@@ -385,47 +394,47 @@
       default: {
         name: 'Polygon',
         summary: 'Classic form that\nscales with level',
-        help: 'Classic geometric body that changes shape as you level up.',
+        help: 'Classic geometric body that changes \nshape as you level up.',
       },
       robot: {
         name: 'Robot',
         summary: 'Emergency rope\nrevives you once',
-        help: 'Triggers an automatic rescue rope when you hit the ground.',
+        help: 'Triggers an automatic rescue rope \nwhen you hit the ground.',
       },
       ninja: {
         name: 'Ninja',
         summary: 'Extra air jump\nfor escapes',
-        help: 'Adds one additional air jump for agile recoveries.',
+        help: 'Adds one additional air jump for \nagile recoveries.',
       },
       pirate: {
         name: 'Pirate',
         summary: 'Combo catches\nearn +$2',
-        help: 'Combo catches grant $2 bonus earnings each time.',
+        help: 'Combo catches grant $2 bonus \nearnings each time.',
       },
       wizard: {
         name: 'Wizard',
         summary: 'Floaty leaps and\nsoft landings',
-        help: 'Custom detach physics with gentle glide after a jump.',
+        help: 'Custom detach physics with gentle \nglide after a jump.',
       },
       knight: {
         name: 'Knight',
         summary: 'Double score\nbut -1 jump',
-        help: 'Doubles score and money but removes one air jump.',
+        help: 'Doubles score and money but \nremoves one air jump.',
       },
       tailor: {
         name: 'Tailor',
         summary: 'Adds bonus rope\n+$1 on catch',
-        help: '50% chance to stitch an extra rope; catching it grants +$1.',
+        help: '50% chance to stitch an extra rope; \ncatching it grants +$1.',
       },
       springman: {
         name: 'Springman',
         summary: 'Charge every\nrope jump',
-        help: 'Hold while attached to fill a power gauge. Release to leap farther on each detach.',
+        help: 'Hold while attached to fill \na power gauge.',
       },
       bird: {
         name: 'Bird',
         summary: 'Fly anytime\nwhen owned',
-        help: 'Allows Fly activation any time once the Fly item is owned.',
+        help: 'Allows Fly activation any time \nonce the Fly item is owned.',
       },
     },
     skills: {
@@ -455,9 +464,9 @@
         },
         rope_glide: {
           name: 'Rope Glide',
-          level1: 'Rope catch radius +10px.',
-        level2: 'Rope catch radius +20px.',
-        level3: 'Rope catch radius +30px.',
+          level1: 'Rope catch radius +5px.',
+          level2: 'Rope catch radius +10px.',
+          level3: 'Rope catch radius +20px.',
         },
         air_combo: {
           name: 'Air Combo',
@@ -515,9 +524,7 @@
         },
         frenzy_feather: {
           name: 'Frenzy Feather',
-          level1: 'During fever, airborne pickups add drone stacks (+0.5s each).',
-        level2: 'Drone stacks also add +$1 when fever ends.',
-        level3: 'Stacks grant +$2 on fever end and extend max stacks.',
+          level1: 'During fever, gain +$1 every 0.2s (shown above the player) and multiply combo bonuses (score & cash) by 5.',
         },
         combo_master: {
           name: 'Combo Master',
@@ -762,6 +769,7 @@
     },
     game: {
       fastToggle: 'FAST MODE: {state}',
+      clearMessage: 'GAME CLEAR! 무한 탄막 모드 시작!',
     },
     ads: {
       lifeCounter: '기회 {current}/{max}',
@@ -868,6 +876,10 @@
         name: '+점프',
         description: '공중에서 한 번 더 점프할 수 있습니다.',
       },
+      powerjump: {
+        name: '파워 점프',
+        description: '런마다 한 번 차지 점프를 사용할 수 있습니다.',
+      },
       fly: {
         name: '플라이',
         description: '런당 한 번, 길게 눌러 비행할 수 있습니다.',
@@ -899,6 +911,10 @@
       revival: {
         name: '부활',
         description: '땅에 떨어질 때 로봇 구조가 실패하면 한 번 더 부활합니다.',
+      },
+      startskill: {
+        name: '스타트 스킬',
+        description: '런 시작 시 스킬 카드 선택을 받을 수 있습니다.',
       },
       fever: {
         name: '피버+',
@@ -952,12 +968,12 @@
       springman: {
         name: '스프링맨',
         summary: '붙어있을 때\n파워 점프',
-        help: '로프에 매달린 채로 누르고 있으면 파워 게이지가 차고, 손을 떼면 더 멀리 점프합니다.',
+        help: '로프에 매달린 채로 누르고 있으면 파워 게이지가\n생기고 더 멀리 점프합니다.',
       },
       bird: {
         name: '버드',
         summary: '언제든지\n플라이 사용',
-        help: '플라이 아이템을 보유하면 언제든지 비행을 발동할 수 있습니다.',
+        help: '플라이 아이템을 보유하면 언제든지 비행을 \n발동할 수 있습니다.',
       },
     },
     skills: {
@@ -987,9 +1003,9 @@
         },
         rope_glide: {
           name: '로프 글라이드',
-          level1: '로프 잡기 히트박스 +10px.',
-        level2: '로프 잡기 히트박스 +20px.',
-        level3: '로프 잡기 히트박스 +30px.',
+          level1: '로프 잡기 히트박스 +5px.',
+          level2: '로프 잡기 히트박스 +10px.',
+          level3: '로프 잡기 히트박스 +20px.',
         },
         air_combo: {
           name: '에어 콤보',
@@ -1047,9 +1063,7 @@
         },
         frenzy_feather: {
           name: '프렌지 페더',
-          level1: '피버 중 공중 아이템 획득 시 드론 스택(+0.5초).',
-        level2: '스택당 피버 종료 시 +$1.',
-        level3: '스택당 +$2 및 최대 스택 증가.',
+          level1: '피버 중 0.2초마다 +$1 획득(캐릭터 위 표시)·콤보 보너스(점수/돈) 5배.',
         },
         combo_master: {
           name: '콤보 마스터',

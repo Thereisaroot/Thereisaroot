@@ -32,7 +32,7 @@ const GAME_OVER_TIP_KEYS = [
   'gameOver.tips.airJump',
 ];
 
-const ROPE_GLIDE_CATCH_BONUS = [0, 10, 20, 30];
+const ROPE_GLIDE_CATCH_BONUS = [0, 5, 10, 20];
 const ROPE_GLIDE_HANDLE_SCALE = [1, 1.25, 1.45, 1.65];
 const AIR_COMBO_TRIGGER_CHANCE = [0, 0.2, 0.4, 0.6];
 const CASH_MAGNET_PULL_BONUS = [0, 15, 30, 50];
@@ -839,7 +839,327 @@ function drawRope(g, rope) {
 
 
 const skillIconCache = new Map();
+const BOX_ITEM_IMAGE_PATH = 'assets/etc/box.png';
+let boxItemImageCache = null;
+const SUPPORT_DRONE_IMAGE_PATH = 'assets/etc/drone.png';
+const SPIDER_IMAGE_PATH = 'assets/etc/spider.png';
+const SPIDER_WEB_IMAGE_PATH = 'assets/etc/web.png';
+const DRONE_RIDE_OFFSET = 38;
+const DRONE_FORWARD_OFFSET = 120;
+let supportDroneImageCache = null;
+let spiderDroneImageCache = null;
+let spiderWebImageCache = null;
 let lastSkillOverlayLayout = null;
+const renderSupportDroneState = {
+  spiderGuardActive: false,
+};
+
+function getBoxItemImage() {
+  if (typeof Image === 'undefined') return null;
+  if (!boxItemImageCache) {
+    boxItemImageCache = new Image();
+    boxItemImageCache.src = BOX_ITEM_IMAGE_PATH;
+  }
+  if (boxItemImageCache.complete && boxItemImageCache.naturalWidth > 0) {
+    return boxItemImageCache;
+  }
+  return null;
+}
+
+function getSupportDroneImage(spiderForm) {
+  if (typeof Image === 'undefined') return null;
+  if (spiderForm) {
+    if (!spiderDroneImageCache) {
+      spiderDroneImageCache = new Image();
+      spiderDroneImageCache.src = SPIDER_IMAGE_PATH;
+    }
+    if (spiderDroneImageCache.complete && spiderDroneImageCache.naturalWidth > 0) {
+      return spiderDroneImageCache;
+    }
+    return null;
+  }
+  if (!supportDroneImageCache) {
+    supportDroneImageCache = new Image();
+    supportDroneImageCache.src = SUPPORT_DRONE_IMAGE_PATH;
+  }
+  if (supportDroneImageCache.complete && supportDroneImageCache.naturalWidth > 0) {
+    return supportDroneImageCache;
+  }
+  return null;
+}
+
+function getSpiderWebImage() {
+  if (typeof Image === 'undefined') return null;
+  if (!spiderWebImageCache) {
+    spiderWebImageCache = new Image();
+    spiderWebImageCache.src = SPIDER_WEB_IMAGE_PATH;
+  }
+  if (spiderWebImageCache.complete && spiderWebImageCache.naturalWidth > 0) {
+    return spiderWebImageCache;
+  }
+  return null;
+}
+
+function releaseSupportDrone(drone) {
+  if (!drone) return;
+  if (drone.rope) {
+    if (player.rope === drone.rope) {
+      player.mode = 'free';
+      player.rope = null;
+      comboCount = 0;
+    }
+    const idx = ropes.indexOf(drone.rope);
+    if (idx >= 0) ropes.splice(idx, 1);
+    drone.rope = null;
+  }
+  drone.state = 'patrol';
+  if (typeof drone.angle !== 'number') {
+    drone.angle = Math.random() * Math.PI * 2;
+  } else {
+    drone.angle += Math.PI * 0.3;
+  }
+}
+
+function anchorSupportDrone(drone) {
+  if (!drone || drone.state === 'anchored') return;
+  const ropeLength = Math.max(90, Math.min(160, drone.y - (CONFIG.ceilingY + 40)));
+  const anchorX = drone.x;
+  const anchorY = drone.y - ropeLength;
+  const rope = new Rope({
+    anchorX,
+    anchorY,
+    L: ropeLength,
+    A: 0,
+    omega: 0,
+    phi: 0,
+    createdAt: simTime,
+    id: `sd${drone.id}`,
+    countsForStage: false,
+  });
+  rope.isSupportDroneRope = true;
+  rope.droneId = drone.id;
+  ropes.push(rope);
+  drone.state = 'anchored';
+  drone.rope = rope;
+  drone.anchorX = anchorX;
+  drone.anchorY = anchorY;
+}
+
+function spawnSpiderWeb(x) {
+  const groundY = CONFIG.height - CONFIG.groundH - 12;
+  if (spiderWebs.length >= 6) spiderWebs.shift();
+  spiderWebs.push({
+    id: `web${Date.now()}${Math.floor(Math.random() * 1000)}`,
+    x,
+    y: groundY,
+    radius: 44,
+    ttl: 7,
+  });
+}
+
+function createSupportDrone(level) {
+  const orbitRadius = 120 + level * 12;
+  const verticalRadius = 60 + level * 8;
+  const drone = {
+    id: nextSupportDroneId++,
+    angle: Math.random() * Math.PI * 2,
+    originX: player.x + DRONE_FORWARD_OFFSET,
+    originY: player.y - 120,
+    x: player.x + DRONE_FORWARD_OFFSET,
+    y: player.y - 80,
+    prevX: player.x,
+    prevY: player.y - 80,
+    vx: 0,
+    vy: 0,
+    orbitRadius,
+    verticalRadius,
+    radius: level >= 2 ? 36 : 28,
+    collectRadius: (level >= 2 ? 36 : 28) * 1.2,
+    rideOffset: DRONE_RIDE_OFFSET,
+    rider: false,
+    direction: Math.random() < 0.5 ? -1 : 1,
+    groundY: CONFIG.height - CONFIG.groundH - 16,
+    webTimer: 4 + Math.random() * 2,
+    mountCooldown: 0,
+  };
+  supportDrones.push(drone);
+  return drone;
+}
+
+function updateSupportDrones(dt, level, collectorActive, spiderGuardActive) {
+  if (!supportDrones) supportDrones = [];
+  if (!spiderWebs) spiderWebs = [];
+
+  if (level <= 0) {
+    while (supportDrones.length) {
+      const drone = supportDrones.pop();
+      if (player.droneRide === drone) {
+        player.mode = 'free';
+        player.droneRide = null;
+      }
+    }
+    spiderWebs.length = 0;
+    return;
+  }
+
+  const desiredCount = level >= 3 ? 2 : 1;
+  while (supportDrones.length > desiredCount) {
+    const drone = supportDrones.pop();
+    if (player.droneRide === drone) {
+      player.mode = 'free';
+      player.droneRide = null;
+    }
+  }
+  while (supportDrones.length < desiredCount) {
+    createSupportDrone(level);
+  }
+
+  const baseRadius = level >= 2 ? 36 : 28;
+  const collectMultiplier = collectorActive ? 1.8 : 1.2;
+
+  for (let i = 0; i < supportDrones.length; i++) {
+    const drone = supportDrones[i];
+    drone.radius = baseRadius;
+    drone.collectRadius = baseRadius * collectMultiplier;
+
+    if (!Number.isFinite(drone.originX)) drone.originX = player.x;
+    if (!Number.isFinite(drone.originY)) drone.originY = player.y - 120;
+    const prevX = drone.x;
+    const prevY = drone.y;
+    if (drone.mountCooldown > 0) drone.mountCooldown = Math.max(0, drone.mountCooldown - dt);
+
+    if (spiderGuardActive) {
+      drone.originY = Math.min(drone.originY, drone.groundY - 20);
+      drone.originX = player.x + DRONE_FORWARD_OFFSET;
+      const speed = (80 + level * 18) * 1.3;
+      const range = 110 + level * 20;
+      drone.x += drone.direction * speed * dt;
+      const offset = drone.x - drone.originX;
+      if (offset > range) {
+        drone.x = drone.originX + range;
+        drone.direction = -Math.abs(drone.direction);
+      } else if (offset < -range) {
+        drone.x = drone.originX - range;
+        drone.direction = Math.abs(drone.direction);
+      }
+      drone.y = drone.groundY;
+      if (!drone.rider) {
+        drone.webTimer -= dt;
+        if (drone.webTimer <= 0) {
+          spawnSpiderWeb(drone.x);
+          drone.webTimer = 5 + Math.random() * 4;
+        }
+      }
+    } else {
+      drone.webTimer = 4 + Math.random() * 2;
+      const targetOriginX = player.x + DRONE_FORWARD_OFFSET;
+      drone.originX += (targetOriginX - drone.originX) * Math.min(1, dt * 0.5);
+      drone.angle += dt * (0.8 + level * 0.25) * 1.3;
+      const offsetPhase = i === 0 ? 0 : Math.PI;
+      const ang = drone.angle + offsetPhase;
+      drone.x = drone.originX + Math.cos(ang) * drone.orbitRadius;
+      drone.y = drone.originY + Math.sin(ang) * drone.verticalRadius;
+    }
+
+    drone.vx = (drone.x - prevX) / Math.max(1e-6, dt);
+    drone.vy = (drone.y - prevY) / Math.max(1e-6, dt);
+    drone.prevX = drone.x;
+    drone.prevY = drone.y;
+  }
+}
+
+function updateSpiderWebs(dt) {
+  if (!spiderWebs || !spiderWebs.length) return;
+  for (let i = spiderWebs.length - 1; i >= 0; i--) {
+    const web = spiderWebs[i];
+    web.ttl -= dt;
+    if (web.ttl <= 0) {
+      spiderWebs.splice(i, 1);
+    }
+  }
+}
+
+function computeSupportDroneZones() {
+  if (!supportDrones || !supportDrones.length) return [];
+  const zones = [];
+  for (const drone of supportDrones) {
+    if (!drone) continue;
+    const baseRadius = drone.collectRadius || drone.radius || 30;
+    const radius = drone.rider ? Math.max(baseRadius, (drone.radius || 30) + 12) : baseRadius;
+    zones.push({ x: drone.x, y: drone.y, r: radius, drone });
+  }
+  return zones;
+}
+
+function drawSpiderWebs(g) {
+  if (!spiderWebs || !spiderWebs.length) return;
+  const img = getSpiderWebImage();
+  for (const web of spiderWebs) {
+    const sx = web.x - camera.x;
+    if (sx < -80 || sx > CONFIG.width + 80) continue;
+    const size = web.radius * 2;
+    g.save();
+    g.imageSmoothingEnabled = false;
+    if (img) {
+      g.drawImage(img, sx - size / 2, web.y - size / 2, size, size);
+    } else {
+      g.fillStyle = 'rgba(204, 227, 255, 0.85)';
+      g.beginPath();
+      g.arc(sx, web.y, web.radius, 0, Math.PI * 2);
+      g.fill();
+    }
+    g.restore();
+  }
+}
+
+function drawSupportDrones(g, spiderGuardActive) {
+  if (!supportDrones || !supportDrones.length) return;
+  const imgDrone = getSupportDroneImage(false);
+  const imgSpider = getSupportDroneImage(true);
+  for (const drone of supportDrones) {
+    const sx = drone.x - camera.x;
+    if (sx < -80 || sx > CONFIG.width + 80) continue;
+    const sy = drone.y;
+    const size = drone.state === 'anchored' ? 40 : 32;
+    g.save();
+    g.imageSmoothingEnabled = false;
+    const img = spiderGuardActive ? imgSpider : imgDrone;
+    if (img) {
+      g.drawImage(img, sx - size / 2, sy - size / 2, size, size);
+    } else {
+      g.fillStyle = spiderGuardActive ? '#f4b942' : '#8ec5ff';
+      g.beginPath();
+      g.arc(sx, sy, drone.radius, 0, Math.PI * 2);
+      g.fill();
+    }
+    g.restore();
+  }
+}
+
+function mountDrone(drone) {
+  if (!drone || drone.rider || player.mode === 'dead') return;
+  drone.rider = true;
+  drone.mountCooldown = 0;
+  player.mode = 'drone';
+  player.droneRide = drone;
+  player.vx = 0;
+  player.vy = 0;
+  player.angle = 0;
+}
+
+function dismountDrone(applyImpulse = true) {
+  const ride = player.droneRide;
+  if (!ride) return;
+  ride.rider = false;
+  ride.mountCooldown = 0.6;
+  player.droneRide = null;
+  player.mode = 'free';
+  if (applyImpulse) {
+    const forward = Math.max(CONFIG.minVx, CONFIG.baseVx * 0.75);
+    player.vx = (ride.vx || 0) + forward;
+    player.vy = -CONFIG.jumpImpulse * 0.85;
+  }
+}
 
 function getSkillIconImage(skillId) {
   if (!SkillSystem || typeof SkillSystem.getSkillIconPath !== 'function') return null;
@@ -1121,24 +1441,7 @@ function renderSkillSelectionOverlay(g) {
         });
       }
 
-      if (def && def.type === 'hidden') {
-        const reqIds = SkillData.getHiddenSkillRequirements(card.id) || [];
-        if (reqIds.length) {
-          const names = reqIds.map((id) => {
-            const key = SkillData.getSkillNameKey(id);
-            return key ? t(key) : id;
-          }).join(' + ');
-          const reqText = t('skills.overlay.requires', { list: `${names} Lv3` });
-          g.font = descFont;
-          g.fillStyle = '#8aa4ff';
-          const reqLines = wrapSkillLines(reqText, textWidth, g);
-          const lineGap = 12;
-          reqLines.forEach((line) => {
-            g.fillText(line, textX, descY);
-            descY += lineGap;
-          });
-        }
-      }
+      // Hidden skill requirements are intentionally not shown to keep the UI uncluttered.
     } else if (flipping) {
       g.font = descFont;
       g.fillStyle = '#8aa4ff';
@@ -1295,6 +1598,9 @@ function updateRun(dt) {
   let voidMagnetActive = false;
   let frenzyFeatherActive = false;
   let comboMasterActive = false;
+  let droneSupportLevel = 0;
+  let droneCollectorActive = false;
+  let spiderGuardActive = false;
   if (typeof SkillSystem !== 'undefined' && SkillSystem && typeof SkillSystem.getSkillLevel === 'function') {
     const ropeGlideRaw = SkillSystem.getSkillLevel('rope_glide');
     if (Number.isFinite(ropeGlideRaw) && ropeGlideRaw > 0) {
@@ -1319,11 +1625,20 @@ function updateRun(dt) {
     voidMagnetActive = SkillSystem.getSkillLevel('void_magnet') > 0;
     frenzyFeatherActive = SkillSystem.getSkillLevel('frenzy_feather') > 0;
     comboMasterActive = SkillSystem.getSkillLevel('combo_master') > 0;
+    const droneSupportRaw = SkillSystem.getSkillLevel('drone_support');
+    if (Number.isFinite(droneSupportRaw) && droneSupportRaw > 0) {
+      droneSupportLevel = Math.max(0, Math.floor(droneSupportRaw));
+    }
+    droneCollectorActive = SkillSystem.getSkillLevel('drone_collector') > 0;
+    spiderGuardActive = SkillSystem.getSkillLevel('spider_guard') > 0;
   }
   const ropeGlideCatchBonus = ROPE_GLIDE_CATCH_BONUS[Math.min(ropeGlideLevel, ROPE_GLIDE_CATCH_BONUS.length - 1)] || 0;
   const airComboChance = AIR_COMBO_TRIGGER_CHANCE[Math.min(airComboLevel, AIR_COMBO_TRIGGER_CHANCE.length - 1)] || 0;
   const cashMagnetPullBonus = CASH_MAGNET_PULL_BONUS[Math.min(cashMagnetLevel, CASH_MAGNET_PULL_BONUS.length - 1)] || 0;
   const feverDurationBonusPct = FEVER_EXTENSION_BONUS[Math.min(feverExtensionLevel, FEVER_EXTENSION_BONUS.length - 1)] || 0;
+  updateSupportDrones(baseDt, droneSupportLevel, droneCollectorActive, spiderGuardActive);
+  updateSpiderWebs(baseDt);
+  renderSupportDroneState.spiderGuardActive = spiderGuardActive;
   if (voidMagnetActive) {
     voidMagnetTimer -= baseDt;
     if (voidMagnetTimer <= 0) {
@@ -1400,6 +1715,31 @@ function updateRun(dt) {
 
   // Input
   const justPressed = Input.anyPressed();
+  let dronePressConsumed = false;
+
+  if (player.mode === 'drone') {
+    const ride = player.droneRide;
+    if (!ride || ride.rider !== true) {
+      dismountDrone(false);
+    } else if (justPressed) {
+      dismountDrone(true);
+      dronePressConsumed = true;
+    }
+  } else if (player.mode === 'free' && supportDrones && supportDrones.length) {
+    for (let i = 0; i < supportDrones.length; i++) {
+      const drone = supportDrones[i];
+      if (!drone || drone.rider || (drone.mountCooldown && drone.mountCooldown > 0)) continue;
+      const offsetY = drone.rideOffset || DRONE_RIDE_OFFSET;
+      const dx = player.x - drone.x;
+      const dy = (player.y - (drone.y + offsetY));
+      const mountRadius = Math.max(drone.radius || 30, 30);
+      if (Math.hypot(dx, dy) <= mountRadius) {
+        mountDrone(drone);
+        break;
+      }
+    }
+  }
+
   if (justPressed) {
     pressStartAt = simTime;
     flyLongPressTriggered = false;
@@ -1419,7 +1759,7 @@ function updateRun(dt) {
     } else if (justPressed) {
       performDetach(0);
     }
-  } else if (justPressed) {
+  } else if (justPressed && !dronePressConsumed) {
     if (airJumpsLeft > 0) {
       player.airFlap();
       airJumpsLeft -= 1;
@@ -1435,29 +1775,37 @@ function updateRun(dt) {
   }
   cleanupRopes();
 
-  // Update stage bullets (after stage 5)
-  const currentStage = Math.floor(score / 20) + 1;
-  if (currentStage > 5 && !starModeActive) {
-    // Calculate bullet interval: starts at 6s, decreases by 1s every 5 stages, minimum 3s
-    const stagesAbove5 = Math.floor((currentStage - 1) / 5);
-    stageBulletInterval = Math.max(3, 6 - stagesAbove5);
+  // Update stage bullets (after stage 5, or forced infinite mode)
+  const stageNumber = (typeof currentStageIndex === 'number') ? (currentStageIndex + 1) : (Math.floor(score / 20) + 1);
+  const stageDiff = (typeof stageDifficultyState !== 'undefined') ? stageDifficultyState : null;
+  const bulletsActive = (stageNumber > 5 || (stageDiff && stageDiff.infiniteBulletMode)) && !starModeActive;
+  if (bulletsActive) {
+    const baseInterval = Math.max(3, 6 - Math.floor((Math.max(stageNumber, 6) - 1) / 5));
+    const intervalOverride = stageDiff && stageDiff.bulletIntervalOverride != null ? stageDiff.bulletIntervalOverride : null;
+    stageBulletInterval = intervalOverride != null ? intervalOverride : baseInterval;
 
     // Spawn bullets
     stageBulletTimer += baseDt;
     if (stageBulletTimer >= stageBulletInterval) {
       stageBulletTimer = 0;
-      const speed = 220;
-      const angleOffset = ((Math.random() * 20) - 10) * (Math.PI / 180);
+      const volley = stageDiff ? stageDiff.bulletVolley : 1;
+      const speedMultiplier = stageDiff ? stageDiff.bulletSpeedMultiplier : 1;
+      const speed = 220 * speedMultiplier;
       const baseAngle = Math.PI; // shoot from right to left
-      const angle = baseAngle + angleOffset;
-      stageBullets.push({
-        x: camera.x + CONFIG.width + 40,
-        y: (CONFIG.height * 0.5) + randRange(-50, 50),
-        vx: Math.cos(angle) * speed,
-        vy: Math.sin(angle) * speed,
-        radius: 12,
-        life: 0
-      });
+      const spawnBaseY = (CONFIG.height * 0.5) + randRange(-50, 50);
+      for (let n = 0; n < volley; n += 1) {
+        const angleOffset = ((Math.random() * 20) - 10) * (Math.PI / 180);
+        const angle = baseAngle + angleOffset;
+        const verticalSpread = (volley > 1) ? (n - (volley - 1) / 2) * 18 : 0;
+        stageBullets.push({
+          x: camera.x + CONFIG.width + 40,
+          y: spawnBaseY + verticalSpread,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          radius: 12,
+          life: 0,
+        });
+      }
     }
 
     // Update bullets
@@ -1497,6 +1845,16 @@ function updateRun(dt) {
 
       // Remove off-screen bullets
       if (bullet.x < camera.x - 100) {
+        if (stageDiff && stageDiff.cashPerDodgedBullet > 0) {
+          const cashReward = stageDiff.cashPerDodgedBullet;
+          savings += cashReward;
+          skillCashBonusThisRun += cashReward;
+          if (typeof addToPlayerStat === 'function') addToPlayerStat('totalCashEarned', cashReward);
+          const effectX = camera.x + 48;
+          const effectY = Math.max(CONFIG.height * 0.25, Math.min(CONFIG.height - 80, bullet.y));
+          spawnEffect('combo', effectX, effectY, t('effects.cashEarned', { cash: cashReward }));
+          try { localStorage.setItem(SAVINGS_KEY, String(savings)); } catch (_) {}
+        }
         stageBullets.splice(i, 1);
       }
     }
@@ -1508,6 +1866,7 @@ function updateRun(dt) {
   const magnetPullR = baseCatchR + magnetLevel * 10 + cashMagnetPullBonus;
   const magnetPullSpeed = 140 + magnetLevel * 60; // px/s pull toward player when within magnet radius
   const budHitZones = computeBudHitZones();
+  const droneCatchZones = computeSupportDroneZones();
 
   for (const b of boxes) {
     if (!b.active) continue;
@@ -1539,6 +1898,7 @@ function updateRun(dt) {
     let dx = b.x - player.x;
     let dy = b.y - player.y;
     let dist = Math.hypot(dx, dy);
+    let caughtByDrone = null;
 
     if ((magnetLevel > 0 || cashMagnetLevel > 0) && dist > baseCatchR && dist <= magnetPullR) {
       const pullStep = magnetPullSpeed * dt;
@@ -1562,14 +1922,27 @@ function updateRun(dt) {
         }
       }
     }
+    if (!caught && droneCatchZones.length > 0) {
+      for (let i = 0; i < droneCatchZones.length; i++) {
+        const zone = droneCatchZones[i];
+        const ddx = b.x - zone.x;
+        const ddy = b.y - zone.y;
+        if (Math.hypot(ddx, ddy) <= zone.r) {
+          caught = true;
+          caughtByDrone = zone;
+          break;
+        }
+      }
+    }
 
     if (!caught) continue;
 
     b.active = false;
     addToPlayerStat && addToPlayerStat('itemsCollected', 1);
     const wobble = Math.sin(simTime * 3 + (b.phase || 0)) * 6;
-    const displayY = b.y + wobble;
-    const caughtInAir = (player.mode === 'free');
+    const displayY = caughtByDrone ? caughtByDrone.y : (b.y + wobble);
+    const displayX = caughtByDrone ? caughtByDrone.x : player.x;
+    const caughtInAir = caughtByDrone ? true : (player.mode === 'free');
 
     if (b.kind === 'star') {
       starModeActive = true;
@@ -1618,7 +1991,8 @@ function updateRun(dt) {
       webRopeJustCreated = true;
       spawnEffect('big', b.x, displayY);
     } else {
-      spawnEffect('burst', b.x, displayY);
+      const burstX = caughtByDrone ? caughtByDrone.x : b.x;
+      spawnEffect('burst', burstX, displayY);
       if (b.kind === 'extraJump') pendingExtraJump = true;
       else if (b.kind === 'wideCatch') pendingCatchR = 50;
       else if (b.kind === 'bigSize') pendingSizeScale = 1.5;
@@ -1664,6 +2038,21 @@ function updateRun(dt) {
 
   // Update player
   player.update(dt, simTime);
+  if (spiderGuardActive && spiderWebs && spiderWebs.length > 0 && player.mode === 'free' && player.vy > 0) {
+    for (let i = 0; i < spiderWebs.length; i++) {
+      const web = spiderWebs[i];
+      const dx = player.x - web.x;
+      const dy = player.y - web.y;
+      if (Math.abs(dx) <= web.radius && Math.abs(dy) <= 24) {
+        player.vy = -Math.max(420, Math.abs(player.vy) * 0.8 + 320);
+        player.mode = 'free';
+        usedAirJumps = 0;
+        spawnEffect('burst', web.x, web.y - 12);
+        web.ttl = Math.min(web.ttl, 1.5);
+        break;
+      }
+    }
+  }
   updateRoulette(dt);
   // Star trail particles while in fever mode
   if (starModeActive) {
@@ -1791,10 +2180,16 @@ function updateRun(dt) {
         if (comboMasterActive) {
           comboEligible = true;
         }
+        const comboBonusMultiplier = (frenzyFeatherActive && starModeActive) ? 5 : 1;
+
         if (comboEligible) {
           comboCount++;
           if (characterIs('pirate') && comboCount >= 2) {
-            pirateBonusThisRun += 2;
+            const pirateCashGain = 2 * comboBonusMultiplier;
+            pirateBonusThisRun += pirateCashGain;
+            if (comboBonusMultiplier > 1) {
+              spawnEffect('combo', player.x, player.y - 48, t('effects.cashEarned', { cash: pirateCashGain }));
+            }
           }
           if (comboCount >= 2) {
             spawnEffect('combo', player.x, player.y - 30, t('effects.comboCount', { combo: comboCount }));
@@ -1803,13 +2198,15 @@ function updateRun(dt) {
           comboCount = 0;
         }
         if (airComboTriggered && airComboLevel >= 3) {
-          skillCashBonusThisRun += 1;
-          spawnEffect('combo', player.x, player.y - 18, t('effects.cashEarned', { cash: 1 }));
+          const airComboCash = comboBonusMultiplier;
+          skillCashBonusThisRun += airComboCash;
+          spawnEffect('combo', player.x, player.y - 18, t('effects.cashEarned', { cash: airComboCash }));
         }
         const comboLevel = shopInv.comboLevel || 0;
         rewardGain = Math.max(1, Math.round(rewardGain));
         if (comboLevel > 0 && comboEligible && comboCount >= 2) {
-          const bonus = comboLevel * Math.max(1, comboCount - 1) * COMBO_BONUS_PER_LEVEL;
+          const baseBonus = comboLevel * Math.max(1, comboCount - 1) * COMBO_BONUS_PER_LEVEL;
+          const bonus = baseBonus * comboBonusMultiplier;
           rewardGain += bonus;
         }
         const tailorCatchBonus = (rope.tailorBonus && characterIs('tailor')) ? rope.tailorBonus : 0;
@@ -1818,7 +2215,7 @@ function updateRun(dt) {
         if (characterIs('knight')) scoreGain *= 2;
         score += scoreGain;
         if (comboMasterActive && comboEligible && comboCount > 0) {
-          const comboCash = Math.max(1, comboCount);
+          const comboCash = Math.max(1, comboCount) * comboBonusMultiplier;
           skillCashBonusThisRun += comboCash;
           spawnEffect('combo', player.x, player.y - 42, t('effects.cashEarned', { cash: comboCash }));
         }
@@ -2143,35 +2540,48 @@ function renderRun(g) {
     g.fill();
     g.stroke();
     // Draw unified question mark box pixel art for all items
-    const boxArt = (typeof BOX_ITEM_ART !== 'undefined' && BOX_ITEM_ART.itemBox) ? BOX_ITEM_ART.itemBox : null;
-    if (boxArt && boxArt.pixels && boxArt.palette) {
-      const pixelSize = 2;
-      const artWidth = boxArt.pixels[0].length * pixelSize;
-      const artHeight = boxArt.pixels.length * pixelSize;
-      const artX = sx - artWidth / 2;
-      const artY = sy - artHeight / 2;
+    const boxImg = getBoxItemImage();
+    if (boxImg) {
+      const ratio = (boxImg.width > 0 && boxImg.height > 0) ? (boxImg.height / boxImg.width) : 1;
+      const drawW = 26;
+      const drawH = drawW * ratio;
+      g.save();
+      g.imageSmoothingEnabled = false;
+      g.drawImage(boxImg, sx - drawW / 2, sy - drawH / 2, drawW, drawH);
+      g.restore();
+    } else {
+      const boxArt = (typeof BOX_ITEM_ART !== 'undefined' && BOX_ITEM_ART.itemBox) ? BOX_ITEM_ART.itemBox : null;
+      if (boxArt && boxArt.pixels && boxArt.palette) {
+        const pixelSize = 2;
+        const artWidth = boxArt.pixels[0].length * pixelSize;
+        const artHeight = boxArt.pixels.length * pixelSize;
+        const artX = sx - artWidth / 2;
+        const artY = sy - artHeight / 2;
 
-      for (let row = 0; row < boxArt.pixels.length; row++) {
-        const line = boxArt.pixels[row];
-        for (let col = 0; col < line.length; col++) {
-          const char = line[col];
-          const color = boxArt.palette[char];
-          if (color) {
-            g.fillStyle = color;
-            g.fillRect(artX + col * pixelSize, artY + row * pixelSize, pixelSize, pixelSize);
+        for (let row = 0; row < boxArt.pixels.length; row++) {
+          const line = boxArt.pixels[row];
+          for (let col = 0; col < line.length; col++) {
+            const char = line[col];
+            const color = boxArt.palette[char];
+            if (color) {
+              g.fillStyle = color;
+              g.fillRect(artX + col * pixelSize, artY + row * pixelSize, pixelSize, pixelSize);
+            }
           }
         }
+      } else {
+        // Fallback to text if no asset is ready
+        g.fillStyle = '#fff';
+        g.font = `11px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
+        g.fillText('?', sx, sy + 1);
       }
-    } else {
-      // Fallback to text if no pixel art
-      g.fillStyle = '#fff';
-      g.font = `11px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-      g.textAlign = 'center';
-      g.textBaseline = 'middle';
-      g.fillText('?', sx, sy + 1);
     }
     g.restore();
   }
+
+  drawSpiderWebs(g);
 
   // Draw stage bullets
   if (stageBullets && stageBullets.length > 0) {
@@ -2197,6 +2607,8 @@ function renderRun(g) {
       }
     }
   }
+
+  drawSupportDrones(g, renderSupportDroneState.spiderGuardActive);
 
   // Draw player with camera offset
   ctx.save();
@@ -2252,19 +2664,25 @@ function renderRun(g) {
 
   if (bossOutcomeBanner && bossOutcomeTimer > 0) {
     const lines = [];
-    const primaryKey = bossOutcomeBanner.success ? 'bossOutcome.success' : 'bossOutcome.failure';
-    lines.push(t(primaryKey));
+    if (bossOutcomeBanner.customMessage) {
+      lines.push(bossOutcomeBanner.customMessage);
+    } else {
+      const primaryKey = bossOutcomeBanner.success ? 'bossOutcome.success' : 'bossOutcome.failure';
+      lines.push(t(primaryKey));
+    }
     if (bossOutcomeBanner.success) {
       const cash = bossOutcomeBanner.rewardCash || 0;
       const score = bossOutcomeBanner.rewardScore || 0;
-      if (cash > 0 && score > 0) {
-        lines.push(t('bossOutcome.rewardCashScore', { cash, score }));
-      } else if (cash > 0) {
-        lines.push(t('bossOutcome.rewardCash', { cash }));
-      } else if (score > 0) {
-        lines.push(t('bossOutcome.rewardScore', { score }));
+      if (!bossOutcomeBanner.customMessage) {
+        if (cash > 0 && score > 0) {
+          lines.push(t('bossOutcome.rewardCashScore', { cash, score }));
+        } else if (cash > 0) {
+          lines.push(t('bossOutcome.rewardCash', { cash }));
+        } else if (score > 0) {
+          lines.push(t('bossOutcome.rewardScore', { score }));
+        }
       }
-    } else {
+    } else if (!bossOutcomeBanner.customMessage) {
       const reasonText = translateBossOutcomeReason(bossOutcomeBanner.reason);
       if (reasonText) lines.push(reasonText);
     }
@@ -2430,7 +2848,13 @@ function renderBoss(g) {
   if (bossState && bossState.battle) {
     if (bossState.type === 'bullet') {
       const b = bossState.battle;
-      g.fillText(t('boss.bulletHud', { shots: b.shotsFired, total: b.totalShots, hits: b.hitsTaken || 0, limit: b.hitLimit || 4 }), CONFIG.width / 2, 40);
+      const shotsDisplay = (b.shotsDisplay != null) ? b.shotsDisplay : b.shotsFired;
+      g.fillText(t('boss.bulletHud', {
+        shots: shotsDisplay,
+        total: b.totalShots,
+        hits: b.hitsTaken || 0,
+        limit: b.hitLimit || 4,
+      }), CONFIG.width / 2, 40);
     } else if (bossState.type === 'slam') {
       const b = bossState.battle;
       const jumpCount = b ? (b.jumpCount || 0) : 0;
@@ -2523,7 +2947,11 @@ function renderRouletteOverlay(g) {
 function computeBudHitZones() {
   const budsLevel = shopInv.budsLevel || 0;
   if (!budsLevel) return [];
-  const budsCount = Math.min(6, budsLevel);
+  const runtimeBuds = (typeof activeBudsCount === 'number')
+    ? Math.max(0, Math.min(activeBudsCount, budsLevel))
+    : budsLevel;
+  const budsCount = Math.min(6, runtimeBuds);
+  if (!budsCount) return [];
   const zones = [];
   const spin = simTime * 0.8;
   const level = getLevelByExp(exp);

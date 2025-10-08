@@ -135,6 +135,8 @@ async function start() {
     // Equip Glow, +Jump, Fly during demo
     shopInv.glowLevel = 1;
     shopInv.plusJump = true;
+    shopInv.powerJump = true;
+    shopInv.startSkill = true;
     shopInv.fly = true;
     shopInv.characters = Array.isArray(shopInv.characters) ? shopInv.characters.slice() : [];
     if (!shopInv.characters.includes('wizard')) {

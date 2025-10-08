@@ -44,16 +44,29 @@ class Player {
     this.vx = 0;
     this.vy = 0;
     this.angle = 0;
-    this.mode = 'attached'; // 'attached' | 'free'
+    this.mode = 'attached'; // 'attached' | 'free' | 'drone'
     this.rope = null; // current attached rope
     this.sizeScale = 1;
+    this.droneRide = null;
   }
   airFlap() {
     // In-air flap: mainly vertical impulse, minimal horizontal change
     this.vy = Math.min(this.vy, 0) - CONFIG.jumpImpulse * 0.85 * (CONFIG.jumpSpeedScale || 1);
   }
   update(dt, t) {
-    if (this.mode === 'attached' && this.rope) {
+    if (this.mode === 'drone') {
+      const ride = this.droneRide;
+      if (!ride) {
+        this.mode = 'free';
+      } else {
+        const offsetY = ride.rideOffset || 36;
+        this.x = ride.x;
+        this.y = ride.y + offsetY;
+        this.vx = ride.vx || 0;
+        this.vy = ride.vy || 0;
+        this.angle += (0 - this.angle) * Math.min(1, dt * 8);
+      }
+    } else if (this.mode === 'attached' && this.rope) {
     if (this.rope.isWebRope && this.rope.webTargetL != null && this.rope.L > this.rope.webTargetL) {
       this.rope.L -= this.rope.retractSpeed * dt; // Retract speed
       if (this.rope.L < this.rope.webTargetL) {
@@ -368,8 +381,11 @@ class Player {
 
     // Buds - works with both pixel and polygon characters
     const budsLevel = shopInv.budsLevel || 0;
-    if (budsLevel > 0) {
-      const budsCount = Math.min(6, budsLevel);
+    const runtimeBuds = (typeof activeBudsCount === 'number')
+      ? Math.max(0, Math.min(activeBudsCount, budsLevel))
+      : budsLevel;
+    const budsCount = Math.min(6, runtimeBuds);
+    if (budsCount > 0) {
       const spin = simTime * 0.8;
       const budPalette = ['#e53d3d', '#6aa8ff', '#ffa24d'];
 

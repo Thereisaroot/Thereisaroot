@@ -3,6 +3,11 @@ const SHOP_ITEMS = (typeof window !== 'undefined' ? window.ITEM_SPECS : undefine
 const SHOP_ITEM_ORDER = new Map(SHOP_ITEMS.map((item, idx) => [item, idx]));
 const ITEM_ART = (typeof window !== 'undefined' ? window.ITEM_ART : undefined) || {};
 
+function getBigMaxLevel() {
+  const level = getLevelByExp(exp);
+  return Math.max(1, Math.floor((level + 1) / 2));
+}
+
 function getAllItemsSorted() {
   return sortItemsByMinLevel(SHOP_ITEMS);
 }
@@ -82,6 +87,7 @@ function getItemLevel(it) {
   }
   if (it.id === 'buds') return shopInv.budsLevel || 0;
   if (it.id === 'glow') return shopInv.glowLevel || 0;
+  if (it.id === 'powerjump') return shopInv.powerJump ? 1 : 0;
   if (it.id === 'plusjump') return shopInv.plusJump ? 1 : 0;
   if (it.id === 'fly') return shopInv.fly ? 1 : 0;
   if (it.id === 'big') return shopInv.bigLevel || 0;
@@ -91,6 +97,7 @@ function getItemLevel(it) {
   if (it.id === 'lucky') return shopInv.luckyLevel || 0;
   if (it.id === 'fever') return shopInv.feverLevel || 0;
   if (it.id === 'revival') return shopInv.revival ? 1 : 0;
+  if (it.id === 'startskill') return shopInv.startSkill ? 1 : 0;
   if (it.id === 'skill_reroll') return shopInv.skillRerollLevel || 0;
   if (it.id === 'skill_card_plus') return shopInv.skillCardPlus ? 1 : 0;
   return 0;
@@ -110,7 +117,7 @@ function isItemSoldOut(it) {
   if (it.type === 'level') {
     // dynamic caps by item
     let maxLv;
-    if (it.id === 'big') maxLv = getLevelByExp(exp);
+    if (it.id === 'big') maxLv = getBigMaxLevel();
     else maxLv = it.maxLevel || 1;
     return getItemLevel(it) >= maxLv;
   }
@@ -1450,12 +1457,14 @@ function tryPurchase(id) {
     savings -= price;
     shopInv.budsLevel = current + 1;
     saveShopInv(shopInv);
+  } else if (id === 'powerjump') {
+    savings -= price; shopInv.powerJump = true; saveShopInv(shopInv);
   } else if (id === 'plusjump') {
     savings -= price; shopInv.plusJump = true; saveShopInv(shopInv);
   } else if (id === 'fly') {
     savings -= price; shopInv.fly = true; saveShopInv(shopInv);
   } else if (id === 'big') {
-    const maxLv = getLevelByExp(exp);
+    const maxLv = getBigMaxLevel();
     const current = shopInv.bigLevel || 0;
     const dynPrice = 20 + 10 * current;
     if (savings < dynPrice) { shopMsgKey = 'shop.error.funds'; shopMsgArgs = { amount: dynPrice }; shopMsg = t(shopMsgKey, shopMsgArgs); shopMsgTimer = 2.0; return; }
@@ -1490,6 +1499,10 @@ function tryPurchase(id) {
     if (shopInv.revival) { shopConfirm = null; return; }
     savings -= price;
     shopInv.revival = true;
+    saveShopInv(shopInv);
+  } else if (id === 'startskill') {
+    savings -= price;
+    shopInv.startSkill = true;
     saveShopInv(shopInv);
   } else if (id === 'skill_reroll') {
     const maxLv = it.maxLevel || 3;

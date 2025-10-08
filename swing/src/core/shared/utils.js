@@ -49,6 +49,7 @@ const TUNING_DEFAULTS = {
 const SHOP_INV_DEFAULTS = {
   glowLevel: 0,
   budsLevel: 0,
+  powerJump: false,
   plusJump: false,
   fly: false,
   bigLevel: 0,
@@ -59,6 +60,7 @@ const SHOP_INV_DEFAULTS = {
   slowLevel: 0,
   luckyLevel: 0,
   feverLevel: 0,
+  startSkill: false,
   characters: [],
   consumables: {},
 };

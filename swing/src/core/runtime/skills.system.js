@@ -16,6 +16,7 @@
     popup: null,
     queue: [],
     selectionsThisRun: 0,
+    hiddenLearnedThisRun: false,
   };
 
   function getSkillLevel(id) {
@@ -44,10 +45,11 @@
     state.queue.length = 0;
     state.popup = null;
     state.selectionsThisRun = 0;
+    state.hiddenLearnedThisRun = false;
   }
 
   function queueSelection(context, meta) {
-    const baseMeta = Object.assign({ cardCount: 3, rerolls: 0 }, meta || {});
+    const baseMeta = Object.assign({ cardCount: 2, rerolls: 0 }, meta || {});
     if (typeof shopInv !== 'undefined' && shopInv) {
       const rerollBonus = Math.max(0, Number(shopInv.skillRerollLevel) || 0);
       if (rerollBonus > 0) {
@@ -90,7 +92,9 @@
         pool.push(skill);
       }
     }
+    const hiddenLockedForRun = state.hiddenLearnedThisRun;
     for (const hidden of SkillData.HIDDEN_SKILLS) {
+      if (hiddenLockedForRun) break;
       const level = getSkillLevel(hidden.id);
       if (level >= (hidden.maxLevel || 1)) continue;
       const requires = SkillData.getHiddenSkillRequirements(hidden.id);
@@ -127,7 +131,7 @@
   }
 
   function computeCardCount(contextMeta) {
-    const base = Math.max(1, contextMeta && contextMeta.cardCount ? contextMeta.cardCount : 3);
+    const base = Math.max(1, contextMeta && contextMeta.cardCount ? contextMeta.cardCount : 2);
     let bonus = 0;
     if (typeof shopInv !== 'undefined' && shopInv && shopInv.skillCardPlus) {
       bonus += 1;
@@ -146,12 +150,24 @@
     }
     const cardCount = computeCardCount(next.meta || {});
     const cards = [];
+    const hiddenIds = pool.filter((skill) => skill.type === 'hidden').map((skill) => skill.id);
+    const hiddenIdSet = new Set(hiddenIds);
     const seen = new Set();
+    if (state.hiddenLearnedThisRun) {
+      for (const id of hiddenIdSet) seen.add(id);
+    }
+    let hiddenAddedThisSelection = false;
     for (let i = 0; i < cardCount; i++) {
       const pick = weightedDraw(pool, seen);
       if (!pick) break;
       seen.add(pick.id);
       cards.push({ id: pick.id, def: pick });
+      if (!hiddenAddedThisSelection && pick.type === 'hidden') {
+        hiddenAddedThisSelection = true;
+        for (const id of hiddenIdSet) {
+          seen.add(id);
+        }
+      }
     }
     if (!cards.length) {
       state.popup = null;
@@ -185,6 +201,9 @@
     setSkillLevel(skillId, currentLevel + 1);
     evaluateHiddenUnlocks();
     state.selectionsThisRun += 1;
+    if (def.type === 'hidden') {
+      state.hiddenLearnedThisRun = true;
+    }
     return { id: skillId, level: currentLevel + 1, maxed: false };
   }
 
@@ -267,7 +286,13 @@
     const currentIds = new Set(state.popup.cards.map((card) => card.id));
     const desiredCount = state.popup.cards.length || 3;
     const newCards = [];
+    const hiddenIds = pool.filter((skill) => skill.type === 'hidden').map((skill) => skill.id);
+    const hiddenIdSet = new Set(hiddenIds);
     const seen = new Set();
+    if (state.hiddenLearnedThisRun) {
+      for (const id of hiddenIdSet) seen.add(id);
+    }
+    let hiddenAddedThisSelection = false;
     for (let i = 0; i < desiredCount; i++) {
       let avoid = new Set([...seen, ...currentIds]);
       let pick = weightedDraw(pool, avoid);
@@ -278,6 +303,12 @@
       if (!pick) break;
       seen.add(pick.id);
       newCards.push({ id: pick.id, def: pick });
+      if (!hiddenAddedThisSelection && pick.type === 'hidden') {
+        hiddenAddedThisSelection = true;
+        for (const id of hiddenIdSet) {
+          seen.add(id);
+        }
+      }
     }
     if (!newCards.length) return false;
     state.popup.cards = newCards;
