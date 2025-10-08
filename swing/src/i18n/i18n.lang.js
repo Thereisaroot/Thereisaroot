@@ -432,6 +432,9 @@
       overlay: {
         title: 'Skill Select',
         timer: 'Auto pick in {seconds}s',
+        rolling: 'Flipping... {seconds}s',
+        flipping: 'Flipping',
+        rolling: 'Rolling... {seconds}s',
         help: 'Details',
         helpClose: 'Back',
         reroll: 'Reroll',
@@ -961,6 +964,9 @@
       overlay: {
         title: '스킬 선택',
         timer: '{seconds}초 후 자동 선택',
+        rolling: '카드 뒤집는 중... {seconds}초',
+        flipping: '카드 뒤집기',
+        rolling: '셔플 중... {seconds}초',
         help: '설명',
         helpClose: '닫기',
         reroll: '다시 뽑기',
