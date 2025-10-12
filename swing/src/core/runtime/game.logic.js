@@ -333,6 +333,8 @@ let lastEarned = 0; // dollars earned in the most recent run
 let lastExpEarned = 0;
 let demoActive = false;
 let lastDemoLoss = false;
+const DEMO_REQUIRED_RUNS = 5;
+let demoRunCount = 0;
 let fastModeEnabled = false;
 let comboCount = 0;
 
@@ -408,6 +410,7 @@ function getOwnedItemIds() {
     let level = 0;
     if (type === 'single') {
       if (id === 'plusjump') level = shopInv.plusJump ? 1 : 0;
+      else if (id === 'powerjump') level = shopInv.powerJump ? 1 : 0;
       else if (id === 'fly') level = shopInv.fly ? 1 : 0;
       else if (id === 'revival') level = shopInv.revival ? 1 : 0;
     } else if (type === 'level') {

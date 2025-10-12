@@ -981,6 +981,8 @@ function createSupportDrone(level) {
     groundY: CONFIG.height - CONFIG.groundH - 16,
     webTimer: 4 + Math.random() * 2,
     mountCooldown: 0,
+    rideTimeLeft: 0,
+    warningTimer: 0,
   };
   supportDrones.push(drone);
   return drone;
@@ -1022,11 +1024,29 @@ function updateSupportDrones(dt, level, collectorActive, spiderGuardActive) {
     drone.radius = baseRadius;
     drone.collectRadius = baseRadius * collectMultiplier;
 
-    if (!Number.isFinite(drone.originX)) drone.originX = player.x;
+    if (!Number.isFinite(drone.originX)) drone.originX = player.x + DRONE_FORWARD_OFFSET;
     if (!Number.isFinite(drone.originY)) drone.originY = player.y - 120;
     const prevX = drone.x;
     const prevY = drone.y;
     if (drone.mountCooldown > 0) drone.mountCooldown = Math.max(0, drone.mountCooldown - dt);
+    if (drone.rider) {
+      drone.rideTimeLeft = (drone.rideTimeLeft || 0) - dt;
+      if (drone.rideTimeLeft <= 3) {
+        drone.warningTimer = (drone.warningTimer || 0) - dt;
+        if (drone.warningTimer <= 0) {
+          spawnEffect('sparkle', drone.x, drone.y - 18);
+          drone.warningTimer = 0.3;
+        }
+      } else {
+        drone.warningTimer = 0;
+      }
+      if (drone.rideTimeLeft <= 0) {
+        dismountDrone(false, true);
+        drone.mountCooldown = 1.5;
+        drone.rideTimeLeft = 0;
+        drone.warningTimer = 0;
+      }
+    }
 
     if (spiderGuardActive) {
       drone.originY = Math.min(drone.originY, drone.groundY - 20);
@@ -1065,6 +1085,10 @@ function updateSupportDrones(dt, level, collectorActive, spiderGuardActive) {
     drone.vy = (drone.y - prevY) / Math.max(1e-6, dt);
     drone.prevX = drone.x;
     drone.prevY = drone.y;
+    if (!drone.rider && (drone.rideTimeLeft || 0) !== 0) {
+      drone.rideTimeLeft = 0;
+      drone.warningTimer = 0;
+    }
   }
 }
 
@@ -1140,6 +1164,8 @@ function mountDrone(drone) {
   if (!drone || drone.rider || player.mode === 'dead') return;
   drone.rider = true;
   drone.mountCooldown = 0;
+  drone.rideTimeLeft = 7;
+  drone.warningTimer = 0;
   player.mode = 'drone';
   player.droneRide = drone;
   player.vx = 0;
@@ -1147,14 +1173,20 @@ function mountDrone(drone) {
   player.angle = 0;
 }
 
-function dismountDrone(applyImpulse = true) {
+function dismountDrone(applyImpulse = true, forceDrop = false) {
   const ride = player.droneRide;
   if (!ride) return;
   ride.rider = false;
-  ride.mountCooldown = 0.6;
+  ride.mountCooldown = Math.max(ride.mountCooldown || 0, forceDrop ? 1.5 : 0.6);
+  ride.rideTimeLeft = 0;
+  ride.warningTimer = 0;
   player.droneRide = null;
   player.mode = 'free';
-  if (applyImpulse) {
+  if (forceDrop) {
+    player.vx = 0;
+    player.vy = Math.max(player.vy, 240);
+    player.angle = 0;
+  } else if (applyImpulse) {
     const forward = Math.max(CONFIG.minVx, CONFIG.baseVx * 0.75);
     player.vx = (ride.vx || 0) + forward;
     player.vy = -CONFIG.jumpImpulse * 0.85;
@@ -1720,7 +1752,7 @@ function updateRun(dt) {
   if (player.mode === 'drone') {
     const ride = player.droneRide;
     if (!ride || ride.rider !== true) {
-      dismountDrone(false);
+      dismountDrone(false, true);
     } else if (justPressed) {
       dismountDrone(true);
       dronePressConsumed = true;
@@ -2422,24 +2454,31 @@ function updateRun(dt) {
     wizardFloatTimer = 0;
     wizardSpinTimer = 0;
     wizardSpinRate = 0;
-    // Demo rule: if demo active and EXP exceeded 110P (>=111P), on game over you lose everything
-    if (demoActive && exp > 110) {
-      lastDemoLoss = true;
-      demoActive = false;
-      if (typeof setTutorialEnabled === 'function') setTutorialEnabled(false);
-      savings = 0;
-      try {
-        localStorage.setItem(SAVINGS_KEY, '0');
-        localStorage.setItem(DEMO_DONE_KEY, '1');
-        // Reset EXP and clear all items when demo ends
-        exp = 0;
-        localStorage.setItem(EXP_KEY, '0');
-        shopInv = { ...SHOP_INV_DEFAULTS };
-        saveShopInv(shopInv);
-        saveShopInv(shopInv);
-        selectedCharacter = 'default';
-        localStorage.setItem('webswing_selected_char_v1', 'default');
-      } catch(_){}
+    if (demoActive) {
+      demoRunCount += 1;
+      // Demo rule: require both 111P and minimum runs before graduating from demo
+      if (exp > 110 && demoRunCount >= DEMO_REQUIRED_RUNS) {
+        lastDemoLoss = true;
+        demoActive = false;
+        if (typeof setTutorialEnabled === 'function') setTutorialEnabled(false);
+        savings = 0;
+        try {
+          localStorage.setItem(SAVINGS_KEY, '0');
+          localStorage.setItem(DEMO_DONE_KEY, '1');
+          localStorage.removeItem(DEMO_RUN_COUNT_KEY);
+          // Reset EXP and clear all items when demo ends
+          exp = 0;
+          localStorage.setItem(EXP_KEY, '0');
+          shopInv = { ...SHOP_INV_DEFAULTS };
+          saveShopInv(shopInv);
+          saveShopInv(shopInv);
+          selectedCharacter = 'default';
+          localStorage.setItem('webswing_selected_char_v1', 'default');
+        } catch(_){}
+        demoRunCount = 0;
+      } else {
+        try { localStorage.setItem(DEMO_RUN_COUNT_KEY, String(demoRunCount)); } catch (_) {}
+      }
     }
     best = Math.max(best, score);
     try {
@@ -3113,7 +3152,12 @@ function renderGameOver(g) {
     }
     let nextText;
     if (demoActive) {
-      nextText = t('gameOver.nextDemo');
+      const runsRemaining = Math.max(0, DEMO_REQUIRED_RUNS - demoRunCount);
+      if (exp > 110 && runsRemaining > 0) {
+        nextText = t('gameOver.nextDemoRuns', { runs: runsRemaining });
+      } else {
+        nextText = t('gameOver.nextDemo');
+      }
     } else {
       const next = nextLevelThreshold(exp);
       if (next) {

@@ -76,6 +76,15 @@ async function start() {
       localStorage.setItem(EXP_KEY, String(exp));
     }
     const demoDone = localStorage.getItem(DEMO_DONE_KEY) === '1';
+    let storedDemoRuns = 0;
+    try {
+      const rawRuns = localStorage.getItem(DEMO_RUN_COUNT_KEY);
+      if (rawRuns) {
+        const val = parseInt(rawRuns, 10);
+        if (!Number.isNaN(val)) storedDemoRuns = Math.max(0, val);
+      }
+    } catch (_) {}
+    demoRunCount = storedDemoRuns;
     
     // Load selected character
     const savedChar = localStorage.getItem('webswing_selected_char_v1');
@@ -94,6 +103,10 @@ async function start() {
       }
       selectedCharacter = 'wizard';
       try { localStorage.setItem('webswing_selected_char_v1', 'wizard'); } catch (_) {}
+    }
+    if (demoDone) {
+      demoRunCount = 0;
+      try { localStorage.removeItem(DEMO_RUN_COUNT_KEY); } catch (_) {}
     }
     const hasPref = (typeof hasTutorialPreference === 'function') && hasTutorialPreference();
     if (!demoDone && !hasPref) {

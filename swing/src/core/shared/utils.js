@@ -6,6 +6,7 @@ const SAVINGS_KEY = 'webswing_savings_v1';
 const BEST_SCORE_KEY = 'webswing_best_v1';
 const EXP_KEY = 'webswing_exp_v1';
 const DEMO_DONE_KEY = 'webswing_demo_done_v1';
+const DEMO_RUN_COUNT_KEY = 'webswing_demo_runs_v1';
 const SHOP_INV_KEY = 'webswing_shop_inv_v1';
 const LANG_KEY = 'webswing_lang';
 const STATS_KEY = 'webswing_stats_v1';
@@ -249,7 +250,8 @@ function easeInOutCubic(t) {
 
 // Effective scaling for level 1 ease (rope position/length/spacing only)
 function lv1Scale(exp) {
-  return getLevelByExp(exp) === 1 ? 0.8 : 1.0;
+  const level = getLevelByExp(exp);
+  return level <= 3 ? 0.8 : 1.0;
 }
 
 // ==================== STORAGE/SAVE UTILITIES ====================
