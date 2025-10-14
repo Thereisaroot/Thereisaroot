@@ -205,9 +205,9 @@
       slamHudTime: 'Time {seconds}s',
       collectHud: 'Collected {collected}/{total} | Missed {missed}/{allowed}',
       hud: {
-        bullet: 'Survive 15 shots',
-        slam: 'Keep jumping! 50+ clears',
-        collect: 'Collect 10 falling $ crates',
+        bullet: 'Dodge the bullets!',
+        slam: 'Keep jumping!',
+        collect: 'Collect the falling $ crates!',
       },
     },
     bossOutcome: {
@@ -745,7 +745,7 @@
       slamHudTime: '남은 시간 {seconds}초',
       collectHud: '획득 {collected}/{total} | 놓침 {missed}/{allowed}',
       hud: {
-        bullet: '15발을 버티세요!',
+        bullet: '총알을 피하세요!',
         slam: '계속 점프하세요!',
         collect: '떨어지는 상자를 모으세요!',
       },

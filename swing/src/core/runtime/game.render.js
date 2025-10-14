@@ -846,6 +846,35 @@ const SPIDER_IMAGE_PATH = 'assets/etc/spider.png';
 const SPIDER_WEB_IMAGE_PATH = 'assets/etc/web.png';
 const DRONE_RIDE_OFFSET = 38;
 const DRONE_FORWARD_OFFSET = 120;
+const DRONE_VERTICAL_ORIGIN_OFFSET = 70;
+const DRONE_INITIAL_VERTICAL_OFFSET = 30;
+const DRONE_AUTO_MOUNT_PROBABILITY = 0.5;
+const DRONE_MOUNT_RETRY_COOLDOWN = 0.25;
+
+const RUNTIME_IMAGE_PRELOADERS = [
+  {
+    path: BOX_ITEM_IMAGE_PATH,
+    getCache: () => boxItemImageCache,
+    setCache: (img) => { boxItemImageCache = img; },
+  },
+  {
+    path: SUPPORT_DRONE_IMAGE_PATH,
+    getCache: () => supportDroneImageCache,
+    setCache: (img) => { supportDroneImageCache = img; },
+  },
+  {
+    path: SPIDER_IMAGE_PATH,
+    getCache: () => spiderDroneImageCache,
+    setCache: (img) => { spiderDroneImageCache = img; },
+  },
+  {
+    path: SPIDER_WEB_IMAGE_PATH,
+    getCache: () => spiderWebImageCache,
+    setCache: (img) => { spiderWebImageCache = img; },
+  },
+];
+
+let runtimeImagePreloadPromise = null;
 let supportDroneImageCache = null;
 let spiderDroneImageCache = null;
 let spiderWebImageCache = null;
@@ -853,6 +882,53 @@ let lastSkillOverlayLayout = null;
 const renderSupportDroneState = {
   spiderGuardActive: false,
 };
+
+function ensureImageForPreload(descriptor) {
+  if (!descriptor || !descriptor.path) return Promise.resolve(null);
+  if (typeof Image === 'undefined') return Promise.resolve(null);
+
+  const getCache = descriptor.getCache;
+  const setCache = descriptor.setCache;
+  let cache = typeof getCache === 'function' ? getCache() : null;
+
+  if (!cache) {
+    cache = new Image();
+    if (typeof setCache === 'function') setCache(cache);
+    cache.src = descriptor.path;
+  } else if (!cache.src) {
+    cache.src = descriptor.path;
+  }
+
+  if (cache.complete && cache.naturalWidth > 0) {
+    return Promise.resolve(cache);
+  }
+
+  return new Promise((resolve) => {
+    const finalize = () => {
+      cache.removeEventListener('load', finalize);
+      cache.removeEventListener('error', finalize);
+      resolve(cache);
+    };
+    cache.addEventListener('load', finalize, { once: true });
+    cache.addEventListener('error', finalize, { once: true });
+  });
+}
+
+function preloadRuntimeImages() {
+  if (runtimeImagePreloadPromise) return runtimeImagePreloadPromise;
+  if (!Array.isArray(RUNTIME_IMAGE_PRELOADERS) || !RUNTIME_IMAGE_PRELOADERS.length) {
+    runtimeImagePreloadPromise = Promise.resolve();
+    return runtimeImagePreloadPromise;
+  }
+  runtimeImagePreloadPromise = Promise.all(RUNTIME_IMAGE_PRELOADERS.map(ensureImageForPreload))
+    .then(() => undefined)
+    .catch(() => undefined);
+  return runtimeImagePreloadPromise;
+}
+
+if (typeof window !== 'undefined') {
+  window.preloadRuntimeImages = preloadRuntimeImages;
+}
 
 function getBoxItemImage() {
   if (typeof Image === 'undefined') return null;
@@ -964,11 +1040,11 @@ function createSupportDrone(level) {
     id: nextSupportDroneId++,
     angle: Math.random() * Math.PI * 2,
     originX: player.x + DRONE_FORWARD_OFFSET,
-    originY: player.y - 120,
+    originY: player.y - DRONE_VERTICAL_ORIGIN_OFFSET,
     x: player.x + DRONE_FORWARD_OFFSET,
-    y: player.y - 80,
+    y: player.y - DRONE_INITIAL_VERTICAL_OFFSET,
     prevX: player.x,
-    prevY: player.y - 80,
+    prevY: player.y - DRONE_INITIAL_VERTICAL_OFFSET,
     vx: 0,
     vy: 0,
     orbitRadius,
@@ -1025,7 +1101,7 @@ function updateSupportDrones(dt, level, collectorActive, spiderGuardActive) {
     drone.collectRadius = baseRadius * collectMultiplier;
 
     if (!Number.isFinite(drone.originX)) drone.originX = player.x + DRONE_FORWARD_OFFSET;
-    if (!Number.isFinite(drone.originY)) drone.originY = player.y - 120;
+    if (!Number.isFinite(drone.originY)) drone.originY = player.y - DRONE_VERTICAL_ORIGIN_OFFSET;
     const prevX = drone.x;
     const prevY = drone.y;
     if (drone.mountCooldown > 0) drone.mountCooldown = Math.max(0, drone.mountCooldown - dt);
@@ -1164,7 +1240,7 @@ function mountDrone(drone) {
   if (!drone || drone.rider || player.mode === 'dead') return;
   drone.rider = true;
   drone.mountCooldown = 0;
-  drone.rideTimeLeft = 7;
+  drone.rideTimeLeft = 4;
   drone.warningTimer = 0;
   player.mode = 'drone';
   player.droneRide = drone;
@@ -1766,8 +1842,11 @@ function updateRun(dt) {
       const dy = (player.y - (drone.y + offsetY));
       const mountRadius = Math.max(drone.radius || 30, 30);
       if (Math.hypot(dx, dy) <= mountRadius) {
-        mountDrone(drone);
-        break;
+        if (Math.random() < DRONE_AUTO_MOUNT_PROBABILITY) {
+          mountDrone(drone);
+          break;
+        }
+        drone.mountCooldown = Math.max(drone.mountCooldown || 0, DRONE_MOUNT_RETRY_COOLDOWN);
       }
     }
   }

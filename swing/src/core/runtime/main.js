@@ -47,6 +47,11 @@ async function start() {
     } catch (_) {}
   }
   await Fonts.load();
+  if (typeof preloadRuntimeImages === 'function') {
+    try {
+      await preloadRuntimeImages();
+    } catch (_) {}
+  }
   // Load tuning then apply
   tuning = loadTuningLocal(tuning);
   await maybeLoadTuningFromServer();
