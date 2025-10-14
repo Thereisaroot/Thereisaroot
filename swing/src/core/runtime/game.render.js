@@ -941,8 +941,29 @@ function getIntroBridgeImage() {
   return introBridgeImageCache;
 }
 
+function updateBridgeOverlayAspect() {
+  if (!bridgeOverlayImageEl) return;
+  const imgEl = bridgeOverlayImageEl;
+  const naturalWidth = imgEl.naturalWidth || (introBridgeImageCache && introBridgeImageCache.naturalWidth) || 0;
+  const naturalHeight = imgEl.naturalHeight || (introBridgeImageCache && introBridgeImageCache.naturalHeight) || 0;
+  if (!naturalWidth || !naturalHeight) return;
+  const ratio = naturalWidth / naturalHeight;
+  if (!Number.isFinite(ratio) || ratio <= 0) return;
+  imgEl.style.setProperty('--bridge-aspect', `${ratio}`);
+}
+
+function handleBridgeOverlayImageLoad() {
+  updateBridgeOverlayAspect();
+}
+
 function ensureBridgeOverlay(img) {
   if (typeof document === 'undefined') return null;
+  if (!bridgeOverlayStylesApplied) {
+    const existingStyle = document.getElementById('bridge-overlay-style');
+    if (existingStyle) {
+      bridgeOverlayStylesApplied = true;
+    }
+  }
   if (!bridgeOverlayStylesApplied) {
     const styleEl = document.createElement('style');
     styleEl.type = 'text/css';
@@ -951,10 +972,24 @@ function ensureBridgeOverlay(img) {
 #bridge-overlay{position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;background:${BRIDGE_VIEW_BACKGROUND_COLOR};perspective:1600px;pointer-events:auto;}
 #bridge-overlay.bridge-visible{display:flex;}
 #bridge-overlay .bridge-overlay-inner{position:relative;display:flex;align-items:center;justify-content:center;transform-style:preserve-3d;transform-origin:center;will-change:transform,opacity;}
-#bridge-overlay .bridge-overlay-inner img{max-width:100vw;max-height:100vh;width:auto;height:auto;object-fit:contain;backface-visibility:hidden;}
+#bridge-overlay .bridge-overlay-inner img{width:min(96vw,calc(96vh * var(--bridge-aspect, 1)));aspect-ratio:var(--bridge-aspect, 1);height:auto;object-fit:contain;backface-visibility:hidden;image-rendering:auto;max-width:none;max-height:none;}
 `;
     if (document.head) document.head.appendChild(styleEl);
     bridgeOverlayStylesApplied = true;
+    const bootstrapStyle = document.getElementById('bridge-overlay-bootstrap');
+    if (bootstrapStyle && bootstrapStyle.parentNode) {
+      bootstrapStyle.parentNode.removeChild(bootstrapStyle);
+    }
+  }
+  if (!bridgeOverlayElement) {
+    const existingRoot = document.getElementById('bridge-overlay');
+    if (existingRoot) {
+      bridgeOverlayElement = existingRoot;
+      bridgeOverlayInner = existingRoot.querySelector('.bridge-overlay-inner');
+      bridgeOverlayImageEl = (bridgeOverlayInner && bridgeOverlayInner.querySelector('img')) || existingRoot.querySelector('img');
+      bridgeOverlayVisible = existingRoot.classList.contains('bridge-visible');
+      existingRoot.removeAttribute('data-bootstrap');
+    }
   }
   if (!bridgeOverlayElement) {
     const root = document.createElement('div');
@@ -971,24 +1006,33 @@ function ensureBridgeOverlay(img) {
     bridgeOverlayInner = inner;
     bridgeOverlayImageEl = imgEl;
   }
+  if (bridgeOverlayImageEl) {
+    bridgeOverlayImageEl.setAttribute('loading', 'eager');
+    try { bridgeOverlayImageEl.decoding = 'async'; } catch (_) {}
+    if (!bridgeOverlayImageEl.dataset.bridgeAspectApplied) {
+      bridgeOverlayImageEl.addEventListener('load', handleBridgeOverlayImageLoad, { passive: true });
+      bridgeOverlayImageEl.dataset.bridgeAspectApplied = '1';
+    }
+  }
   const desiredSrc = img && img.src ? img.src : INTRO_BRIDGE_IMAGE_PATH;
   if (bridgeOverlayImageEl && desiredSrc && bridgeOverlayImageEl.src !== desiredSrc) {
     bridgeOverlayImageEl.src = desiredSrc;
   }
   if (bridgeOverlayElement) bridgeOverlayElement.style.background = BRIDGE_VIEW_BACKGROUND_COLOR;
+  updateBridgeOverlayAspect();
   return bridgeOverlayElement;
 }
 
 function showBridgeOverlay(img) {
   const root = ensureBridgeOverlay(img);
   if (!root || !bridgeOverlayInner) return;
-  if (!bridgeOverlayVisible) {
+  if (!root.classList.contains('bridge-visible')) {
     root.classList.add('bridge-visible');
-    root.style.opacity = '1';
-    bridgeOverlayInner.style.transform = 'rotateY(0deg)';
-    bridgeOverlayInner.style.opacity = '1';
-    bridgeOverlayVisible = true;
   }
+  root.style.opacity = '1';
+  bridgeOverlayInner.style.transform = 'rotateY(0deg)';
+  bridgeOverlayInner.style.opacity = '1';
+  bridgeOverlayVisible = true;
 }
 
 function hideBridgeOverlay() {
