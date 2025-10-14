@@ -64,6 +64,28 @@ body {
 #debug-panel input[type="range"] {
   flex: 1;
 }
+#debug-panel button {
+  font-family: inherit;
+  font-size: calc(9px + var(--dalmoori-font-bump));
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid #4e607a;
+  background: #1d2a3c;
+  color: #e6efff;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+#debug-panel button[data-state="on"] {
+  background: #285a3c;
+  border-color: #4f9b68;
+}
+#debug-panel button:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(79, 155, 104, 0.5);
+}
+#debug-panel button:hover {
+  background: #233249;
+}
 
 #game {
   display: block;

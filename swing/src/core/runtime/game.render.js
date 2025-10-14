@@ -180,18 +180,13 @@ function renderIntro(g, time) {
   tutorialButtonRect = null;
   drawBackground(g);
 
+  const bridgeActive = typeof isBridgeViewActive === 'function' && isBridgeViewActive();
+  const bridgeProgress = bridgeActive && typeof getBridgeFlipProgress === 'function'
+    ? getBridgeFlipProgress()
+    : 0;
+
   const centerX = CONFIG.width / 2;
   const titleY = CONFIG.height * 0.26;
-  const pulse = 1 + 0.12 * Math.sin(time * 1.6);
-  const stretch = 1 + 0.08 * Math.cos(time * 1.2);
-  const wobble = 0.08 * Math.sin(time * 2.8);
-  const driftX = Math.cos(time * 0.9) * 14;
-  const driftY = Math.sin(time * 1.1) * 18;
-
-  g.save();
-  g.translate(centerX + driftX, titleY + driftY);
-  g.rotate(wobble);
-  g.scale(pulse, stretch);
   g.textAlign = 'center';
   g.textBaseline = 'middle';
   const title = t('intro.title');
@@ -200,23 +195,51 @@ function renderIntro(g, time) {
   const leftWord = titleWords[0] || title;
   const rightWord = titleWords.length > 1 ? titleWords.slice(1).join(' ') : '';
   const baseFontSize = isHangulTitle ? 46 : 36;
-  g.font = `${baseFontSize}px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+  const leftFontSize = baseFontSize + 20;
+  const rightFontSize = baseFontSize;
   const gap = 70;
-  const leftX = rightWord ? -gap : 0;
-  const rightX = gap;
-  const leftY = -10;
-  const rightY = 10;
-  g.fillStyle = '#1d1436';
-  g.fillText(leftWord, leftX + 4, leftY + 4);
-  if (rightWord) g.fillText(rightWord, rightX + 4, rightY + 4);
+  const baseShiftX = 20;
+  const leftBaseX = (rightWord ? centerX - gap : centerX) + baseShiftX;
+  const rightBaseX = centerX + gap + baseShiftX;
   const hueBase = (time * 30) % 360;
+
+  const leftPulse = 1 + 0.16 * Math.sin(time * 1.45);
+  const leftStretch = 1 + 0.10 * Math.cos(time * 1.18);
+  const leftWobble = 0.12 * Math.sin(time * 2.6);
+  const leftDriftX = Math.cos(time * 0.85) * 16;
+  const leftDriftY = Math.sin(time * 1.05) * 18;
+
+  g.save();
+  g.translate(leftBaseX + leftDriftX, titleY + leftDriftY);
+  g.rotate(leftWobble);
+  g.scale(leftPulse, leftStretch);
+  g.font = `${leftFontSize}px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+  const leftY = -20;
+  g.fillStyle = '#1d1436';
+  g.fillText(leftWord, 4, leftY + 4);
   g.fillStyle = hslToHex(hueBase, 70, 62);
-  g.fillText(leftWord, leftX, leftY);
-  if (rightWord) {
-    g.fillStyle = hslToHex((hueBase + 60) % 360, 70, 65);
-    g.fillText(rightWord, rightX, rightY);
-  }
+  g.fillText(leftWord, 0, leftY);
   g.restore();
+
+  if (rightWord) {
+    const rightPulse = 1 + 0.12 * Math.sin(time * 1.72 + Math.PI / 4);
+    const rightStretch = 1 + 0.08 * Math.cos(time * 1.34 + Math.PI / 6);
+    const rightWobble = 0.1 * Math.sin(time * 2.9 + Math.PI / 3);
+    const rightDriftX = Math.cos(time * 0.9 + Math.PI / 2) * 12;
+    const rightDriftY = Math.sin(time * 1.12 + Math.PI / 4) * 14;
+
+    g.save();
+    g.translate(rightBaseX + rightDriftX, titleY + rightDriftY);
+    g.rotate(rightWobble);
+    g.scale(rightPulse, rightStretch);
+    g.font = `${rightFontSize}px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+    const rightY = 20;
+    g.fillStyle = '#1d1436';
+    g.fillText(rightWord, 4, rightY + 4);
+    g.fillStyle = hslToHex((hueBase + 60) % 360, 70, 65);
+    g.fillText(rightWord, 0, rightY);
+    g.restore();
+  }
 
   const scanlineAlpha = Math.min(0.2, 0.08 + 0.05 * Math.sin(time * 3.0));
   g.save();
@@ -730,6 +753,12 @@ function renderIntro(g, time) {
     g.restore();
   }
 
+  renderSkillHud(g);
+
+  if (bridgeActive) {
+    drawBridgeView(g, bridgeProgress);
+  }
+
 }
 
 
@@ -839,19 +868,35 @@ function drawRope(g, rope) {
 
 
 const skillIconCache = new Map();
+const INTRO_BRIDGE_IMAGE_PATH = 'assets/etc/intro.png';
 const BOX_ITEM_IMAGE_PATH = 'assets/etc/box.png';
+let introBridgeImageCache = null;
 let boxItemImageCache = null;
 const SUPPORT_DRONE_IMAGE_PATH = 'assets/etc/drone.png';
 const SPIDER_IMAGE_PATH = 'assets/etc/spider.png';
 const SPIDER_WEB_IMAGE_PATH = 'assets/etc/web.png';
 const DRONE_RIDE_OFFSET = 38;
-const DRONE_FORWARD_OFFSET = 120;
+const DRONE_FORWARD_OFFSET = 320;
 const DRONE_VERTICAL_ORIGIN_OFFSET = 70;
 const DRONE_INITIAL_VERTICAL_OFFSET = 30;
 const DRONE_AUTO_MOUNT_PROBABILITY = 0.5;
 const DRONE_MOUNT_RETRY_COOLDOWN = 0.25;
+const BRIDGE_VIEW_DEFAULT_DURATION = 5;
+const BRIDGE_VIEW_FLIP_DURATION = 0.35;
+const BRIDGE_VIEW_BACKGROUND_COLOR = 'rgb(0, 199, 236)';
+
+let bridgeOverlayElement = null;
+let bridgeOverlayInner = null;
+let bridgeOverlayImageEl = null;
+let bridgeOverlayStylesApplied = false;
+let bridgeOverlayVisible = false;
 
 const RUNTIME_IMAGE_PRELOADERS = [
+  {
+    path: INTRO_BRIDGE_IMAGE_PATH,
+    getCache: () => introBridgeImageCache,
+    setCache: (img) => { introBridgeImageCache = img; },
+  },
   {
     path: BOX_ITEM_IMAGE_PATH,
     getCache: () => boxItemImageCache,
@@ -875,6 +920,8 @@ const RUNTIME_IMAGE_PRELOADERS = [
 ];
 
 let runtimeImagePreloadPromise = null;
+let bridgeViewTimer = 0;
+let bridgeViewDuration = 0;
 let supportDroneImageCache = null;
 let spiderDroneImageCache = null;
 let spiderWebImageCache = null;
@@ -882,6 +929,214 @@ let lastSkillOverlayLayout = null;
 const renderSupportDroneState = {
   spiderGuardActive: false,
 };
+
+function getIntroBridgeImage() {
+  if (typeof Image === 'undefined') return null;
+  if (!introBridgeImageCache) {
+    introBridgeImageCache = new Image();
+    introBridgeImageCache.src = INTRO_BRIDGE_IMAGE_PATH;
+  } else if (!introBridgeImageCache.src) {
+    introBridgeImageCache.src = INTRO_BRIDGE_IMAGE_PATH;
+  }
+  return introBridgeImageCache;
+}
+
+function ensureBridgeOverlay(img) {
+  if (typeof document === 'undefined') return null;
+  if (!bridgeOverlayStylesApplied) {
+    const styleEl = document.createElement('style');
+    styleEl.type = 'text/css';
+    styleEl.id = 'bridge-overlay-style';
+    styleEl.textContent = `
+#bridge-overlay{position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;background:${BRIDGE_VIEW_BACKGROUND_COLOR};perspective:1600px;pointer-events:auto;}
+#bridge-overlay.bridge-visible{display:flex;}
+#bridge-overlay .bridge-overlay-inner{position:relative;display:flex;align-items:center;justify-content:center;transform-style:preserve-3d;transform-origin:center;will-change:transform,opacity;}
+#bridge-overlay .bridge-overlay-inner img{max-width:100vw;max-height:100vh;width:auto;height:auto;object-fit:contain;backface-visibility:hidden;}
+`;
+    if (document.head) document.head.appendChild(styleEl);
+    bridgeOverlayStylesApplied = true;
+  }
+  if (!bridgeOverlayElement) {
+    const root = document.createElement('div');
+    root.id = 'bridge-overlay';
+    root.setAttribute('aria-hidden', 'true');
+    const inner = document.createElement('div');
+    inner.className = 'bridge-overlay-inner';
+    const imgEl = document.createElement('img');
+    imgEl.alt = '';
+    inner.appendChild(imgEl);
+    root.appendChild(inner);
+    if (document.body) document.body.appendChild(root);
+    bridgeOverlayElement = root;
+    bridgeOverlayInner = inner;
+    bridgeOverlayImageEl = imgEl;
+  }
+  const desiredSrc = img && img.src ? img.src : INTRO_BRIDGE_IMAGE_PATH;
+  if (bridgeOverlayImageEl && desiredSrc && bridgeOverlayImageEl.src !== desiredSrc) {
+    bridgeOverlayImageEl.src = desiredSrc;
+  }
+  if (bridgeOverlayElement) bridgeOverlayElement.style.background = BRIDGE_VIEW_BACKGROUND_COLOR;
+  return bridgeOverlayElement;
+}
+
+function showBridgeOverlay(img) {
+  const root = ensureBridgeOverlay(img);
+  if (!root || !bridgeOverlayInner) return;
+  if (!bridgeOverlayVisible) {
+    root.classList.add('bridge-visible');
+    root.style.opacity = '1';
+    bridgeOverlayInner.style.transform = 'rotateY(0deg)';
+    bridgeOverlayInner.style.opacity = '1';
+    bridgeOverlayVisible = true;
+  }
+}
+
+function hideBridgeOverlay() {
+  if (!bridgeOverlayElement || !bridgeOverlayInner) return;
+  if (!bridgeOverlayVisible) return;
+  bridgeOverlayVisible = false;
+  const root = bridgeOverlayElement;
+  const inner = bridgeOverlayInner;
+  root.classList.remove('bridge-visible');
+  root.style.opacity = '0';
+  inner.style.transform = 'rotateY(0deg)';
+  inner.style.opacity = '1';
+
+  const cleanup = () => {
+    if (bridgeOverlayVisible) return;
+    if (root.parentNode) root.parentNode.removeChild(root);
+    bridgeOverlayElement = null;
+    bridgeOverlayInner = null;
+    bridgeOverlayImageEl = null;
+  };
+
+  if (typeof requestAnimationFrame === 'function') {
+    requestAnimationFrame(() => requestAnimationFrame(cleanup));
+  } else {
+    setTimeout(cleanup, 50);
+  }
+}
+
+function updateBridgeOverlay(img, flipProgress) {
+  const root = ensureBridgeOverlay(img);
+  if (!root || !bridgeOverlayInner) return;
+  showBridgeOverlay(img);
+  const clamped = Math.max(0, Math.min(1, flipProgress || 0));
+  const angle = clamped * 180;
+  bridgeOverlayInner.style.transform = `rotateY(${angle}deg)`;
+  const fadeStart = 0.5;
+  const fadeRange = 1 - fadeStart;
+  const fadeProgress = clamped <= fadeStart ? 0 : (clamped - fadeStart) / (fadeRange > 0 ? fadeRange : 1);
+  const opacity = 1 - Math.min(1, fadeProgress);
+  bridgeOverlayInner.style.opacity = `${opacity}`;
+  root.style.opacity = `${opacity}`;
+  if (clamped >= 1) {
+    hideBridgeOverlay();
+  }
+}
+
+function activateBridgeView(duration = BRIDGE_VIEW_DEFAULT_DURATION) {
+  const sec = Number.isFinite(duration) ? Math.max(0, duration) : BRIDGE_VIEW_DEFAULT_DURATION;
+  bridgeViewTimer = sec;
+  bridgeViewDuration = sec;
+  getIntroBridgeImage();
+  showBridgeOverlay(introBridgeImageCache);
+}
+
+function updateBridgeView(dt) {
+  if (bridgeViewTimer <= 0) return;
+  bridgeViewTimer = Math.max(0, bridgeViewTimer - Math.max(0, dt || 0));
+  if (bridgeViewTimer <= 0) {
+    bridgeViewDuration = 0;
+    hideBridgeOverlay();
+  }
+}
+
+function isBridgeViewActive() {
+  return bridgeViewTimer > 0;
+}
+
+function getBridgeFlipProgress() {
+  if (bridgeViewDuration <= 0) return 0;
+  const flipDuration = Math.max(0.1, BRIDGE_VIEW_FLIP_DURATION);
+  if (bridgeViewTimer > flipDuration) return 0;
+  const remaining = Math.max(0, bridgeViewTimer);
+  const progress = 1 - (remaining / flipDuration);
+  return Math.max(0, Math.min(1, progress));
+}
+
+function drawBridgeView(g, providedProgress = null) {
+  const img = getIntroBridgeImage();
+  const flipProgressRaw = (providedProgress != null) ? providedProgress : getBridgeFlipProgress();
+  const flipProgress = Math.max(0, Math.min(1, flipProgressRaw));
+  const imgReady = img && img.complete && img.naturalWidth > 0 && img.naturalHeight > 0;
+
+  updateBridgeOverlay(img, flipProgress);
+
+  g.save();
+  const overlayAlpha = Math.max(0, 1 - Math.min(1, flipProgress));
+  if (overlayAlpha > 0) {
+    g.save();
+    g.globalAlpha = overlayAlpha;
+    g.fillStyle = BRIDGE_VIEW_BACKGROUND_COLOR;
+    g.fillRect(0, 0, CONFIG.width, CONFIG.height);
+    g.restore();
+  }
+
+  if (!imgReady) {
+    g.restore();
+    return;
+  }
+
+  const baseScale = Math.min(
+    CONFIG.width / img.naturalWidth,
+    CONFIG.height / img.naturalHeight,
+  );
+  const drawW = img.naturalWidth * baseScale;
+  const drawH = img.naturalHeight * baseScale;
+  const centerX = CONFIG.width / 2;
+  const centerY = CONFIG.height / 2;
+
+  if (flipProgress <= 0) {
+    g.fillStyle = BRIDGE_VIEW_BACKGROUND_COLOR;
+    g.fillRect(0, 0, CONFIG.width, CONFIG.height);
+    g.drawImage(img, (CONFIG.width - drawW) / 2, (CONFIG.height - drawH) / 2, drawW, drawH);
+    g.restore();
+    return;
+  }
+
+  const angle = Math.min(1, flipProgress) * Math.PI;
+  let scaleX = Math.cos(angle);
+  const minScale = 0.12;
+  if (scaleX >= 0 && scaleX < minScale) scaleX = minScale;
+  if (scaleX < 0 && scaleX > -minScale) scaleX = -minScale;
+  const isBackFace = scaleX < 0;
+  const shear = Math.sin(angle) * 0.35;
+  const depthScale = 1 + Math.abs(Math.sin(angle)) * 0.2;
+
+  g.translate(centerX, centerY);
+  g.transform(scaleX, 0, shear, depthScale, 0, 0);
+
+  if (isBackFace) {
+    const backPhase = Math.min(1, Math.max(0, (flipProgress - 0.5) / 0.5));
+    const backAlpha = 1 - backPhase;
+    const source = (typeof canvas !== 'undefined') ? canvas : null;
+    if (source && backAlpha > 0) {
+      g.globalAlpha = 0.85 * backAlpha;
+      g.drawImage(source, 0, 0, CONFIG.width, CONFIG.height, -drawW / 2, -drawH / 2, drawW, drawH);
+      g.globalAlpha = 0.25 * backAlpha;
+      g.strokeStyle = 'rgba(12, 18, 32, 0.6)';
+      g.lineWidth = 2;
+      g.strokeRect(-drawW / 2, -drawH / 2, drawW, drawH);
+    }
+  } else {
+    const alpha = Math.max(0.6, 1 - flipProgress * 0.2);
+    g.globalAlpha = alpha;
+    g.drawImage(img, -drawW / 2, -drawH / 2, drawW, drawH);
+  }
+
+  g.restore();
+}
 
 function ensureImageForPreload(descriptor) {
   if (!descriptor || !descriptor.path) return Promise.resolve(null);
@@ -928,6 +1183,10 @@ function preloadRuntimeImages() {
 
 if (typeof window !== 'undefined') {
   window.preloadRuntimeImages = preloadRuntimeImages;
+  window.activateBridgeView = activateBridgeView;
+  window.updateBridgeView = updateBridgeView;
+  window.isBridgeViewActive = isBridgeViewActive;
+  window.getBridgeFlipProgress = getBridgeFlipProgress;
 }
 
 function getBoxItemImage() {
@@ -1023,19 +1282,20 @@ function anchorSupportDrone(drone) {
 
 function spawnSpiderWeb(x) {
   const groundY = CONFIG.height - CONFIG.groundH - 12;
+  const spawnY = groundY - 100;
   if (spiderWebs.length >= 6) spiderWebs.shift();
   spiderWebs.push({
     id: `web${Date.now()}${Math.floor(Math.random() * 1000)}`,
     x,
-    y: groundY,
+    y: spawnY,
     radius: 44,
     ttl: 7,
   });
 }
 
 function createSupportDrone(level) {
-  const orbitRadius = 120 + level * 12;
-  const verticalRadius = 60 + level * 8;
+  const orbitRadius = 80 + level * 10;
+  const verticalRadius = 42 + level * 6;
   const drone = {
     id: nextSupportDroneId++,
     angle: Math.random() * Math.PI * 2,
@@ -1127,8 +1387,8 @@ function updateSupportDrones(dt, level, collectorActive, spiderGuardActive) {
     if (spiderGuardActive) {
       drone.originY = Math.min(drone.originY, drone.groundY - 20);
       drone.originX = player.x + DRONE_FORWARD_OFFSET;
-      const speed = (80 + level * 18) * 1.3;
-      const range = 110 + level * 20;
+      const speed = (80 + level * 18) * 1.1;
+      const range = 80 + level * 14;
       drone.x += drone.direction * speed * dt;
       const offset = drone.x - drone.originX;
       if (offset > range) {
@@ -1139,13 +1399,13 @@ function updateSupportDrones(dt, level, collectorActive, spiderGuardActive) {
         drone.direction = Math.abs(drone.direction);
       }
       drone.y = drone.groundY;
-      if (!drone.rider) {
-        drone.webTimer -= dt;
-        if (drone.webTimer <= 0) {
-          spawnSpiderWeb(drone.x);
-          drone.webTimer = 5 + Math.random() * 4;
+        if (!drone.rider) {
+          drone.webTimer -= dt;
+          if (drone.webTimer <= 0) {
+            spawnSpiderWeb(drone.x);
+            drone.webTimer = (5 + Math.random() * 4) * 0.7;
+          }
         }
-      }
     } else {
       drone.webTimer = 4 + Math.random() * 2;
       const targetOriginX = player.x + DRONE_FORWARD_OFFSET;
@@ -1563,6 +1823,10 @@ function renderSkillSelectionOverlay(g) {
 }
 
 function renderSkillHud(g) {
+  if (typeof State !== 'undefined' && State && State.current) {
+    const phase = State.current;
+    if (phase !== 'run' && phase !== 'boss' && phase !== 'boss_pending') return;
+  }
   if (!SkillSystem || typeof SkillSystem.getActiveSkills !== 'function') return;
   const skills = SkillSystem.getActiveSkills();
   const panelW = 200;
@@ -2326,7 +2590,7 @@ function updateRun(dt) {
         if (characterIs('knight')) scoreGain *= 2;
         score += scoreGain;
         if (comboMasterActive && comboEligible && comboCount > 0) {
-          const comboCash = Math.max(1, comboCount) * comboBonusMultiplier;
+          const comboCash = 1;
           skillCashBonusThisRun += comboCash;
           spawnEffect('combo', player.x, player.y - 42, t('effects.cashEarned', { cash: comboCash }));
         }
@@ -2999,6 +3263,10 @@ function renderBoss(g) {
 
 if (typeof globalThis !== 'undefined') {
   globalThis.renderIntro = renderIntro;
+  globalThis.activateBridgeView = activateBridgeView;
+  globalThis.updateBridgeView = updateBridgeView;
+  globalThis.isBridgeViewActive = isBridgeViewActive;
+  globalThis.getBridgeFlipProgress = getBridgeFlipProgress;
 }
 
 function renderRouletteOverlay(g) {

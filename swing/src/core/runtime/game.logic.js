@@ -3028,6 +3028,12 @@ function hasTutorialPreference() {
 
 function updateIntro(dt) {
   updateStageTransition(dt);
+  if (typeof updateBridgeView === 'function') updateBridgeView(dt);
+  if (typeof isBridgeViewActive === 'function' && isBridgeViewActive()) {
+    UI.reset && UI.reset();
+    tutorialButtonRect = null;
+    return;
+  }
   tutorialButtonRect = null;
   if (introMenuMessageTimer > 0) {
     introMenuMessageTimer = Math.max(0, introMenuMessageTimer - dt);

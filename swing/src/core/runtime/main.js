@@ -41,6 +41,11 @@ function applyStoredLanguagePreference() {
 
 async function start() {
   applyStoredLanguagePreference();
+  if (typeof activateBridgeView === 'function') {
+    try {
+      activateBridgeView(5);
+    } catch (_) {}
+  }
   if (typeof maybeLoadNativeAppInfo === 'function') {
     try {
       await maybeLoadNativeAppInfo();

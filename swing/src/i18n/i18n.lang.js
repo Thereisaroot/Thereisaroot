@@ -33,6 +33,9 @@
       stageRopesPerStage: 'Stage Ropes per Stage',
       savings: 'Savings ($)',
       exp: 'EXP',
+      hiddenToggleLabel: 'Hidden Skill Override',
+      hiddenToggleOn: 'ON',
+      hiddenToggleOff: 'OFF',
     },
     intro: {
       title: 'Boing! Boing!',
@@ -573,6 +576,9 @@
       stageRopesPerStage: '스테이지당 로프 수',
       savings: '소지금 ($)',
       exp: '경험치 (EXP)',
+      hiddenToggleLabel: '히든 스킬 강제 등장',
+      hiddenToggleOn: 'ON',
+      hiddenToggleOff: 'OFF',
     },
     intro: {
       title: '짬푸! 짬푸!',

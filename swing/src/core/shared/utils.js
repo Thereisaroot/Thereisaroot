@@ -474,7 +474,7 @@ function setupDebugUI(tuning, applyTuningCallback, saveTuningCallback) {
   // Block game input when interacting with debug UI
   const blockTypes = ['mousedown','mouseup','mousemove','click','dblclick','touchstart','touchmove','touchend'];
   for (const tp of blockTypes) {
-    root.addEventListener(tp, (e) => { e.stopPropagation(); }, true);
+    root.addEventListener(tp, (e) => { e.stopPropagation(); }, false);
   }
   const get = (id) => document.getElementById(id);
   const map = [
@@ -509,6 +509,46 @@ function setupDebugUI(tuning, applyTuningCallback, saveTuningCallback) {
         applyTuningCallback();
         saveTuningCallback();
       });
+    }
+  }
+
+  const debugOptions = (typeof window !== 'undefined')
+    ? (window.DEBUG_OPTIONS = window.DEBUG_OPTIONS || { forceHiddenSkills: false })
+    : null;
+  const hiddenToggleBtn = get('dbg-hidden-toggle');
+  const i18nApi = (typeof window !== 'undefined' && window.I18N && typeof window.I18N.t === 'function')
+    ? window.I18N
+    : null;
+
+  if (debugOptions && typeof debugOptions.forceHiddenSkills !== 'boolean') {
+    debugOptions.forceHiddenSkills = Boolean(debugOptions.forceHiddenSkills);
+  }
+
+  function translateDebug(key) {
+    if (!i18nApi || typeof i18nApi.t !== 'function') return key;
+    try {
+      return i18nApi.t(key);
+    } catch (_) {
+      return key;
+    }
+  }
+
+  if (hiddenToggleBtn && debugOptions) {
+    const updateHiddenToggle = () => {
+      const enabled = !!debugOptions.forceHiddenSkills;
+      hiddenToggleBtn.dataset.state = enabled ? 'on' : 'off';
+      hiddenToggleBtn.textContent = enabled
+        ? translateDebug('debug.hiddenToggleOn')
+        : translateDebug('debug.hiddenToggleOff');
+    };
+    hiddenToggleBtn.addEventListener('click', () => {
+      debugOptions.forceHiddenSkills = !debugOptions.forceHiddenSkills;
+      updateHiddenToggle();
+    });
+    updateHiddenToggle();
+    if (i18nApi && typeof i18nApi.onChange === 'function' && hiddenToggleBtn.dataset.i18nWatcher !== '1') {
+      hiddenToggleBtn.dataset.i18nWatcher = '1';
+      i18nApi.onChange(() => updateHiddenToggle());
     }
   }
 

@@ -19,6 +19,10 @@
     hiddenLearnedThisRun: false,
   };
 
+  function debugHiddenOverrideEnabled() {
+    return !!(global.DEBUG_OPTIONS && global.DEBUG_OPTIONS.forceHiddenSkills);
+  }
+
   function getSkillLevel(id) {
     const entry = state.active.get(id);
     return entry ? entry.level : 0;
@@ -92,17 +96,21 @@
         pool.push(skill);
       }
     }
-    const hiddenLockedForRun = state.hiddenLearnedThisRun;
+    const hiddenOverride = debugHiddenOverrideEnabled();
+    const hiddenLockedForRun = !hiddenOverride && state.hiddenLearnedThisRun;
     for (const hidden of SkillData.HIDDEN_SKILLS) {
       if (hiddenLockedForRun) break;
       const level = getSkillLevel(hidden.id);
       if (level >= (hidden.maxLevel || 1)) continue;
       const requires = SkillData.getHiddenSkillRequirements(hidden.id);
-      let unlocked = true;
-      for (const reqId of requires) {
-        const reqDef = SkillData.getSkillDefinition(reqId);
-        if (!reqDef) { unlocked = false; break; }
-        if (getSkillLevel(reqId) < (reqDef.maxLevel || 1)) { unlocked = false; break; }
+      let unlocked = hiddenOverride;
+      if (!unlocked) {
+        unlocked = true;
+        for (const reqId of requires) {
+          const reqDef = SkillData.getSkillDefinition(reqId);
+          if (!reqDef) { unlocked = false; break; }
+          if (getSkillLevel(reqId) < (reqDef.maxLevel || 1)) { unlocked = false; break; }
+        }
       }
       if (unlocked) {
         pool.push(hidden);
