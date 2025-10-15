@@ -318,15 +318,25 @@ const AD_REWARD_ITEMS = [
   { key: 'cash20', type: 'currency', amount: 20, placement: 'cash20', adUnitId: REWARDED_AD_UNITS.cash20 || null },
 ];
 
+const TOSS_DEFAULT_AD_UNITS = {
+  wizard: 'ait-ad-test-rewarded-id',
+  cash20: 'ait-ad-test-rewarded-id',
+  life: 'ait-ad-test-interstitial-id',
+  shared: 'ait-ad-test-rewarded-id'
+};
+
 const TOSS_AD_REWARD_BASE = [
-  { key: 'wizard', type: 'character', amount: 0, placement: 'wizard', adUnitKey: 'wizard' },
-  { key: 'cash20', type: 'currency', amount: 20, placement: 'cash20', adUnitKey: 'cash20' },
+  { key: 'wizard', type: 'character', amount: 0, placement: 'wizard', adUnitKey: 'wizard', adMode: 'rewarded' },
+  { key: 'cash20', type: 'currency', amount: 20, placement: 'cash20', adUnitKey: 'cash20', adMode: 'rewarded' },
 ];
 
 function getTossAdUnitConfig() {
-  if (typeof window === 'undefined') return {};
+  if (typeof window === 'undefined') return { ...TOSS_DEFAULT_AD_UNITS };
   const candidate = window.WEBSWING_TOSS_AD_UNITS || window.WEBSWING_AD_UNITS || {};
-  return (candidate && typeof candidate === 'object') ? candidate : {};
+  if (candidate && typeof candidate === 'object') {
+    return { ...TOSS_DEFAULT_AD_UNITS, ...candidate };
+  }
+  return { ...TOSS_DEFAULT_AD_UNITS };
 }
 
 function resolveTossAdUnitId(key) {
@@ -346,7 +356,7 @@ function getTossAdRewardItems() {
     const configuredId = (typeof item.adUnitId === 'string' && item.adUnitId.trim().length > 0)
       ? item.adUnitId.trim()
       : resolveTossAdUnitId(item.adUnitKey || item.key);
-    return { ...item, adUnitId: configuredId || null };
+    return { ...item, adUnitId: configuredId || null, adMode: item.adMode || 'rewarded' };
   });
 }
 
@@ -655,7 +665,7 @@ function triggerLifeAd(autoStart = false) {
 
   if (useTossFlow) {
     console.log('[LifeAd][Toss] Requesting life ad, autoStart=', autoStart, 'adUnit=', tossAdUnitId);
-    requestTossRewardedAd({ adUnitId: tossAdUnitId, placement: 'life', key: 'life' }).then((res) => {
+    requestTossAd({ adUnitId: tossAdUnitId, placement: 'life', key: 'life', mode: 'interstitial' }).then((res) => {
       console.log('[LifeAd][Toss] showLifeAd resolved:', res);
       incrementDailyInterstitial();
       const rewarded = !!(res && res.rewarded);
@@ -835,8 +845,8 @@ function startRewardAd(key) {
 
   if (useTossFlow) {
     const placement = item.placement || item.key;
-    requestTossRewardedAd({ adUnitId: tossAdUnitId, placement, key }).then((res) => {
-      console.log('[AdShop][Toss] showRewardedAd resolved:', res);
+    requestTossAd({ adUnitId: tossAdUnitId, placement, key, mode: item.adMode || 'rewarded' }).then((res) => {
+      console.log('[AdShop][Toss] showAd resolved:', res);
       const rewarded = !!(res && res.rewarded);
       if (!rewarded) {
         state.status = 'error';
@@ -857,7 +867,7 @@ function startRewardAd(key) {
       uiButtons.shop.buttons = [];
       if (typeof buildShopCards === 'function') buildShopCards();
     }).catch((err) => {
-      console.log('[AdShop][Toss] showRewardedAd failed:', err);
+      console.log('[AdShop][Toss] showAd failed:', err);
       const reasonText = formatLifeAdError(err);
       const noFill = isNoAdAvailableError(reasonText);
       state.status = 'error';
@@ -980,7 +990,7 @@ function waitForTossAdManager(timeoutMs = TOSS_AD_MANAGER_TIMEOUT_MS) {
   });
 }
 
-function requestTossRewardedAd({ adUnitId, placement, key }) {
+function requestTossAd({ adUnitId, placement, key, mode = 'rewarded' }) {
   if (!adUnitId || typeof adUnitId !== 'string' || !adUnitId.trim()) {
     return Promise.reject(new Error('Missing ad unit id'));
   }
@@ -1009,14 +1019,24 @@ function requestTossRewardedAd({ adUnitId, placement, key }) {
       adGroupId: trimmedId,
       onEvent: (event) => {
         if (!event || finished) return;
-        if (event.type === 'userEarnedReward') {
+        const type = event.type;
+        if (type === 'failedToShow') {
+          finish({ rewarded: false, reason: 'failedToShow' });
+          return;
+        }
+        if (mode === 'interstitial') {
+          if (type === 'dismissed') {
+            rewardEarned = true;
+            finish({ rewarded: true });
+          }
+          return;
+        }
+        if (type === 'userEarnedReward') {
           rewardEarned = true;
           finish({ rewarded: true });
           return;
         }
-        if (event.type === 'failedToShow') {
-          finish({ rewarded: false, reason: 'failedToShow' });
-        } else if (event.type === 'dismissed') {
+        if (type === 'dismissed') {
           finish({ rewarded: rewardEarned });
         }
       },
