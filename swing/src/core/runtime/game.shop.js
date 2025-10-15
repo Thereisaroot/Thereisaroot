@@ -538,7 +538,9 @@ function renderAdShop(g) {
   currentCharacterPageEntries = [];
   currentItemPageEntries = [];
   const titleY = CONFIG.height * 0.12;
-  drawCenteredText(g, t('adsShop.title'), titleY, 14);
+  const isTossMode = shopMode === 'tossAds';
+  const adTitle = t(isTossMode ? 'adsShop.tossTitle' : 'adsShop.title');
+  drawCenteredText(g, adTitle, titleY, 14);
 
   g.fillStyle = '#ffffff';
   g.textAlign = 'right';
@@ -652,7 +654,7 @@ function renderShop(g) {
     renderCharacterShop(g);
     return;
   }
-  if (shopMode === 'ads') {
+  if (shopMode === 'ads' || shopMode === 'tossAds') {
     renderAdShop(g);
     return;
   }
@@ -1079,7 +1081,7 @@ function buildShopCards() {
   uiButtons.shop.cards = [];
   uiButtons.shop.buttons = [];
   
-  if (shopMode === 'ads') {
+  if (shopMode === 'ads' || shopMode === 'tossAds') {
     const items = getAdRewardItems();
     const cardW = CONFIG.width * 0.86;
     const cardH = 120;
@@ -1322,7 +1324,7 @@ function updateShop(dt) {
       // 현재 모드와 카드 타입이 일치하는지 확인
       const correctType = (shopMode === 'items' && card.type === 'item') ||
                          (shopMode === 'chars' && card.type === 'char') ||
-                         (shopMode === 'ads' && card.type === 'ad');
+                         ((shopMode === 'ads' || shopMode === 'tossAds') && card.type === 'ad');
       
       if (!correctType) continue; // 타입이 맞지 않으면 건너뛰기
       

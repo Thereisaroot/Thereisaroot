@@ -70,6 +70,7 @@
       items: 'Items Shop',
       chars: 'Character Shop',
       ads: 'Ad Shop',
+      tossAds: 'Toss Ad Shop',
       mainMenu: 'Main Menu',
       back: 'BACK',
       yes: 'YES',
@@ -249,6 +250,7 @@
     },
     adsShop: {
       title: 'AD SHOP',
+      tossTitle: 'TOSS AD SHOP',
       wizardTitle: 'Wizard Unlock',
       wizardDesc: 'Watch an ad to unlock the Wizard character.',
       wizardUnlocked: 'Wizard unlocked! Enjoy the sparkle.',
@@ -260,7 +262,7 @@
       claimedToday: 'Already claimed today.',
       adNotCompleted: 'Finish the ad to receive the reward.',
       noFill: 'No ad available right now. Please try again later.',
-      nativeOnly: 'Ads are only available in the app.',
+      nativeOnly: 'Ads are only available on supported platforms.',
       alreadyOwned: 'Already unlocked.',
     },
     gameOver: {
@@ -613,6 +615,7 @@
       items: '아이템 상점',
       chars: '캐릭터 상점',
       ads: '광고 상점',
+      tossAds: '토스광고상점',
       mainMenu: '메인 화면',
       back: '뒤로',
       yes: 'YES',
@@ -792,6 +795,7 @@
     },
     adsShop: {
       title: '광고 상점',
+      tossTitle: '토스 광고 상점',
       wizardTitle: '위자드 해제',
       wizardDesc: '광고를 보면 위자드 캐릭터가 해제됩니다.',
       wizardUnlocked: '위자드가 해제되었습니다!',
@@ -803,7 +807,7 @@
       claimedToday: '오늘은 이미 받았습니다.',
       adNotCompleted: '보상을 받으려면 광고를 끝까지 시청하세요.',
       noFill: '현재 재생할 광고가 없습니다. 잠시 후 다시 시도해 주세요.',
-      nativeOnly: '이 기능은 앱 버전에서만 이용할 수 있습니다.',
+      nativeOnly: '이 기능은 지원되는 플랫폼에서만 이용할 수 있습니다.',
       alreadyOwned: '이미 해제된 캐릭터입니다.',
     },
     gameOver: {

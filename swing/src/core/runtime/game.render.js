@@ -249,7 +249,7 @@ function renderIntro(g, time) {
   }
   g.restore();
 
-  if (typeof IS_NATIVE_APP !== 'undefined' && IS_NATIVE_APP) {
+  if (typeof IS_AD_PLATFORM !== 'undefined' && IS_AD_PLATFORM) {
     const rawLives = nativeLivesRemaining();
     const maxLives = nativeLivesMax();
     const lives = Math.max(0, rawLives);
@@ -881,9 +881,9 @@ const DRONE_VERTICAL_ORIGIN_OFFSET = 70;
 const DRONE_INITIAL_VERTICAL_OFFSET = 30;
 const DRONE_AUTO_MOUNT_PROBABILITY = 0.5;
 const DRONE_MOUNT_RETRY_COOLDOWN = 0.25;
-const BRIDGE_VIEW_DEFAULT_DURATION = 5;
+const BRIDGE_VIEW_DEFAULT_DURATION = 2;
 const BRIDGE_VIEW_FLIP_DURATION = 0.35;
-const BRIDGE_VIEW_BACKGROUND_COLOR = 'rgb(0, 199, 236)';
+const BRIDGE_VIEW_BACKGROUND_COLOR = 'rgb(0, 192, 219)';
 
 let bridgeOverlayElement = null;
 let bridgeOverlayInner = null;
@@ -2874,7 +2874,7 @@ function updateRun(dt) {
     // End fever state on game over
     starModeActive = false;
     starModeEndTime = 0;
-    if (!demoActive && typeof IS_NATIVE_APP !== 'undefined' && IS_NATIVE_APP && typeof consumeDailyLife === 'function') {
+    if (!demoActive && typeof IS_AD_PLATFORM !== 'undefined' && IS_AD_PLATFORM && typeof consumeDailyLife === 'function') {
       if (!lifeSpentThisRun) {
         if (typeof ensureDailyState === 'function') ensureDailyState();
         const currentLevel = (typeof getLevelByExp === 'function') ? getLevelByExp(exp) : 1;
@@ -3453,7 +3453,7 @@ function updateGameOver(dt) {
     }
   }
 
-  const outOfLives = typeof IS_NATIVE_APP !== 'undefined' && IS_NATIVE_APP && nativeLivesRemaining() <= 0;
+  const outOfLives = typeof IS_AD_PLATFORM !== 'undefined' && IS_AD_PLATFORM && nativeLivesRemaining() <= 0;
 
   // Build buttons if not exist
   if (outOfLives) {
@@ -3504,11 +3504,11 @@ function renderGameOver(g) {
   drawParticles(g);
   const yAdjust = -100;
   const adjust = (val) => val + yAdjust;
-  const isNative = typeof IS_NATIVE_APP !== 'undefined' && IS_NATIVE_APP;
-  const rawLives = isNative ? nativeLivesRemaining() : Number.POSITIVE_INFINITY;
+  const platformSupportsLives = typeof IS_AD_PLATFORM !== 'undefined' && IS_AD_PLATFORM;
+  const rawLives = platformSupportsLives ? nativeLivesRemaining() : Number.POSITIVE_INFINITY;
   const lives = Math.max(0, rawLives);
-  const outOfLives = isNative && lives <= 0;
-  if (isNative) {
+  const outOfLives = platformSupportsLives && lives <= 0;
+  if (platformSupportsLives) {
     const maxLives = nativeLivesMax();
     const displayCurrent = (rawLives === Number.POSITIVE_INFINITY) ? '∞' : lives;
     const maxText = (maxLives === Number.POSITIVE_INFINITY) ? '∞' : maxLives;
@@ -3630,7 +3630,7 @@ function renderGameOver(g) {
     }
   }
 
-  if (isNative) {
+  if (platformSupportsLives) {
     const panelY = adjust(CONFIG.height * 0.66);
     if (outOfLives) {
       const panelMargin = 20;

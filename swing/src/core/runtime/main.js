@@ -43,7 +43,7 @@ async function start() {
   applyStoredLanguagePreference();
   if (typeof activateBridgeView === 'function') {
     try {
-      activateBridgeView(5);
+      activateBridgeView(2);
     } catch (_) {}
   }
   if (typeof maybeLoadNativeAppInfo === 'function') {
@@ -169,7 +169,7 @@ async function start() {
   }
 
   let forceGameOver = false;
-  if (typeof IS_NATIVE_APP !== 'undefined' && IS_NATIVE_APP && typeof nativeLivesRemaining === 'function') {
+  if (typeof IS_AD_PLATFORM !== 'undefined' && IS_AD_PLATFORM && typeof nativeLivesRemaining === 'function') {
     try {
       if (typeof ensureDailyState === 'function') ensureDailyState();
     } catch (_) {}

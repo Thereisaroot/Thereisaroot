@@ -38,6 +38,26 @@ const IS_NATIVE_APP = Boolean(
   )
 );
 
+const IS_TOSS_PLATFORM = (() => {
+  if (typeof window === 'undefined') return false;
+  try {
+    if (typeof window.isTossPlatform === 'function') {
+      if (window.isTossPlatform()) return true;
+    }
+  } catch (_) {}
+  const ua = (window.navigator && typeof window.navigator.userAgent === 'string')
+    ? window.navigator.userAgent
+    : '';
+  return /AppsInToss|TossApp|InToss/i.test(ua) || Boolean(window.__appsInToss) || Boolean(window.__granite);
+})();
+
+const IS_AD_PLATFORM = IS_NATIVE_APP || IS_TOSS_PLATFORM;
+
+if (typeof window !== 'undefined') {
+  window.IS_TOSS_PLATFORM = IS_TOSS_PLATFORM;
+  window.IS_AD_PLATFORM = IS_AD_PLATFORM;
+}
+
 let nativeAppInfo = { version: null, build: null, label: null };
 let nativeAppInfoPromise = null;
 let nativeAppInfoExhausted = false;
@@ -298,6 +318,38 @@ const AD_REWARD_ITEMS = [
   { key: 'cash20', type: 'currency', amount: 20, placement: 'cash20', adUnitId: REWARDED_AD_UNITS.cash20 || null },
 ];
 
+const TOSS_AD_REWARD_BASE = [
+  { key: 'wizard', type: 'character', amount: 0, placement: 'wizard', adUnitKey: 'wizard' },
+  { key: 'cash20', type: 'currency', amount: 20, placement: 'cash20', adUnitKey: 'cash20' },
+];
+
+function getTossAdUnitConfig() {
+  if (typeof window === 'undefined') return {};
+  const candidate = window.WEBSWING_TOSS_AD_UNITS || window.WEBSWING_AD_UNITS || {};
+  return (candidate && typeof candidate === 'object') ? candidate : {};
+}
+
+function resolveTossAdUnitId(key) {
+  const config = getTossAdUnitConfig();
+  const normalizedKey = key || 'shared';
+  const direct = config[normalizedKey];
+  if (typeof direct === 'string' && direct.trim().length > 0) return direct.trim();
+  const shared = config.shared;
+  if (typeof shared === 'string' && shared.trim().length > 0) return shared.trim();
+  const fallback = config.default;
+  if (typeof fallback === 'string' && fallback.trim().length > 0) return fallback.trim();
+  return null;
+}
+
+function getTossAdRewardItems() {
+  return TOSS_AD_REWARD_BASE.map((item) => {
+    const configuredId = (typeof item.adUnitId === 'string' && item.adUnitId.trim().length > 0)
+      ? item.adUnitId.trim()
+      : resolveTossAdUnitId(item.adUnitKey || item.key);
+    return { ...item, adUnitId: configuredId || null };
+  });
+}
+
 const adRewardState = {};
 
 const MENU_TOAST_DURATION = 2.5;
@@ -523,7 +575,7 @@ let gameOverLevelUp = null; // { from, to }
 let levelUpPopupTimer = 0;
 
 // Shop state
-let shopMode = 'items'; // 'items' | 'chars' | 'ads'
+let shopMode = 'items'; // 'items' | 'chars' | 'ads' | 'tossAds'
 let shopScroll = 0; // used only for character shop scrolling now
 let shopDrag = { active: false, y0: 0, scroll0: 0 };
 // Pagination states
@@ -537,7 +589,7 @@ let currentItemPageEntries = [];
 let currentCharacterPageEntries = [];
 
 function nativeLivesRemaining() {
-  if (!IS_NATIVE_APP) return Number.POSITIVE_INFINITY;
+  if (!IS_AD_PLATFORM) return Number.POSITIVE_INFINITY;
   const lives = dailyLivesRemaining();
   if (lives > 0 && lifeAdStatus === 'limit') {
     lifeAdStatus = 'idle';
@@ -547,7 +599,7 @@ function nativeLivesRemaining() {
 }
 
 function nativeLivesMax() {
-  return IS_NATIVE_APP ? DAILY_MAX_LIVES : Number.POSITIVE_INFINITY;
+  return IS_AD_PLATFORM ? DAILY_MAX_LIVES : Number.POSITIVE_INFINITY;
 }
 
 function formatLifeAdError(err) {
@@ -572,8 +624,9 @@ function isNoAdAvailableError(reason) {
     || normalized.includes('no fill');
 }
 
+
 function triggerLifeAd(autoStart = false) {
-  if (!IS_NATIVE_APP) return false;
+  if (!IS_AD_PLATFORM) return false;
   if (typeof ensureDailyState === 'function') ensureDailyState();
   if (lifeAdStatus === 'loading') return true;
   if (uiButtons && uiButtons.gameover) uiButtons.gameover = [];
@@ -584,6 +637,71 @@ function triggerLifeAd(autoStart = false) {
     if (uiButtons && uiButtons.gameover) uiButtons.gameover = [];
     return false;
   }
+
+  const useTossFlow = IS_TOSS_PLATFORM && !IS_NATIVE_APP;
+  const tossAdUnitId = useTossFlow ? resolveTossAdUnitId('life') : null;
+
+  if (useTossFlow && !tossAdUnitId) {
+    lifeAdStatus = 'error';
+    lifeAdMessage = t('ads.lifeUnavailable');
+    lifeAdAutoStart = false;
+    if (uiButtons && uiButtons.gameover) uiButtons.gameover = [];
+    return false;
+  }
+
+  lifeAdStatus = 'loading';
+  lifeAdMessage = null;
+  lifeAdAutoStart = autoStart;
+
+  if (useTossFlow) {
+    console.log('[LifeAd][Toss] Requesting life ad, autoStart=', autoStart, 'adUnit=', tossAdUnitId);
+    requestTossRewardedAd({ adUnitId: tossAdUnitId, placement: 'life', key: 'life' }).then((res) => {
+      console.log('[LifeAd][Toss] showLifeAd resolved:', res);
+      incrementDailyInterstitial();
+      const rewarded = !!(res && res.rewarded);
+      const gain = rewarded ? DAILY_MAX_LIVES : 2;
+      grantDailyLives(gain);
+      lifeAdStatus = rewarded ? 'rewarded' : 'partial';
+      lifeAdMessage = t(rewarded ? 'ads.lifeRewarded' : 'ads.lifePartial', { lives: gain });
+      if (uiButtons && uiButtons.gameover) uiButtons.gameover = [];
+      if (lifeAdAutoStart && nativeLivesRemaining() > 0) {
+        lifeAdAutoStart = false;
+        setTimeout(() => resetRun(), 0);
+      } else {
+        lifeAdAutoStart = false;
+      }
+    }).catch((err) => {
+      console.log('[LifeAd][Toss] showLifeAd failed:', err);
+      const fallbackGain = 2;
+      const rawReason = formatLifeAdError(err);
+      if (isNoAdAvailableError(rawReason)) {
+        const noLivesBeforeAd = nativeLivesRemaining() <= 0;
+        let shouldAutoRestart = false;
+        if (noLivesBeforeAd) {
+          grantDailyLives(fallbackGain);
+          lifeAdStatus = 'partial';
+          lifeAdMessage = t('ads.lifePartial', { lives: fallbackGain });
+          shouldAutoRestart = lifeAdAutoStart && nativeLivesRemaining() > 0;
+        } else {
+          lifeAdStatus = 'limit';
+          lifeAdMessage = t('ads.lifeLimit', { limit: DAILY_INTERSTITIAL_LIMIT });
+        }
+        lifeAdAutoStart = false;
+        if (uiButtons && uiButtons.gameover) uiButtons.gameover = [];
+        if (shouldAutoRestart) setTimeout(() => resetRun(), 0);
+      } else {
+        grantDailyLives(fallbackGain);
+        lifeAdStatus = 'partial';
+        lifeAdMessage = rawReason
+          ? t('ads.lifeErrorWithReason', { reason: rawReason, lives: fallbackGain })
+          : t('ads.lifePartial', { lives: fallbackGain });
+        lifeAdAutoStart = false;
+        if (uiButtons && uiButtons.gameover) uiButtons.gameover = [];
+      }
+    });
+    return true;
+  }
+
   const playGate = getPlayGatePlugin();
   if (!playGate) console.log('[LifeAd] PlayGate plugin not available', window.Capacitor);
   if (!playGate || typeof playGate.showLifeAd !== 'function') {
@@ -593,9 +711,7 @@ function triggerLifeAd(autoStart = false) {
     if (uiButtons && uiButtons.gameover) uiButtons.gameover = [];
     return false;
   }
-  lifeAdStatus = 'loading';
-  lifeAdMessage = null;
-  lifeAdAutoStart = autoStart;
+
   console.log('[LifeAd] Requesting life ad, autoStart=', autoStart);
   playGate.showLifeAd({}).then((res) => {
     console.log('[LifeAd] showLifeAd resolved:', res);
@@ -623,30 +739,21 @@ function triggerLifeAd(autoStart = false) {
         lifeAdMessage = t('ads.lifePartial', { lives: fallbackGain });
         shouldAutoRestart = lifeAdAutoStart && nativeLivesRemaining() > 0;
       } else {
-        lifeAdStatus = 'error';
-        lifeAdMessage = null;
+        lifeAdStatus = 'limit';
+        lifeAdMessage = t('ads.lifeLimit', { limit: DAILY_INTERSTITIAL_LIMIT });
       }
       lifeAdAutoStart = false;
-      if (shouldAutoRestart) {
-        setTimeout(() => resetRun(), 0);
-      }
       if (uiButtons && uiButtons.gameover) uiButtons.gameover = [];
-      notifyNativeNoAdAvailable();
-      return;
-    }
-    const reasonText = rawReason;
-    const noLivesBeforeAd = nativeLivesRemaining() <= 0;
-    if (noLivesBeforeAd) {
+      if (shouldAutoRestart) setTimeout(() => resetRun(), 0);
+      if (!noLivesBeforeAd) notifyNativeNoAdAvailable('ads.lifeLimit');
+    } else {
       grantDailyLives(fallbackGain);
       lifeAdStatus = 'partial';
-      lifeAdMessage = reasonText
-        ? t('ads.lifeErrorWithReason', { reason: reasonText, lives: fallbackGain })
+      lifeAdMessage = rawReason
+        ? t('ads.lifeErrorWithReason', { reason: rawReason, lives: fallbackGain })
         : t('ads.lifePartial', { lives: fallbackGain });
-    } else {
-      lifeAdStatus = 'error';
-      lifeAdMessage = reasonText
-        ? `${t('ads.lifeError')} (${reasonText})`
-        : t('ads.lifeError');
+      lifeAdAutoStart = false;
+      if (uiButtons && uiButtons.gameover) uiButtons.gameover = [];
     }
     lifeAdAutoStart = false;
     if (uiButtons && uiButtons.gameover) uiButtons.gameover = [];
@@ -654,7 +761,11 @@ function triggerLifeAd(autoStart = false) {
   return true;
 }
 
+
 function getAdRewardItems() {
+  if (IS_TOSS_PLATFORM && !IS_NATIVE_APP) {
+    return getTossAdRewardItems();
+  }
   return AD_REWARD_ITEMS;
 }
 
@@ -670,12 +781,13 @@ function getAdRewardState(key) {
 }
 
 function startRewardAd(key) {
-  const item = AD_REWARD_ITEMS.find((it) => it.key === key);
+  const items = getAdRewardItems();
+  const item = items.find((it) => it.key === key);
   if (!item) return;
   const state = getAdRewardState(key);
   if (state.status === 'loading') return;
 
-  if (!IS_NATIVE_APP) {
+  if (!IS_AD_PLATFORM) {
     state.status = 'error';
     state.message = t('adsShop.nativeOnly');
     uiButtons.shop.cards = [];
@@ -704,9 +816,9 @@ function startRewardAd(key) {
     return;
   }
 
-  const playGate = getPlayGatePlugin();
-  if (!playGate) console.log('[AdShop] PlayGate plugin not available', window.Capacitor);
-  if (!playGate || typeof playGate.showRewardedAd !== 'function') {
+  const useTossFlow = IS_TOSS_PLATFORM && !IS_NATIVE_APP;
+  const tossAdUnitId = useTossFlow ? (item.adUnitId || resolveTossAdUnitId(item.adUnitKey || item.key)) : null;
+  if (useTossFlow && !tossAdUnitId) {
     state.status = 'error';
     state.message = t('ads.lifeUnavailable');
     uiButtons.shop.cards = [];
@@ -720,6 +832,60 @@ function startRewardAd(key) {
   uiButtons.shop.cards = [];
   uiButtons.shop.buttons = [];
   if (typeof buildShopCards === 'function') buildShopCards();
+
+  if (useTossFlow) {
+    const placement = item.placement || item.key;
+    requestTossRewardedAd({ adUnitId: tossAdUnitId, placement, key }).then((res) => {
+      console.log('[AdShop][Toss] showRewardedAd resolved:', res);
+      const rewarded = !!(res && res.rewarded);
+      if (!rewarded) {
+        state.status = 'error';
+        state.message = t('adsShop.adNotCompleted');
+        uiButtons.shop.cards = [];
+        uiButtons.shop.buttons = [];
+        if (typeof buildShopCards === 'function') buildShopCards();
+        return;
+      }
+
+      applyAdReward(item);
+      markDailyRewardClaimed(key);
+      state.status = 'done';
+      state.message = item.type === 'character'
+        ? t('adsShop.wizardUnlocked')
+        : t('adsShop.cashGranted', { amount: item.amount });
+      uiButtons.shop.cards = [];
+      uiButtons.shop.buttons = [];
+      if (typeof buildShopCards === 'function') buildShopCards();
+    }).catch((err) => {
+      console.log('[AdShop][Toss] showRewardedAd failed:', err);
+      const reasonText = formatLifeAdError(err);
+      const noFill = isNoAdAvailableError(reasonText);
+      state.status = 'error';
+      if (noFill) {
+        state.message = t('adsShop.noFill');
+      } else if (reasonText) {
+        state.message = reasonText;
+      } else {
+        state.message = t('ads.lifeError');
+      }
+      uiButtons.shop.cards = [];
+      uiButtons.shop.buttons = [];
+      if (typeof buildShopCards === 'function') buildShopCards();
+    });
+    return;
+  }
+
+  const playGate = getPlayGatePlugin();
+  if (!playGate) console.log('[AdShop] PlayGate plugin not available', window.Capacitor);
+  if (!playGate || typeof playGate.showRewardedAd !== 'function') {
+    state.status = 'error';
+    state.message = t('ads.lifeUnavailable');
+    uiButtons.shop.cards = [];
+    uiButtons.shop.buttons = [];
+    if (typeof buildShopCards === 'function') buildShopCards();
+    return;
+  }
+
   const request = {};
   if (item.adUnitId) request.adUnitId = item.adUnitId;
   if (item.placement) request.placement = item.placement;
@@ -764,6 +930,124 @@ function startRewardAd(key) {
   });
 }
 
+const TOSS_AD_MANAGER_TIMEOUT_MS = 4000;
+const TOSS_AD_LOAD_TIMEOUT_MS = 45000;
+
+function getTossAdManagerSync() {
+  if (typeof window === 'undefined') return null;
+  const manager = window.TossAdMobManager;
+  if (!manager) return null;
+  if (typeof manager.load !== 'function' || typeof manager.show !== 'function') return null;
+  return manager;
+}
+
+function waitForTossAdManager(timeoutMs = TOSS_AD_MANAGER_TIMEOUT_MS) {
+  return new Promise((resolve, reject) => {
+    const immediate = getTossAdManagerSync();
+    if (immediate) {
+      resolve(immediate);
+      return;
+    }
+    if (typeof window === 'undefined') {
+      reject(new Error('Toss AdMob manager unavailable'));
+      return;
+    }
+    let settled = false;
+    let timer = null;
+    const cleanup = () => {
+      window.removeEventListener('toss-admob-manager-ready', onReady);
+      if (timer) clearTimeout(timer);
+    };
+    const onReady = (event) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      const manager = getTossAdManagerSync() || (event && event.detail) || null;
+      if (manager) resolve(manager);
+      else reject(new Error('Toss AdMob manager unavailable'));
+    };
+    window.addEventListener('toss-admob-manager-ready', onReady, { once: true });
+    if (timeoutMs > 0) {
+      timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        const manager = getTossAdManagerSync();
+        if (manager) resolve(manager);
+        else reject(new Error('Toss AdMob manager timeout'));
+      }, timeoutMs);
+    }
+  });
+}
+
+function requestTossRewardedAd({ adUnitId, placement, key }) {
+  if (!adUnitId || typeof adUnitId !== 'string' || !adUnitId.trim()) {
+    return Promise.reject(new Error('Missing ad unit id'));
+  }
+  const trimmedId = adUnitId.trim();
+  return waitForTossAdManager().then((manager) => new Promise((resolve, reject) => {
+    let finished = false;
+    let rewardEarned = false;
+    let timeoutId = null;
+
+    const finish = (payload, isError = false) => {
+      if (finished) return;
+      finished = true;
+      if (timeoutId) clearTimeout(timeoutId);
+      try {
+        if (manager && typeof manager.destroy === 'function') {
+          manager.destroy();
+        }
+      } catch (_) {}
+      if (isError) reject(payload);
+      else resolve(payload);
+    };
+
+    console.log('[AdShop][Toss] Requesting rewarded ad', { key, placement, adUnitId: trimmedId });
+
+    const showOptions = {
+      adGroupId: trimmedId,
+      onEvent: (event) => {
+        if (!event || finished) return;
+        if (event.type === 'userEarnedReward') {
+          rewardEarned = true;
+          finish({ rewarded: true });
+          return;
+        }
+        if (event.type === 'failedToShow') {
+          finish({ rewarded: false, reason: 'failedToShow' });
+        } else if (event.type === 'dismissed') {
+          finish({ rewarded: rewardEarned });
+        }
+      },
+      onError: (err) => finish(err || new Error('show failed'), true),
+    };
+
+    const loadOptions = {
+      adGroupId: trimmedId,
+      autoShow: false,
+      onLoaded: () => {
+        const showResult = manager.show(showOptions);
+        if (showResult !== true) {
+          finish(new Error('show failed to start'), true);
+        }
+      },
+      onError: (err) => finish(err || new Error('load failed'), true),
+      onEvent: () => {},
+    };
+
+    const loadResult = manager.load(loadOptions);
+    if (loadResult !== true) {
+      finish(new Error('load failed'), true);
+      return;
+    }
+
+    timeoutId = setTimeout(() => {
+      finish(new Error('Ad timeout'), true);
+    }, TOSS_AD_LOAD_TIMEOUT_MS);
+  }));
+}
+
 function applyAdReward(item) {
   if (!item) return;
   if (item.type === 'character' && item.key === 'wizard') {
@@ -785,7 +1069,10 @@ function switchShopMode(mode) {
   if (mode === 'ads' && (demoActive || !IS_NATIVE_APP)) {
     mode = 'items';
   }
-  if (mode !== 'items' && mode !== 'chars' && mode !== 'ads') return;
+  if (mode === 'tossAds' && (demoActive || !IS_TOSS_PLATFORM)) {
+    mode = 'items';
+  }
+  if (mode !== 'items' && mode !== 'chars' && mode !== 'ads' && mode !== 'tossAds') return;
   shopMode = mode;
   shopScroll = 0;
   shopHelp = false;
@@ -864,6 +1151,14 @@ function buildIntroButtons() {
       key: 'ads',
       label: 'common.ads',
       shopMode: 'ads',
+      requiredLevel,
+    });
+  }
+  if (IS_TOSS_PLATFORM && !IS_NATIVE_APP && !demoActive) {
+    menuSpecs.push({
+      key: 'tossAds',
+      label: 'common.tossAds',
+      shopMode: 'tossAds',
       requiredLevel,
     });
   }
@@ -951,6 +1246,14 @@ function buildGameOverButtons() {
       key: 'ads',
       label: 'common.ads',
       shopMode: 'ads',
+      requiredLevel,
+    });
+  }
+  if (IS_TOSS_PLATFORM && !IS_NATIVE_APP && !demoActive) {
+    menuSpecs.push({
+      key: 'tossAds',
+      label: 'common.tossAds',
+      shopMode: 'tossAds',
       requiredLevel,
     });
   }
@@ -2787,7 +3090,7 @@ function cleanupRopes() {
 }
 
 function resetRun() {
-  if (IS_NATIVE_APP) {
+  if (IS_AD_PLATFORM) {
     if (typeof ensureDailyState === 'function') ensureDailyState();
     if (nativeLivesRemaining() <= 0) {
       lifeSpentThisRun = false;
