@@ -495,9 +495,9 @@
         },
         drone_support: {
           name: 'Support Drone',
-          level1: 'Deploy a roaming drone that becomes a rope when you collide. Small hitbox.',
-        level2: 'Drone pause hitbox enlarged for easier catches.',
-        level3: 'Spawn two drones with large rope hitboxes.',
+          level1: 'Deploy a roaming rescue drone for emergency rope catches. Small hitbox.',
+        level2: 'Rescue drone catch hitbox enlarged.',
+        level3: 'Deploy two rescue drones with large catch zones.',
         },
         cash_magnet: {
           name: 'Cash Magnet',
@@ -531,13 +531,13 @@
         },
         void_magnet: {
           name: 'Void Magnet',
-          level1: 'Every 20s a small black hole pulls nearby items into cash.',
+          level1: 'Every 3s a small black hole pulls nearby items into cash.',
         level2: 'Black hole pull radius increased.',
         level3: 'Black hole converts pulled items into +$2 each.',
         },
         spider_guard: {
           name: 'Spider Guard',
-          level1: 'Roaming spider spawns trampolines along the ground.',
+          level1: 'Roaming spider spawns trampolines up to +100px higher than before, launching you 50% higher.',
         level2: 'Trampolines launch higher and linger longer.',
         level3: 'Spawns two webs, covering more ground for safety.',
         },
@@ -553,9 +553,9 @@
         },
         drone_collector: {
           name: 'Drone Collector',
-          level1: 'Support drones vacuum nearby items while paused.',
-        level2: 'Vacuum radius greatly increased.',
-        level3: 'Two drones collect across a wide radius.',
+          level1: 'Support drones vacuum nearby items and grant +$1 per pickup.',
+        level2: 'Vacuum radius greatly increased (still +$1 each).',
+        level3: 'Two drones collect across a wide radius, +$1 per pickup.',
         },
       },
     },
@@ -1053,9 +1053,9 @@
         },
         drone_support: {
           name: '서포트 드론',
-          level1: '충돌 시 멈춰 로프가 되는 드론 1기',
-        level2: '드론 멈춤 히트박스 확대.',
-        level3: '드론 2기 소환, 큰 히트박스.',
+          level1: '위급 시 로프로 대신 잡아주는 드론 1기 (작은 히트박스).',
+        level2: '구조 드론의 잡기 범위 확대.',
+        level3: '구조 드론 2기 소환, 큰 잡기 범위 제공.',
         },
         cash_magnet: {
           name: '캐시 마그넷',
@@ -1089,13 +1089,13 @@
         },
         void_magnet: {
           name: '보이드 마그넷',
-          level1: '20초마다 주변 아이템을 끌어모으는 블랙홀 생성.',
+          level1: '3초마다 주변 아이템을 끌어모으는 블랙홀 생성.',
         level2: '블랙홀 흡입 반경 증가.',
         level3: '블랙홀에 빨려든 아이템당 +$2.',
         },
         spider_guard: {
           name: '스파이더 가드',
-          level1: '맵을 순찰하며 거미줄 트램폴린 생성.',
+          level1: '지면을 순찰하며 현재 위치부터 최대 +100px 높이로 거미줄 트램폴린 생성, 점프력이 50% 강화.',
         level2: '트램폴린 높이·지속 증가.',
         level3: '트램폴린을 2개까지 생성해 더 넓은 범위 보호.',
         },
@@ -1111,9 +1111,9 @@
         },
         drone_collector: {
           name: '드론 콜렉터',
-          level1: '정지한 드론이 주변 아이템을 흡수.',
-        level2: '흡수 반경 대폭 확대.',
-        level3: '두 드론이 넓은 범위 아이템 흡수.',
+          level1: '서포트 드론이 아이템을 모으고, 흡수할 때마다 $1 보상.',
+        level2: '흡수 반경 대폭 확대(보상 +$1 유지).',
+        level3: '두 드론이 넓은 범위 아이템 흡수, 흡수마다 $1.',
         },
       },
     },

@@ -38,7 +38,7 @@ const AIR_COMBO_TRIGGER_CHANCE = [0, 0.2, 0.4, 0.6];
 const CASH_MAGNET_PULL_BONUS = [0, 15, 30, 50];
 const SKY_HARVEST_CASH_BONUS = [0, 1, 2, 3];
 const FEVER_EXTENSION_BONUS = [0, 0.2, 0.35, 0.5];
-const VOID_MAGNET_INTERVAL_SEC = (typeof VOID_MAGNET_INTERVAL === 'number') ? VOID_MAGNET_INTERVAL : 20;
+const VOID_MAGNET_INTERVAL_SEC = (typeof VOID_MAGNET_INTERVAL === 'number') ? VOID_MAGNET_INTERVAL : 3;
 const VOID_MAGNET_LIFETIME_SEC = (typeof VOID_MAGNET_LIFETIME === 'number') ? VOID_MAGNET_LIFETIME : 3;
 const VOID_MAGNET_RADIUS_PX = (typeof VOID_MAGNET_RADIUS === 'number') ? VOID_MAGNET_RADIUS : 200;
 const VOID_MAGNET_PULL_SPEED_PX = (typeof VOID_MAGNET_PULL_SPEED === 'number') ? VOID_MAGNET_PULL_SPEED : 260;
@@ -1320,7 +1320,9 @@ function anchorSupportDrone(drone) {
 
 function spawnSpiderWeb(x) {
   const groundY = CONFIG.height - CONFIG.groundH - 12;
-  const spawnY = groundY - 100;
+  const baseOffset = 100;
+  const extraOffset = Math.random() * 100;
+  const spawnY = groundY - (baseOffset + extraOffset);
   if (spiderWebs.length >= 6) spiderWebs.shift();
   spiderWebs.push({
     id: `web${Date.now()}${Math.floor(Math.random() * 1000)}`,
@@ -1366,7 +1368,10 @@ function updateSupportDrones(dt, level, collectorActive, spiderGuardActive) {
   if (!supportDrones) supportDrones = [];
   if (!spiderWebs) spiderWebs = [];
 
-  if (level <= 0) {
+  const hiddenOverrideActive = collectorActive || spiderGuardActive;
+  const effectiveLevel = level > 0 ? level : (hiddenOverrideActive ? 1 : 0);
+
+  if (effectiveLevel <= 0) {
     while (supportDrones.length) {
       const drone = supportDrones.pop();
       if (player.droneRide === drone) {
@@ -1378,7 +1383,7 @@ function updateSupportDrones(dt, level, collectorActive, spiderGuardActive) {
     return;
   }
 
-  const desiredCount = level >= 3 ? 2 : 1;
+  const desiredCount = effectiveLevel >= 3 ? 2 : 1;
   while (supportDrones.length > desiredCount) {
     const drone = supportDrones.pop();
     if (player.droneRide === drone) {
@@ -1387,16 +1392,16 @@ function updateSupportDrones(dt, level, collectorActive, spiderGuardActive) {
     }
   }
   while (supportDrones.length < desiredCount) {
-    createSupportDrone(level);
+    createSupportDrone(effectiveLevel);
   }
 
-  const baseRadius = level >= 2 ? 36 : 28;
+  const baseRadius = effectiveLevel >= 2 ? 36 : 28;
   const collectMultiplier = collectorActive ? 1.8 : 1.2;
 
   for (let i = 0; i < supportDrones.length; i++) {
     const drone = supportDrones[i];
     drone.radius = baseRadius;
-    drone.collectRadius = baseRadius * collectMultiplier;
+    drone.collectRadius = collectorActive ? baseRadius * collectMultiplier : baseRadius;
 
     if (!Number.isFinite(drone.originX)) drone.originX = player.x + DRONE_FORWARD_OFFSET;
     if (!Number.isFinite(drone.originY)) drone.originY = player.y - DRONE_VERTICAL_ORIGIN_OFFSET;
@@ -1425,8 +1430,8 @@ function updateSupportDrones(dt, level, collectorActive, spiderGuardActive) {
     if (spiderGuardActive) {
       drone.originY = Math.min(drone.originY, drone.groundY - 20);
       drone.originX = player.x + DRONE_FORWARD_OFFSET;
-      const speed = (80 + level * 18) * 1.1;
-      const range = 80 + level * 14;
+      const speed = (80 + effectiveLevel * 18) * 1.1;
+      const range = 80 + effectiveLevel * 14;
       drone.x += drone.direction * speed * dt;
       const offset = drone.x - drone.originX;
       if (offset > range) {
@@ -1448,7 +1453,7 @@ function updateSupportDrones(dt, level, collectorActive, spiderGuardActive) {
       drone.webTimer = 4 + Math.random() * 2;
       const targetOriginX = player.x + DRONE_FORWARD_OFFSET;
       drone.originX += (targetOriginX - drone.originX) * Math.min(1, dt * 0.5);
-      drone.angle += dt * (0.8 + level * 0.25) * 1.3;
+      drone.angle += dt * (0.8 + effectiveLevel * 0.25) * 1.3;
       const offsetPhase = i === 0 ? 0 : Math.PI;
       const ang = drone.angle + offsetPhase;
       drone.x = drone.originX + Math.cos(ang) * drone.orbitRadius;
@@ -2335,7 +2340,7 @@ function updateRun(dt) {
         }
       }
     }
-    if (!caught && droneCatchZones.length > 0) {
+    if (!caught && droneCollectorActive && droneCatchZones.length > 0) {
       for (let i = 0; i < droneCatchZones.length; i++) {
         const zone = droneCatchZones[i];
         const ddx = b.x - zone.x;
@@ -2356,6 +2361,15 @@ function updateRun(dt) {
     const displayY = caughtByDrone ? caughtByDrone.y : (b.y + wobble);
     const displayX = caughtByDrone ? caughtByDrone.x : player.x;
     const caughtInAir = caughtByDrone ? true : (player.mode === 'free');
+
+    if (caughtByDrone && droneCollectorActive) {
+      const cashReward = 1;
+      savings += cashReward;
+      skillCashBonusThisRun += cashReward;
+      if (typeof addToPlayerStat === 'function') addToPlayerStat('totalCashEarned', cashReward);
+      spawnEffect('combo', displayX, displayY - 14, t('effects.cashEarned', { cash: cashReward }));
+      try { localStorage.setItem(SAVINGS_KEY, String(savings)); } catch (_) {}
+    }
 
     if (b.kind === 'star') {
       starModeActive = true;
@@ -2457,7 +2471,8 @@ function updateRun(dt) {
       const dx = player.x - web.x;
       const dy = player.y - web.y;
       if (Math.abs(dx) <= web.radius && Math.abs(dy) <= 24) {
-        player.vy = -Math.max(420, Math.abs(player.vy) * 0.8 + 320);
+        const bounceBase = Math.max(420, Math.abs(player.vy) * 0.8 + 320);
+        player.vy = -bounceBase * 1.5;
         player.mode = 'free';
         usedAirJumps = 0;
         spawnEffect('burst', web.x, web.y - 12);
