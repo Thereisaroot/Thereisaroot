@@ -542,6 +542,14 @@ function renderAdShop(g) {
   const adTitle = t(isTossMode ? 'adsShop.tossTitle' : 'adsShop.title');
   drawCenteredText(g, adTitle, titleY, 14);
 
+  if (shopMsg && shopMsgTimer > 0) {
+    g.fillStyle = shopMsgKey === 'adsShop.failShort' ? '#ffb347' : '#ff6666';
+    g.textAlign = 'center';
+    g.textBaseline = 'bottom';
+    g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+    g.fillText(shopMsg, CONFIG.width / 2, titleY - 18);
+  }
+
   g.fillStyle = '#ffffff';
   g.textAlign = 'right';
   g.textBaseline = 'top';
@@ -550,14 +558,25 @@ function renderAdShop(g) {
 
   lastShopHelpRect = null;
 
-  const items = getAdRewardItems();
+  const perPage = 3;
+  if (!currentAdPageEntries || !currentAdPageEntries.length) {
+    const allItems = getAdRewardItems();
+    shopAdTotalPages = Math.max(1, Math.ceil(allItems.length / perPage));
+    if (shopAdPage >= shopAdTotalPages) shopAdPage = shopAdTotalPages - 1;
+    if (shopAdPage < 0) shopAdPage = 0;
+    const startIdx = shopAdPage * perPage;
+    currentAdPageEntries = allItems.slice(startIdx, startIdx + perPage);
+  }
+  const items = currentAdPageEntries;
+
   const cardW = CONFIG.width * 0.86;
   const cardH = 120;
-  const startY = titleY + 50;
+  const cardGap = 12;
+  const startY = CONFIG.height * 0.22 - 10;
 
   items.forEach((item, idx) => {
     const cardX = (CONFIG.width - cardW) / 2;
-    const cardY = startY + idx * (cardH + 24);
+    const cardY = startY + idx * (cardH + cardGap);
     const centerX = cardX + cardW / 2;
 
     g.fillStyle = '#0f1a2a';
@@ -566,8 +585,8 @@ function renderAdShop(g) {
     g.lineWidth = 3;
     g.strokeRect(cardX, cardY, cardW, cardH);
 
-    const titleKey = item.key === 'wizard' ? 'adsShop.wizardTitle' : 'adsShop.cashTitle';
-    const descKey = item.key === 'wizard' ? 'adsShop.wizardDesc' : 'adsShop.cashDesc';
+    const titleKey = item.titleKey || (item.key === 'wizard' ? 'adsShop.wizardTitle' : 'adsShop.cashTitle');
+    const descKey = item.descKey || (item.key === 'wizard' ? 'adsShop.wizardDesc' : 'adsShop.cashDesc');
 
     g.fillStyle = '#ffffff';
     g.textAlign = 'left';
@@ -587,7 +606,12 @@ function renderAdShop(g) {
 
     const state = getAdRewardState(item.key);
     const claimed = isDailyRewardClaimed(item.key);
-    const alreadyOwned = item.key === 'wizard' && shopInv.characters && shopInv.characters.includes('wizard');
+    const alreadyOwned = (item.key === 'wizard' && shopInv.characters && shopInv.characters.includes('wizard'))
+      || (item.key === 'startSkill' && shopInv.startSkill);
+    const rewardCountForCard = (typeof getTossAdRewardCount === 'function') ? getTossAdRewardCount() : 0;
+    const lockedByRequirement = isTossMode && item.requiresRewardCount
+      ? rewardCountForCard < item.requiresRewardCount
+      : false;
 
     let message = state.message || null;
     let messageColor = '#b4c0d9';
@@ -597,10 +621,16 @@ function renderAdShop(g) {
         message = t('adsShop.loading');
         messageColor = '#b4c0d9';
       } else if (alreadyOwned) {
-        message = t('adsShop.alreadyOwned');
+        message = item.key === 'startSkill' ? t('adsShop.startSkillOwned') : t('adsShop.alreadyOwned');
         messageColor = '#88ff88';
       } else if (claimed) {
         message = t('adsShop.claimedToday');
+        messageColor = '#ffb347';
+      } else if (lockedByRequirement) {
+        message = t('adsShop.requireRewardViews', {
+          required: item.requiresRewardCount,
+          current: rewardCountForCard,
+        });
         messageColor = '#ffb347';
       }
     }
@@ -610,7 +640,7 @@ function renderAdShop(g) {
     const buttonX = cardX + 16;
     const buttonY = cardY + cardH - buttonHeight - 12;
 
-    const actionAvailable = !alreadyOwned && !claimed && state.status !== 'loading';
+    const actionAvailable = !alreadyOwned && !claimed && state.status !== 'loading' && !lockedByRequirement;
 
     if (actionAvailable) {
       g.fillStyle = '#22334a';
@@ -639,8 +669,40 @@ function renderAdShop(g) {
     }
   });
 
-  drawShopNavButtons(g);
+  const paginationY = CONFIG.height - 60 - 18 - 10;
+  const totalPages = Math.max(1, shopAdTotalPages);
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillStyle = '#ffffff';
+  g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+  g.fillText(`${shopAdPage + 1}/${totalPages}`, CONFIG.width / 2, paginationY);
 
+  const btnW = 36;
+  const btnH = 36;
+  const offset = 60;
+  const leftX = Math.floor(CONFIG.width / 2 - offset - btnW / 2);
+  const rightX = Math.floor(CONFIG.width / 2 + offset - btnW / 2);
+
+  if (shopAdPage > 0) {
+    g.fillStyle = '#22334a';
+    g.strokeStyle = '#b4c0d9';
+    g.lineWidth = 2;
+    g.fillRect(leftX, paginationY - btnH / 2, btnW, btnH);
+    g.strokeRect(leftX, paginationY - btnH / 2, btnW, btnH);
+    g.fillStyle = '#ffffff';
+    g.fillText('<', leftX + btnW / 2, paginationY);
+  }
+  if (shopAdPage < totalPages - 1) {
+    g.fillStyle = '#22334a';
+    g.strokeStyle = '#b4c0d9';
+    g.lineWidth = 2;
+    g.fillRect(rightX, paginationY - btnH / 2, btnW, btnH);
+    g.strokeRect(rightX, paginationY - btnH / 2, btnW, btnH);
+    g.fillStyle = '#ffffff';
+    g.fillText('>', rightX + btnW / 2, paginationY);
+  }
+
+  drawShopNavButtons(g);
 }
 
 function renderShop(g) {
@@ -1083,16 +1145,52 @@ function buildShopCards() {
   
   if (shopMode === 'ads' || shopMode === 'tossAds') {
     const items = getAdRewardItems();
+    const perPage = 3;
+    shopAdTotalPages = Math.max(1, Math.ceil(items.length / perPage));
+    if (shopAdPage >= shopAdTotalPages) shopAdPage = shopAdTotalPages - 1;
+    if (shopAdPage < 0) shopAdPage = 0;
+    const startIdx = shopAdPage * perPage;
+    const pageItems = items.slice(startIdx, startIdx + perPage);
+    currentAdPageEntries = pageItems;
+
     const cardW = CONFIG.width * 0.86;
     const cardH = 120;
+    const cardGap = 12;
     const startY = CONFIG.height * 0.22;
-    items.forEach((item, idx) => {
+
+    pageItems.forEach((item, idx) => {
       const cardX = (CONFIG.width - cardW) / 2;
-      const cardY = startY + idx * (cardH + 24);
-      const card = new ShopCard(cardX, cardY, cardW, cardH, item, idx, 'ad');
+      const cardY = startY + idx * (cardH + cardGap);
+      const card = new ShopCard(cardX, cardY, cardW, cardH, item, startIdx + idx, 'ad');
       card.updateScroll(0);
       uiButtons.shop.cards.push(card);
     });
+
+    const paginationY = CONFIG.height - 60 - 18 - 10;
+    const btnW = 36;
+    const btnH = 36;
+    const offset = 60;
+    const cx = CONFIG.width / 2;
+    const leftX = Math.floor(cx - offset - btnW / 2);
+    const rightX = Math.floor(cx + offset - btnW / 2);
+
+    if (shopAdPage > 0) {
+      uiButtons.shop.buttons.push(
+        new UIButton(leftX, paginationY - btnH / 2, btnW, btnH, () => t('pagination.prev'), () => {
+          shopAdPage = Math.max(0, shopAdPage - 1);
+          buildShopCards();
+        }, 'shop'),
+      );
+    }
+    if (shopAdPage < shopAdTotalPages - 1) {
+      uiButtons.shop.buttons.push(
+        new UIButton(rightX, paginationY - btnH / 2, btnW, btnH, () => t('pagination.next'), () => {
+          shopAdPage = Math.min(shopAdTotalPages - 1, shopAdPage + 1);
+          buildShopCards();
+        }, 'shop'),
+      );
+    }
+
     registerShopNavButtons();
     return;
   }

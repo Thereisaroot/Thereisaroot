@@ -261,17 +261,11 @@ function renderIntro(g, time) {
     g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
     g.fillText(t('ads.lifeCounter', { current: displayCurrent, max: maxText }), CONFIG.width - 12, 12);
     if (lives <= 0) {
-    const msg = lifeAdStatus === 'loading'
-      ? t('ads.lifeLoading')
-      : (lifeAdMessage || t('ads.lifePrompt'));
-    drawCenteredText(g, msg, CONFIG.height * 0.58 - 5, 10, '#ffb347');
-      if (lifeAdStatus !== 'loading' && lifeAdStatus !== 'limit') {
-        drawCenteredText(g, t('ads.lifeTapToWatch'), CONFIG.height * 0.62, 9, '#b4c0d9');
+      if (lifeAdStatus === 'loading') {
+        drawCenteredText(g, t('ads.lifeLoading'), CONFIG.height * 0.58 - 5, 10, '#b4c0d9');
       }
     } else if (lifeAdStatus === 'loading') {
       drawCenteredText(g, t('ads.lifeLoading'), CONFIG.height * 0.58, 10, '#b4c0d9');
-    } else if (lifeAdMessage) {
-      drawCenteredText(g, lifeAdMessage, CONFIG.height * 0.58 - 5, 10, '#b4c0d9');
     }
   }
 
@@ -3457,31 +3451,33 @@ function updateGameOver(dt) {
 
   // Build buttons if not exist
   if (outOfLives) {
-    if (uiButtons && Array.isArray(uiButtons.gameover) && uiButtons.gameover.length) uiButtons.gameover = [];
-    gameOverMenuButtons = [];
-  } else if (uiButtons && Array.isArray(uiButtons.gameover) && uiButtons.gameover.length === 0) {
-    buildGameOverButtons();
+    ensureOutOfLivesButtons();
+  } else {
+    if (uiButtons && Array.isArray(uiButtons.gameover)) {
+      const containsLifeButtons = uiButtons.gameover.some((btn) => btn && btn.meta && typeof btn.meta.type === 'string' && btn.meta.type.startsWith('life-'));
+      if (containsLifeButtons) uiButtons.gameover = [];
+    }
+    if (uiButtons && Array.isArray(uiButtons.gameover) && uiButtons.gameover.length === 0) {
+      buildGameOverButtons();
+    }
   }
 
   // Check button clicks
   if (UI.clicked && State.current === 'gameover') {
-    if (!outOfLives && uiButtons && Array.isArray(uiButtons.gameover)) {
+    let handled = false;
+    if (uiButtons && Array.isArray(uiButtons.gameover)) {
       for (const button of uiButtons.gameover) {
         if (button.isClicked(UI.mx, UI.my)) {
           button.onClick();
-          UI.reset();
-          Input.down = false; Input.justPressed = false;
-          return;
+          handled = true;
+          break;
         }
       }
     }
-
-    // If no button clicked, restart game
     UI.reset();
     Input.down = false; Input.justPressed = false;
-    if (outOfLives) {
-      triggerLifeAd(false);
-    } else {
+    if (handled) return;
+    if (!outOfLives) {
       resetRun();
     }
     return;
@@ -3491,9 +3487,7 @@ function updateGameOver(dt) {
   if (UI.keyPressed === 'Space' || UI.keyPressed === 'Escape') {
     UI.reset();
     Input.down = false; Input.justPressed = false;
-    if (outOfLives) {
-      triggerLifeAd(false);
-    } else {
+    if (!outOfLives) {
       resetRun();
     }
   }
@@ -3614,7 +3608,7 @@ function renderGameOver(g) {
         gameOverMenuButtons.forEach((button) => drawUIButtonRect(g, button));
         const messageAnchor = gameOverMenuButtons[gameOverMenuButtons.length - 1];
         if (gameOverMenuMessage && messageAnchor) {
-          const msgY = messageAnchor.y + messageAnchor.h + 8;
+          const msgY = messageAnchor.y + messageAnchor.h + 18;
           drawCenteredText(g, gameOverMenuMessage, msgY, 9, '#ffb347');
         }
       }
@@ -3631,11 +3625,11 @@ function renderGameOver(g) {
   }
 
   if (platformSupportsLives) {
-    const panelY = adjust(CONFIG.height * 0.66);
+    const panelY = adjust(CONFIG.height * 0.7);
     if (outOfLives) {
       const panelMargin = 20;
       const panelW = CONFIG.width - panelMargin * 2;
-      const panelH = 120;
+      const panelH = 90;
       const panelX = panelMargin;
       const panelTop = panelY - panelH / 2;
       g.fillStyle = 'rgba(21, 32, 54, 0.92)';
@@ -3644,29 +3638,43 @@ function renderGameOver(g) {
       g.fillRect(panelX, panelTop, panelW, panelH);
       g.strokeRect(panelX, panelTop, panelW, panelH);
 
-      const headline = lifeAdStatus === 'loading'
+      const hasPopupMessage = gameOverMenuMessage && gameOverMenuMessageTimer > 0;
+      let headline = lifeAdStatus === 'loading'
         ? t('ads.lifeLoading')
         : (lifeAdMessage || t('ads.lifePrompt'));
-      g.fillStyle = lifeAdStatus === 'loading' ? '#b4c0d9' : '#ffb347';
+      if (hasPopupMessage) headline = gameOverMenuMessage;
+      g.fillStyle = lifeAdStatus === 'loading' ? '#b4c0d9' : (hasPopupMessage ? '#ffe6b3' : '#ffb347');
       g.textAlign = 'center';
       g.textBaseline = 'middle';
       g.font = `12px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-      g.fillText(headline, panelX + panelW / 2, panelTop + 36);
+      g.fillText(headline, panelX + panelW / 2, panelTop + 46);
 
       let detail = '';
       let detailColor = '#b4c0d9';
-      if (lifeAdStatus === 'loading') {
-        detail = '';
-      } else if (lifeAdStatus === 'limit' && !lifeAdMessage) {
+      if (lifeAdStatus === 'limit' && !lifeAdMessage) {
         detail = t('ads.lifeLimit', { limit: DAILY_INTERSTITIAL_LIMIT });
         detailColor = '#ff8888';
-      } else if (!lifeAdMessage) {
-        detail = t('ads.lifeTapToWatch');
       }
       if (detail) {
         g.fillStyle = detailColor;
         g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
         g.fillText(detail, panelX + panelW / 2, panelTop + 72);
+      }
+      if (uiButtons.gameover && uiButtons.gameover.length) {
+        uiButtons.gameover.forEach((button) => {
+          if (!button) return;
+          const metaType = button.meta && button.meta.type;
+          if (metaType === 'life-ad-watch') {
+            const disabled = Boolean(button.disabled);
+            drawUIButtonRect(g, button, {
+              fill: disabled ? '#2a1d3b' : '#38264d',
+              stroke: '#ffb347',
+              textColor: disabled ? '#8f96ad' : '#ffe6b3',
+            });
+          } else if (metaType === 'life-main') {
+            drawUIButtonRect(g, button);
+          }
+        });
       }
     } else if (lifeAdStatus === 'loading') {
       drawCenteredText(g, t('ads.lifeLoading'), panelY, 10, '#b4c0d9');

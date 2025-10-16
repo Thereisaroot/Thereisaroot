@@ -212,6 +212,8 @@ function tick(now) {
       }
     }
 
+    if (typeof updateBridgeView === 'function') updateBridgeView(dt);
+
     if (!popupActive) {
       if (State.current === 'intro') updateIntro(dt);
       else if (State.current === 'run') updateRun(dt);

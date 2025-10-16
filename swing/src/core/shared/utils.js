@@ -21,7 +21,52 @@ const DAILY_AD_REWARD_KEYS = {
   cash20: 'cash20',
 };
 
+const AD_REWARD_COOLDOWNS = {
+  cash20: 30 * 60 * 1000, // 30 minutes
+};
+
+const TOSS_AD_REWARD_COUNT_KEY = 'webswing_toss_rewarded_count_v1';
+
 let dailyStateCache = null;
+let tossAdRewardCountCache = null;
+
+function loadTossAdRewardCount() {
+  if (Number.isFinite(tossAdRewardCountCache)) {
+    return tossAdRewardCountCache;
+  }
+  let value = 0;
+  try {
+    const raw = localStorage.getItem(TOSS_AD_REWARD_COUNT_KEY);
+    if (raw !== null && raw !== undefined) {
+      const parsed = Number(raw);
+      if (Number.isFinite(parsed)) value = parsed;
+      else {
+        const parsedInt = parseInt(raw, 10);
+        if (Number.isFinite(parsedInt)) value = parsedInt;
+      }
+    }
+  } catch (_) {
+    value = 0;
+  }
+  tossAdRewardCountCache = Math.max(0, Math.floor(value));
+  return tossAdRewardCountCache;
+}
+
+function setTossAdRewardCount(nextValue) {
+  const normalized = Math.max(0, Math.floor(Number(nextValue) || 0));
+  tossAdRewardCountCache = normalized;
+  try { localStorage.setItem(TOSS_AD_REWARD_COUNT_KEY, String(normalized)); } catch (_) {}
+  return tossAdRewardCountCache;
+}
+
+function getTossAdRewardCount() {
+  return loadTossAdRewardCount();
+}
+
+function incrementTossAdRewardCount() {
+  const current = loadTossAdRewardCount();
+  return setTossAdRewardCount(current + 1);
+}
 
 const TUNING_DEFAULTS = {
   jumpImpulse: 541,
@@ -86,6 +131,7 @@ function defaultDailyState(dateStamp = currentUtcDateStamp()) {
     lives: DAILY_BASE_LIVES,
     interstitialViews: 0,
     rewards,
+    rewardTimes: {},
   };
 }
 
@@ -116,6 +162,12 @@ function loadDailyState() {
   const rewards = {};
   const storedRewards = (parsed.rewards && typeof parsed.rewards === 'object') ? parsed.rewards : {};
   for (const key of Object.values(DAILY_AD_REWARD_KEYS)) rewards[key] = Boolean(storedRewards[key]);
+  const storedRewardTimes = (parsed.rewardTimes && typeof parsed.rewardTimes === 'object') ? parsed.rewardTimes : {};
+  const rewardTimes = {};
+  for (const key of Object.values(DAILY_AD_REWARD_KEYS)) {
+    const value = storedRewardTimes[key];
+    rewardTimes[key] = Number.isFinite(value) ? Number(value) : 0;
+  }
   const storedDate = (typeof parsed.date === 'string') ? parsed.date : today;
   if (storedDate !== today) {
     dailyStateCache = defaultDailyState(today);
@@ -130,6 +182,7 @@ function loadDailyState() {
     lives,
     interstitialViews,
     rewards,
+    rewardTimes,
   };
   return dailyStateCache;
 }
@@ -194,8 +247,16 @@ function markDailyRewardClaimed(key) {
   if (!key) return;
   const normKey = DAILY_AD_REWARD_KEYS[key] || key;
   const state = ensureDailyState();
-  if (!state.rewards) state.rewards = {};
-  state.rewards[normKey] = true;
+  if (!state.rewardTimes) state.rewardTimes = {};
+  if (AD_REWARD_COOLDOWNS[normKey]) {
+    state.rewardTimes[normKey] = Date.now();
+    if (state.rewards && state.rewards[normKey]) {
+      state.rewards[normKey] = false;
+    }
+  } else {
+    if (!state.rewards) state.rewards = {};
+    state.rewards[normKey] = true;
+  }
   saveDailyState();
 }
 
@@ -203,6 +264,14 @@ function isDailyRewardClaimed(key) {
   if (!key) return false;
   const normKey = DAILY_AD_REWARD_KEYS[key] || key;
   const state = ensureDailyState();
+  const cooldown = AD_REWARD_COOLDOWNS[normKey];
+  if (cooldown) {
+    const ts = state.rewardTimes && Number.isFinite(state.rewardTimes[normKey])
+      ? Number(state.rewardTimes[normKey])
+      : 0;
+    if (!ts) return false;
+    return Date.now() - ts < cooldown;
+  }
   return Boolean(state.rewards && state.rewards[normKey]);
 }
 
@@ -524,10 +593,10 @@ function setupDebugUI(tuning, applyTuningCallback, saveTuningCallback) {
     debugOptions.forceHiddenSkills = Boolean(debugOptions.forceHiddenSkills);
   }
 
-  function translateDebug(key) {
+  function translateDebug(key, params) {
     if (!i18nApi || typeof i18nApi.t !== 'function') return key;
     try {
-      return i18nApi.t(key);
+      return i18nApi.t(key, params);
     } catch (_) {
       return key;
     }
@@ -549,6 +618,29 @@ function setupDebugUI(tuning, applyTuningCallback, saveTuningCallback) {
     if (i18nApi && typeof i18nApi.onChange === 'function' && hiddenToggleBtn.dataset.i18nWatcher !== '1') {
       hiddenToggleBtn.dataset.i18nWatcher = '1';
       i18nApi.onChange(() => updateHiddenToggle());
+    }
+  }
+
+  const tossRewardBtn = get('dbg-toss-reward');
+  if (tossRewardBtn) {
+    const updateTossRewardDisplay = () => {
+      const count = (typeof getTossAdRewardCount === 'function') ? getTossAdRewardCount() : 0;
+      tossRewardBtn.textContent = translateDebug('debug.tossRewardButton', { count });
+    };
+    tossRewardBtn.addEventListener('click', () => {
+      if (typeof incrementTossAdRewardCount === 'function') {
+        incrementTossAdRewardCount();
+        updateTossRewardDisplay();
+        if (typeof buildShopCards === 'function') {
+          try {
+            buildShopCards();
+          } catch (_) {}
+        }
+      }
+    });
+    updateTossRewardDisplay();
+    if (i18nApi && typeof i18nApi.onChange === 'function') {
+      i18nApi.onChange(() => updateTossRewardDisplay());
     }
   }
 

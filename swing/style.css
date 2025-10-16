@@ -23,6 +23,55 @@ body {
   font-family: 'GameFont', 'Press Start 2P', 'Dalmoori', system-ui, -apple-system, sans-serif;
   display: grid;
   place-items: center;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.icon-wallpaper {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.icon-wallpaper__item {
+  position: absolute;
+  left: var(--icon-left);
+  top: var(--icon-top);
+  width: var(--icon-size);
+  transform: translate(-50%, -50%) rotate(var(--icon-rotate)) scale(var(--icon-scale-x), var(--icon-scale-y));
+  transform-origin: center;
+  opacity: var(--icon-opacity);
+  filter: drop-shadow(0 0 12px rgba(0, 0, 0, 0.25));
+  transition: opacity 0.6s ease, transform 0.6s ease;
+}
+
+.icon-wallpaper__item:nth-child(odd) {
+  animation: wallpaperFloat 18s ease-in-out infinite;
+}
+
+.icon-wallpaper__item:nth-child(even) {
+  animation: wallpaperFloatAlt 22s ease-in-out infinite;
+}
+
+@keyframes wallpaperFloat {
+  0%, 100% {
+    transform: translate(-50%, -50%) rotate(var(--icon-rotate)) scale(var(--icon-scale-x), var(--icon-scale-y));
+  }
+  50% {
+    transform: translate(calc(-50% + 8px), calc(-50% + 6px)) rotate(var(--icon-rotate)) scale(var(--icon-scale-x), var(--icon-scale-y));
+  }
+}
+
+@keyframes wallpaperFloatAlt {
+  0%, 100% {
+    transform: translate(-50%, -50%) rotate(var(--icon-rotate)) scale(var(--icon-scale-x), var(--icon-scale-y));
+  }
+  50% {
+    transform: translate(calc(-50% - 6px), calc(-50% - 10px)) rotate(var(--icon-rotate)) scale(var(--icon-scale-x), var(--icon-scale-y));
+  }
 }
 
 #debug-panel {
@@ -96,4 +145,6 @@ body {
   image-rendering: crisp-edges;
   box-shadow: 0 8px 24px rgba(0,0,0,0.4);
   border-radius: 8px;
+  position: relative;
+  z-index: 1;
 }

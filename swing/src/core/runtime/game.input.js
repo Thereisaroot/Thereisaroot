@@ -92,6 +92,8 @@ window.addEventListener('keydown', (e) => {
   }
 });
 window.addEventListener('keydown', (e) => {
+  const disableToggle = typeof window !== 'undefined' && window.DISABLE_DEBUG_TOGGLE;
+  if (disableToggle) return;
   if (e.code === 'KeyV') {
     DEBUG = !DEBUG;
     const el = document.getElementById('debug-panel');
@@ -256,6 +258,5 @@ window.addEventListener('touchmove', (e) => {
     }
   }
 }, { passive: false });
-
 
 

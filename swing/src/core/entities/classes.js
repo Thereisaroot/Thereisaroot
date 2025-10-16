@@ -558,7 +558,13 @@ class ShopCard {
       if (!key) return;
       const state = (typeof getAdRewardState === 'function') ? getAdRewardState(key) : null;
       const claimed = (typeof isDailyRewardClaimed === 'function') ? isDailyRewardClaimed(key) : false;
-      const alreadyOwned = key === 'wizard' && shopInv.characters && shopInv.characters.includes('wizard');
+      const alreadyOwned = (key === 'wizard' && shopInv.characters && shopInv.characters.includes('wizard'))
+        || (key === 'startSkill' && shopInv.startSkill);
+      const requiredCount = Number(this.item && this.item.requiresRewardCount) || 0;
+      const rewardCount = (typeof getTossAdRewardCount === 'function') ? getTossAdRewardCount() : 0;
+      if (requiredCount > 0 && rewardCount < requiredCount) {
+        return;
+      }
       if (alreadyOwned || claimed) return;
       if (state && state.status === 'loading') return;
       if (typeof startRewardAd === 'function') startRewardAd(key);

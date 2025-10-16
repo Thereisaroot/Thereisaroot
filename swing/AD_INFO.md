@@ -6,7 +6,9 @@
 - `AD_REWARD_ITEMS`(`src/core/runtime/game.logic.js:74`)
   - `wizard`: 캐릭터 해제형 보상.
   - `cash20`: 통화 20달러 즉시 지급형 보상.
-- `DAILY_AD_REWARD_KEYS`(`src/core/shared/utils.js:13`)에도 동일 키(`wizard`, `cash20`)가 등록되어 하루 1회 제한을 개별 추적합니다.
+- Toss 광고 상점은 기본 상품 목록(`TOSS_AD_REWARD_BASE`, `src/core/runtime/game.logic.js:324`)에 더해 `startSkill` 카드(`src/core/runtime/game.logic.js:336`)를 포함한다. `startSkill`은 Toss 보상형 광고를 총 5회 이상 완료해야 버튼이 활성화된다.
+- `DAILY_AD_REWARD_KEYS`(`src/core/shared/utils.js:13`)에도 동일 키(`wizard`, `cash20`)가 등록되어 있으며, `wizard`는 하루 1회, `cash20`은 30분 쿨다운으로 각각 사용 제한을 추적합니다.
+- Toss 광고 상점에서 보상을 완주한 횟수는 `webswing_toss_rewarded_count_v1`(`getTossAdRewardCount`)에 누적 저장되며, `startSkill` 등 차후 전용 상품의 잠금 해제 조건으로 활용됩니다.
 
 ## 2. UI → 광고 호출 흐름
 1. 상점에서 광고 카드 클릭 시 `ShopCard.onClick()`(`src/core/entities/classes.js:533`)가 실행됩니다.
@@ -26,8 +28,8 @@
   3. 상태/메시지를 완료(`state.status = 'done'`, `state.message` 설정).
 - `res.rewarded`가 거짓인 경우(광고를 중간에 닫거나 실패)에는
   - 보상 지급 로직이 실행되지 않고,
-  - 상태를 `error`, 메시지를 `adsShop.adNotCompleted`로 설정한 뒤 즉시 반환합니다.
-- 광고 자체가 실패하거나 예외가 발생하면 `catch` 블록에서 `ads.lifeError` 메시지로 실패 상태를 표기할 뿐, 보상 로직은 호출되지 않습니다.
+  - `adsShop.failShort` 토스트 메시지를 2초간 노출하며 상태를 초기화합니다.
+- 광고 자체가 실패하거나 예외가 발생해도 동일하게 `adsShop.failShort` 토스트로 안내하고 보상 로직은 호출되지 않습니다.
 - 보상형 광고는 `window.WEBSWING_AD_UNITS`(또는 플랫폼별 `WEBSWING_AD_UNITS_BY_PLATFORM`)에 지정된 광고 단위를 사용합니다. 키 값은 `wizard` / `cash20`와 동일합니다. 지정하지 않으면 Android는 Manifest `admob_rewarded_unit_id` 메타데이터를 사용합니다.
 
 ## 4. UI 피드백
@@ -45,4 +47,4 @@
 ## 6. 정리
 - 광고 보상은 **콜백에서 `res.rewarded`가 참일 때만** 지급됩니다.
 - 중간 취소, 닫기, 실패 상황에서는 보상 함수(`applyAdReward`/`markDailyRewardClaimed`)가 호출되지 않으므로 리워드가 지급되지 않습니다.
-- 일일 보상 추적(`DAILY_AD_REWARD_KEYS`)과 상태 메시지 표기를 통해 사용자에게 현재 상태를 명확히 안내합니다.
+- 일일/쿨다운 보상 추적(`DAILY_AD_REWARD_KEYS`)과 상태 메시지 표기를 통해 사용자에게 현재 상태를 명확히 안내합니다.

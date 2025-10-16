@@ -25,6 +25,8 @@
         <img src="./assets/etc/intro.png" alt="" style="--bridge-aspect:0.66796875;" data-bootstrap-aspect="0.66796875" />
       </div>
     </div>
+    <script src="./src/env.overrides.js"></script>
+    <script src="./src/ui/icon-wallpaper.js"></script>
     <div id="debug-panel" hidden>
       <div class="row">
         <strong data-i18n="debug.title">Debug</strong>
@@ -55,6 +57,7 @@
         <label><span data-i18n="debug.savings">Savings ($)</span> <input type="range" id="dbg-savings" min="0" max="10000" step="10"></label>
         <label><span data-i18n="debug.exp">EXP</span> <input type="range" id="dbg-exp" min="0" max="10000" step="10"></label>
         <label><span data-i18n="debug.hiddenToggleLabel">Hidden Skill Override</span> <button type="button" id="dbg-hidden-toggle" data-state="off">OFF</button></label>
+        <label><span data-i18n="debug.tossReward">Toss Ad Rewards</span> <button type="button" id="dbg-toss-reward">+1</button></label>
       </div>
     </div>
     <ins id="kakao-ad-slot" class="kakao_ad_area" style="display:none;"
@@ -63,16 +66,32 @@
       data-ad-height="100"></ins>
     <script>
       (function(){
+        function detectTossPlatform() {
+          if (typeof window === 'undefined') return false;
+          try {
+            if (typeof window.isTossPlatform === 'function' && window.isTossPlatform()) {
+              return true;
+            }
+          } catch (_) {}
+          var ua = (window.navigator && typeof window.navigator.userAgent === 'string')
+            ? window.navigator.userAgent
+            : '';
+          return /AppsInToss|TossApp|InToss/i.test(ua) || Boolean(window.__appsInToss) || Boolean(window.__granite);
+        }
+
         var Cap = (typeof window !== 'undefined' && window.Capacitor) ? window.Capacitor : {};
         var platform = typeof Cap.getPlatform === 'function' ? Cap.getPlatform() : Cap.platform;
         var isNativeApp = platform && platform !== 'web';
-        if (isNativeApp) {
+        var isToss = detectTossPlatform();
+
+        if (isNativeApp || isToss) {
           var slot = document.getElementById('kakao-ad-slot');
           if (slot && slot.parentNode) {
             slot.parentNode.removeChild(slot);
           }
           return;
         }
+
         var script = document.createElement('script');
         script.src = '//t1.daumcdn.net/kas/static/ba.min.js';
         script.async = true;
