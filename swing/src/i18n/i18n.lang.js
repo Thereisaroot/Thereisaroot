@@ -34,7 +34,7 @@
       savings: 'Savings ($)',
       exp: 'EXP',
       hiddenToggleLabel: 'Hidden Skill Override',
-      hiddenToggleOn: 'ON',
+      hiddenToggleOn: 'ON', 
       hiddenToggleOff: 'OFF',
       tossReward: 'Toss Ad Rewards',
       tossRewardButton: '+1 (now: {count})',
