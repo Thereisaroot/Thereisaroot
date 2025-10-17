@@ -317,8 +317,37 @@ let lifeSpentThisRun = false;
 const REWARDED_AD_UNITS = (typeof window !== 'undefined' && window.WEBSWING_AD_UNITS) || {};
 
 const AD_REWARD_ITEMS = [
-  { key: 'wizard', type: 'character', amount: 0, placement: 'wizard', adUnitId: REWARDED_AD_UNITS.wizard || null },
-  { key: 'cash20', type: 'currency', amount: 20, placement: 'cash20', adUnitId: REWARDED_AD_UNITS.cash20 || null },
+  {
+    key: 'wizard',
+    type: 'character',
+    amount: 0,
+    placement: 'wizard',
+    adUnitId: REWARDED_AD_UNITS.wizard || null,
+    titleKey: 'adsShop.wizardTitle',
+    descKey: 'adsShop.wizardDesc',
+    successMessageKey: 'adsShop.wizardUnlocked',
+  },
+  {
+    key: 'cash20',
+    type: 'currency',
+    amount: 20,
+    placement: 'cash20',
+    adUnitId: REWARDED_AD_UNITS.cash20 || null,
+    titleKey: 'adsShop.cashTitle',
+    descKey: 'adsShop.cashDesc',
+    successMessageKey: 'adsShop.cashGranted',
+  },
+  {
+    key: 'startSkill',
+    type: 'skill',
+    amount: 0,
+    placement: 'startSkill',
+    adUnitId: REWARDED_AD_UNITS.wizard || null,
+    titleKey: 'adsShop.startSkillTitle',
+    descKey: 'adsShop.startSkillDesc',
+    successMessageKey: 'adsShop.startSkillLearned',
+    requiresRewardCount: 5,
+  },
 ];
 
 const TOSS_DEFAULT_AD_UNITS = {
@@ -415,6 +444,7 @@ let introMenuButtons = [];
 let gameOverMenuButtons = [];
 let bossOutcomeBanner = null;
 let bossOutcomeTimer = 0;
+let gameOverLevelUpRewardText = null;
 
 function showMenuMessage(context, message) {
   if (!message) return;
@@ -982,18 +1012,7 @@ function startRewardAd(key) {
     return;
   }
 
-  const useTossFlow = IS_TOSS_PLATFORM && !IS_NATIVE_APP;
-  const tossAdUnitId = useTossFlow ? (item.adUnitId || resolveTossAdUnitId(item.adUnitKey || item.key)) : null;
-  if (useTossFlow && !tossAdUnitId) {
-    state.status = 'error';
-    state.message = t('ads.lifeUnavailable');
-    uiButtons.shop.cards = [];
-    uiButtons.shop.buttons = [];
-    if (typeof buildShopCards === 'function') buildShopCards();
-    return;
-  }
-
-  if (useTossFlow) {
+  {
     const requiredCount = Number(item.requiresRewardCount) || 0;
     if (requiredCount > 0) {
       const currentCount = (typeof getTossAdRewardCount === 'function') ? getTossAdRewardCount() : 0;
@@ -1003,6 +1022,17 @@ function startRewardAd(key) {
         return;
       }
     }
+  }
+
+  const useTossFlow = IS_TOSS_PLATFORM && !IS_NATIVE_APP;
+  const tossAdUnitId = useTossFlow ? (item.adUnitId || resolveTossAdUnitId(item.adUnitKey || item.key)) : null;
+  if (useTossFlow && !tossAdUnitId) {
+    state.status = 'error';
+    state.message = t('ads.lifeUnavailable');
+    uiButtons.shop.cards = [];
+    uiButtons.shop.buttons = [];
+    if (typeof buildShopCards === 'function') buildShopCards();
+    return;
   }
 
   const toastAdFailure = () => {
@@ -1099,9 +1129,21 @@ function startRewardAd(key) {
     applyAdReward(item);
     markDailyRewardClaimed(key);
     state.status = 'done';
-    state.message = item.type === 'character'
-      ? t('adsShop.wizardUnlocked')
-      : t('adsShop.cashGranted', { amount: item.amount });
+    if (typeof incrementTossAdRewardCount === 'function') {
+      incrementTossAdRewardCount();
+    }
+    if (item.successMessageKey) {
+      const messageArgs = item.successMessageKey === 'adsShop.cashGranted'
+        ? { amount: item.amount }
+        : null;
+      state.message = t(item.successMessageKey, messageArgs || undefined);
+    } else if (item.type === 'character') {
+      state.message = t('adsShop.wizardUnlocked');
+    } else if (item.type === 'currency') {
+      state.message = t('adsShop.cashGranted', { amount: item.amount });
+    } else {
+      state.message = t('adsShop.rewardSuccess');
+    }
     uiButtons.shop.cards = [];
     uiButtons.shop.buttons = [];
     if (typeof buildShopCards === 'function') buildShopCards();
@@ -3397,6 +3439,7 @@ function resetRun() {
   lastDemoLoss = false;
   gameOverLevelUp = null;
   levelUpPopupTimer = 0;
+  gameOverLevelUpRewardText = null;
   usedFlyThisRun = false;
   robotReviveUsed = false;
   pirateBonusThisRun = 0;

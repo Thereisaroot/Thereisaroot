@@ -2823,6 +2823,9 @@ function updateRun(dt) {
     // Compute potential level-up BEFORE applying demo resets (based on EXP)
     const prevLevel = getLevelByExp(exp);
     const newLevel = getLevelByExp(exp + earnedExpCore);
+    gameOverLevelUpRewardText = null;
+    let levelRewardCash = 0;
+    let levelRewardLives = 0;
     if (newLevel > prevLevel) {
       gameOverLevelUp = { from: prevLevel, to: newLevel };
       levelUpPopupTimer = 0;
@@ -2830,6 +2833,19 @@ function updateRun(dt) {
       const cx = camera.x + CONFIG.width / 2;
       const cy = CONFIG.height * 0.36;
       spawnEffect('big', cx, cy);
+      levelRewardCash = newLevel * 5;
+      if (IS_AD_PLATFORM && typeof grantDailyLives === 'function' && typeof dailyLivesRemaining === 'function') {
+        const rewardMax = (typeof DAILY_MAX_LIVES === 'number') ? DAILY_MAX_LIVES + 1 : 31;
+        const beforeLives = dailyLivesRemaining();
+        const afterLives = grantDailyLives(10, { max: rewardMax });
+        const cappedBefore = Math.min(beforeLives, rewardMax);
+        const cappedAfter = Math.min(afterLives, rewardMax);
+        levelRewardLives = Math.max(0, cappedAfter - cappedBefore);
+      }
+      if (levelRewardCash > 0 || levelRewardLives > 0) {
+        const rewardKey = levelRewardLives > 0 ? 'gameOver.levelUpRewardBoth' : 'gameOver.levelUpRewardCash';
+        gameOverLevelUpRewardText = t(rewardKey, { cash: levelRewardCash, lives: levelRewardLives, level: newLevel });
+      }
     }
     if (earnedMoneyCore > 0 || earnedExpCore > 0) {
       savings += earnedMoneyCore;
@@ -2840,6 +2856,12 @@ function updateRun(dt) {
         localStorage.setItem(SAVINGS_KEY, String(savings));
         localStorage.setItem(EXP_KEY, String(exp));
       } catch(_){}
+    }
+    if (levelRewardCash > 0) {
+      savings += levelRewardCash;
+      lastEarned += levelRewardCash;
+      if (typeof addToPlayerStat === 'function') addToPlayerStat('totalCashEarned', levelRewardCash);
+      try { localStorage.setItem(SAVINGS_KEY, String(savings)); } catch(_){ }
     }
       tailorCashBonusThisRun = 0;
       skillCashBonusThisRun = 0;
@@ -2935,26 +2957,9 @@ function renderRun(g) {
       g.fillRect(0, 0, CONFIG.width, CONFIG.height);
     }
     if (rouletteGlint) {
-      const colors = ['#ff6ec7', '#ffd966', '#7dd3ff', '#9cff9c'];
-      const segments = 9;
-      const alphaBase = 0.2;
-      const alphaPulse = 0.3;
-      for (let i = 0; i < segments; i++) {
-        const angle = (i / segments) * Math.PI * 2 + time * 3.8;
-        const grad = g.createLinearGradient(
-          CONFIG.width / 2,
-          CONFIG.height / 2,
-          CONFIG.width / 2 + Math.cos(angle) * CONFIG.width,
-          CONFIG.height / 2 + Math.sin(angle) * CONFIG.height
-        );
-        const color = colors[i % colors.length];
-        const alpha = alphaBase + alphaPulse * (Math.sin(time * 12 + i) * 0.5 + 0.5);
-        grad.addColorStop(0, color + '00');
-        grad.addColorStop(0.35, color + '55');
-        grad.addColorStop(1, color + Math.floor(alpha * 255).toString(16).padStart(2, '0'));
-        g.fillStyle = grad;
-        g.fillRect(0, 0, CONFIG.width, CONFIG.height);
-      }
+      const pulse = 0.12 + 0.08 * (Math.sin(time * 5.5) * 0.5 + 0.5);
+      g.fillStyle = `rgba(96, 255, 176, ${pulse.toFixed(3)})`;
+      g.fillRect(0, 0, CONFIG.width, CONFIG.height);
     }
     g.restore();
   }
@@ -3608,6 +3613,14 @@ function renderGameOver(g) {
     g.textBaseline = 'middle';
     g.font = `12px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
     g.fillText(t('gameOver.levelUp', { level: gameOverLevelUp.to }), cx, cy);
+    if (gameOverLevelUpRewardText) {
+      const rewardY = adjust(CONFIG.height * 0.22 + 16);
+      g.fillStyle = '#ffb347';
+      g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+      g.fillText(gameOverLevelUpRewardText, cx, rewardY);
+      g.fillStyle = '#ffffff';
+      g.font = `12px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+    }
   }
   const wait = CONFIG.gameOverWait || 5.0;
   const rem = Math.max(0, wait - gameOverTimer);

@@ -503,7 +503,7 @@ class ShopCard {
     this.h = h;
     this.item = item;
     this.index = index;
-    this.type = type; // 'item' or 'char'
+    this.type = type; // 'item' | 'char' | 'ad'
   }
 
   updateScroll(scrollY) {

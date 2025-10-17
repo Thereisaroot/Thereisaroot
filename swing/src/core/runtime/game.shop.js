@@ -127,10 +127,9 @@ function isItemSoldOut(it) {
 function nextPriceForItem(it) {
   if (it.type !== 'level') return it.price;
   const lvl = getItemLevel(it);
-  // Big: 20$, 30$, 40$... per purchase
-  if (it.id === 'big') return 20 + 10 * lvl;
-  // Glow, Magnet, Combo+, Slow, Lucky, Fever+: flat price per level
-  return it.price;
+  const basePrice = Number(it.price) || 0;
+  const multiplier = Math.pow(2, Math.max(0, lvl));
+  return basePrice * multiplier;
 }
 
 function shopGrid() {
@@ -609,7 +608,7 @@ function renderAdShop(g) {
     const alreadyOwned = (item.key === 'wizard' && shopInv.characters && shopInv.characters.includes('wizard'))
       || (item.key === 'startSkill' && shopInv.startSkill);
     const rewardCountForCard = (typeof getTossAdRewardCount === 'function') ? getTossAdRewardCount() : 0;
-    const lockedByRequirement = isTossMode && item.requiresRewardCount
+    const lockedByRequirement = item.requiresRewardCount
       ? rewardCountForCard < item.requiresRewardCount
       : false;
 

@@ -98,7 +98,7 @@
     },
     springman: {
       price: 3200,
-      minLevel: 28,
+      minLevel: 30,
       pixels: [
         [0,0,2,2,2,2,0,0],
         [0,2,3,3,3,3,2,0],
@@ -113,7 +113,7 @@
     },
     bird: {
       price: 4000,
-      minLevel: 30,
+      minLevel: 35,
       pixels: [
         [0,0,0,2,2,0,0,0],
         [0,0,2,2,2,2,0,0],

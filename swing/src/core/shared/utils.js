@@ -68,6 +68,12 @@ function incrementTossAdRewardCount() {
   return setTossAdRewardCount(current + 1);
 }
 
+function decrementTossAdRewardCount() {
+  const current = loadTossAdRewardCount();
+  const next = Math.max(0, current - 1);
+  return setTossAdRewardCount(next);
+}
+
 const TUNING_DEFAULTS = {
   jumpImpulse: 541,
   jumpSpeed: 91,
@@ -173,8 +179,9 @@ function loadDailyState() {
     dailyStateCache = defaultDailyState(today);
     return dailyStateCache;
   }
+  const livesLimit = DAILY_MAX_LIVES + 1;
   const lives = Number.isFinite(parsed.lives)
-    ? Math.max(0, Math.min(DAILY_MAX_LIVES, Math.floor(parsed.lives)))
+    ? Math.max(0, Math.min(livesLimit, Math.floor(parsed.lives)))
     : DAILY_BASE_LIVES;
   const interstitialViews = Number.isFinite(parsed.interstitialViews) ? Math.max(0, Math.floor(parsed.interstitialViews)) : 0;
   dailyStateCache = {
@@ -214,10 +221,21 @@ function consumeDailyLife() {
   return true;
 }
 
-function grantDailyLives(amount) {
+function grantDailyLives(amount, options = {}) {
   if (!Number.isFinite(amount) || amount <= 0) return ensureDailyState().lives;
   const state = ensureDailyState();
-  state.lives = Math.max(0, Math.min(DAILY_MAX_LIVES, state.lives + Math.floor(amount)));
+  const override = options && Number.isFinite(options.max) ? Math.floor(options.max) : DAILY_MAX_LIVES;
+  let limit = Math.max(0, override);
+  if (limit < state.lives) limit = state.lives;
+  state.lives = Math.max(0, Math.min(limit, state.lives + Math.floor(amount)));
+  saveDailyState();
+  return state.lives;
+}
+
+function setDailyLives(lives) {
+  const state = ensureDailyState();
+  const next = Number.isFinite(lives) ? Math.max(0, Math.min(DAILY_MAX_LIVES, Math.floor(lives))) : state.lives;
+  state.lives = next;
   saveDailyState();
   return state.lives;
 }
@@ -622,25 +640,77 @@ function setupDebugUI(tuning, applyTuningCallback, saveTuningCallback) {
   }
 
   const tossRewardBtn = get('dbg-toss-reward');
-  if (tossRewardBtn) {
+  const tossRewardDecBtn = get('dbg-toss-reward-dec');
+  if (tossRewardBtn || tossRewardDecBtn) {
     const updateTossRewardDisplay = () => {
       const count = (typeof getTossAdRewardCount === 'function') ? getTossAdRewardCount() : 0;
-      tossRewardBtn.textContent = translateDebug('debug.tossRewardButton', { count });
+      if (tossRewardBtn) tossRewardBtn.textContent = translateDebug('debug.tossRewardButton', { count });
+      if (tossRewardDecBtn) tossRewardDecBtn.textContent = translateDebug('debug.tossRewardDecButton', { count });
     };
-    tossRewardBtn.addEventListener('click', () => {
-      if (typeof incrementTossAdRewardCount === 'function') {
-        incrementTossAdRewardCount();
-        updateTossRewardDisplay();
-        if (typeof buildShopCards === 'function') {
-          try {
-            buildShopCards();
-          } catch (_) {}
+    if (tossRewardBtn) {
+      tossRewardBtn.addEventListener('click', () => {
+        if (typeof incrementTossAdRewardCount === 'function') {
+          incrementTossAdRewardCount();
+          updateTossRewardDisplay();
+          if (typeof buildShopCards === 'function') {
+            try {
+              buildShopCards();
+            } catch (_) {}
+          }
         }
-      }
-    });
+      });
+    }
+    if (tossRewardDecBtn) {
+      tossRewardDecBtn.addEventListener('click', () => {
+        if (typeof decrementTossAdRewardCount === 'function') {
+          decrementTossAdRewardCount();
+          updateTossRewardDisplay();
+          if (typeof buildShopCards === 'function') {
+            try {
+              buildShopCards();
+            } catch (_) {}
+          }
+        }
+      });
+    }
     updateTossRewardDisplay();
     if (i18nApi && typeof i18nApi.onChange === 'function') {
       i18nApi.onChange(() => updateTossRewardDisplay());
+    }
+  }
+
+  const livesResetBtn = get('dbg-lives-reset');
+  const livesAddBtn = get('dbg-lives-add');
+  const updateLivesButtons = () => {
+    const lives = (typeof dailyLivesRemaining === 'function') ? dailyLivesRemaining() : null;
+    const params = { lives: lives != null ? lives : '?' };
+    if (livesResetBtn) {
+      livesResetBtn.textContent = translateDebug('debug.livesResetButton', params);
+    }
+    if (livesAddBtn) {
+      livesAddBtn.textContent = translateDebug('debug.livesAddButton', params);
+    }
+  };
+  if (livesResetBtn) {
+    livesResetBtn.addEventListener('click', () => {
+      if (typeof setDailyLives === 'function') {
+        setDailyLives(1);
+      }
+      updateLivesButtons();
+    });
+  }
+  if (livesAddBtn) {
+    livesAddBtn.addEventListener('click', () => {
+      if (typeof grantDailyLives === 'function') {
+        grantDailyLives(10);
+      }
+      updateLivesButtons();
+    });
+  }
+  if (livesResetBtn || livesAddBtn) {
+    updateLivesButtons();
+    if (i18nApi && typeof i18nApi.onChange === 'function') {
+      i18nApi.onChange(() => updateLivesButtons());
     }
   }
 

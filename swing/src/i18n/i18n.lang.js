@@ -38,6 +38,12 @@
       hiddenToggleOff: 'OFF',
       tossReward: 'Toss Ad Rewards',
       tossRewardButton: '+1 (now: {count})',
+      tossRewardMinus: 'Toss Ad Rewards (-1)',
+      tossRewardDecButton: '-1 (now: {count})',
+      livesReset: 'Reset Lives',
+      livesAdd: 'Add Lives',
+      livesResetButton: 'Set to 1 (now: {lives})',
+      livesAddButton: 'Add +10 (now: {lives})',
     },
     intro: {
       title: 'Boing! Boing!',
@@ -272,7 +278,7 @@
       loading: 'Loading...',
       claimedToday: 'Come back in a bit.',
       adNotCompleted: 'Finish the ad to receive the reward.',
-      noFill: 'No ad available right now. Please try again later.',
+      noFill: 'No ad available right now.',
       nativeOnly: 'Ads are only available on supported platforms.',
       alreadyOwned: 'Already unlocked.',
       rewardSuccess: 'Reward unlocked!',
@@ -303,6 +309,8 @@
       levelUp: 'LEVEL UP! LV {level}',
       retryCountdown: 'RETRY IN {seconds}',
       retryReady: 'CLICK TO RETRY',
+      levelUpRewardCash: 'Level-up bonus: +${cash}!',
+      levelUpRewardBoth: 'Level-up bonus: +${cash} and +{lives} lives!',
     },
     shop: {
       charactersTitle: 'CHARACTERS',
@@ -537,13 +545,13 @@
         },
         spider_guard: {
           name: 'Spider Guard',
-          level1: 'Roaming spider spawns trampolines up to +100px higher than before, launching you 50% higher.',
+          level1: 'Roaming spider spawns trampolines',
         level2: 'Trampolines launch higher and linger longer.',
         level3: 'Spawns two webs, covering more ground for safety.',
         },
         frenzy_feather: {
           name: 'Frenzy Feather',
-          level1: 'During fever, gain +$1 every 0.2s (shown above the player) and multiply combo bonuses (score & cash) by 5.',
+          level1: 'During fever, gain +$1 every 0.2s. and multiply combo bonuses.',
         },
         combo_master: {
           name: 'Combo Master',
@@ -596,6 +604,12 @@
       hiddenToggleOff: 'OFF',
       tossReward: '토스 광고 보상',
       tossRewardButton: '+1 (현재 {count}회)',
+      tossRewardMinus: '토스 광고 보상 (-1)',
+      tossRewardDecButton: '-1 (현재 {count}회)',
+      livesReset: '기회 리셋',
+      livesAdd: '기회 +10',
+      livesResetButton: '1로 설정 (현재 {lives})',
+      livesAddButton: '+10 추가 (현재 {lives})',
     },
     intro: {
       title: '짬푸! 짬푸!',
@@ -861,6 +875,8 @@
       levelUp: 'LEVEL UP! LV {level}',
       retryCountdown: '다시 시작까지 {seconds}초',
       retryReady: '아무곳이나 클릭하면 재시작',
+      levelUpRewardCash: '레벨업 보상: +${cash}',
+      levelUpRewardBoth: '레벨업 보상: +${cash}, 기회 +{lives}',
     },
     shop: {
       charactersTitle: '캐릭터',
@@ -996,7 +1012,7 @@
       knight: {
         name: '나이트',
         summary: '점수/수익 2배\n공중 점프 -1',
-        help: '점수와 수익이 두 배가 되지만 공중 점프가 1회 감소합니다.',
+        help: '점수와 수익이 두 배가 되지만 \n공중 점프가 1회 감소합니다.',
       },
       tailor: {
         name: '테일러',
@@ -1095,13 +1111,13 @@
         },
         spider_guard: {
           name: '스파이더 가드',
-          level1: '지면을 순찰하며 현재 위치부터 최대 +100px 높이로 거미줄 트램폴린 생성, 점프력이 50% 강화.',
+          level1: '거미줄 트램폴린 생성',
         level2: '트램폴린 높이·지속 증가.',
         level3: '트램폴린을 2개까지 생성해 더 넓은 범위 보호.',
         },
         frenzy_feather: {
           name: '프렌지 페더',
-          level1: '피버 중 0.2초마다 +$1 획득(캐릭터 위 표시)·콤보 보너스(점수/돈) 5배.',
+          level1: '피버 중 0.2초마다 +$1 획득. 콤보 보너스 5배.',
         },
         combo_master: {
           name: '콤보 마스터',
