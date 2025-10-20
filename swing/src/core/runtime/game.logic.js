@@ -61,6 +61,173 @@ if (typeof window !== 'undefined') {
   window.IS_NATIVE_APP = IS_NATIVE_APP;
 }
 
+function randomGraniteEventId() {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function normalizeGraniteError(payload, fallbackMessage) {
+  if (payload instanceof Error) return payload;
+  if (payload && typeof payload === 'object') {
+    const err = new Error(typeof payload.message === 'string' ? payload.message : fallbackMessage);
+    for (const [key, value] of Object.entries(payload)) {
+      try {
+        err[key] = value;
+      } catch (_) {}
+    }
+    return err;
+  }
+  if (payload == null) return new Error(fallbackMessage);
+  return new Error(typeof payload === 'string' ? payload : fallbackMessage);
+}
+
+function hasTossNativeChannel(functionName) {
+  if (typeof window === 'undefined') return false;
+  const w = window;
+  if (functionName && typeof functionName === 'string') {
+    if (typeof w[functionName] === 'function') return true;
+    if (w.__granite && typeof w.__granite[functionName] === 'function') return true;
+    if (w.__granite && typeof w.__granite.executeNativeApi === 'function') return true;
+    if (w.__granite && w.__granite.bridge && typeof w.__granite.bridge[functionName] === 'function') return true;
+    if (w.__granite && w.__granite.bridge && typeof w.__granite.bridge.executeNativeApi === 'function') return true;
+    if (w.__appsInToss && typeof w.__appsInToss[functionName] === 'function') return true;
+    if (w.__appsInToss && typeof w.__appsInToss.executeNativeApi === 'function') return true;
+    if (w.__appsInToss && w.__appsInToss.bridge && typeof w.__appsInToss.bridge[functionName] === 'function') return true;
+    if (w.__appsInToss && w.__appsInToss.bridge && typeof w.__appsInToss.bridge.executeNativeApi === 'function') return true;
+  }
+  return Boolean(
+    typeof w.ReactNativeWebView === 'object' &&
+    typeof w.ReactNativeWebView.postMessage === 'function' &&
+    w.__GRANITE_NATIVE_EMITTER &&
+    typeof w.__GRANITE_NATIVE_EMITTER.on === 'function'
+  );
+}
+
+function callGraniteViaPostMessage(functionName, argsArray) {
+  if (typeof window === 'undefined') return Promise.resolve(undefined);
+  const w = window;
+  const emitter = w.__GRANITE_NATIVE_EMITTER;
+  const rnwv = w.ReactNativeWebView;
+  if (!emitter || typeof emitter.on !== 'function' || !rnwv || typeof rnwv.postMessage !== 'function') {
+    return Promise.resolve(undefined);
+  }
+  const eventId = randomGraniteEventId();
+  return new Promise((resolve, reject) => {
+    const subscriptions = [];
+    const cleanup = () => {
+      while (subscriptions.length) {
+        const off = subscriptions.pop();
+        if (typeof off === 'function') {
+          try { off(); } catch (_) {}
+        }
+      }
+    };
+    const safeResolve = (value) => { cleanup(); resolve(value); };
+    const safeReject = (payload) => {
+      cleanup();
+      reject(normalizeGraniteError(payload, `${functionName} failed`));
+    };
+    try {
+      subscriptions.push(emitter.on(`${functionName}/resolve/${eventId}`, safeResolve));
+      subscriptions.push(emitter.on(`${functionName}/reject/${eventId}`, safeReject));
+      rnwv.postMessage(JSON.stringify({
+        type: 'method',
+        functionName,
+        eventId,
+        args: argsArray,
+      }));
+    } catch (error) {
+      cleanup();
+      reject(error instanceof Error ? error : new Error(`${functionName} call failed`));
+    }
+  });
+}
+
+function callTossApi(functionName, param) {
+  if (typeof window === 'undefined') return Promise.resolve(undefined);
+  const w = window;
+  const argsArray = Array.isArray(param) ? param : (typeof param === 'undefined' ? [] : [param]);
+  let lastError = null;
+
+  const directGetters = [
+    () => (typeof w[functionName] === 'function' ? w[functionName].bind(w) : null),
+    () => (w.__granite && typeof w.__granite[functionName] === 'function' ? w.__granite[functionName].bind(w.__granite) : null),
+    () => (w.__granite && w.__granite.bridge && typeof w.__granite.bridge[functionName] === 'function' ? w.__granite.bridge[functionName].bind(w.__granite.bridge) : null),
+    () => (w.__appsInToss && typeof w.__appsInToss[functionName] === 'function' ? w.__appsInToss[functionName].bind(w.__appsInToss) : null),
+    () => (w.__appsInToss && w.__appsInToss.bridge && typeof w.__appsInToss.bridge[functionName] === 'function' ? w.__appsInToss.bridge[functionName].bind(w.__appsInToss.bridge) : null),
+  ];
+  for (const getter of directGetters) {
+    const fn = getter();
+    if (!fn) continue;
+    try {
+      const result = fn(param);
+      return Promise.resolve(result);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  const execGetters = [
+    () => (w.__appsInToss && typeof w.__appsInToss.executeNativeApi === 'function'
+      ? (payload) => w.__appsInToss.executeNativeApi(functionName, payload)
+      : null),
+    () => (w.__appsInToss && w.__appsInToss.bridge && typeof w.__appsInToss.bridge.executeNativeApi === 'function'
+      ? (payload) => w.__appsInToss.bridge.executeNativeApi(functionName, payload)
+      : null),
+    () => (w.__granite && typeof w.__granite.executeNativeApi === 'function'
+      ? (payload) => w.__granite.executeNativeApi(functionName, payload)
+      : null),
+  ];
+  for (const getter of execGetters) {
+    const execFn = getter();
+    if (!execFn) continue;
+    try {
+      const result = execFn(param);
+      return Promise.resolve(result);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  if (hasTossNativeChannel(functionName)) {
+    return callGraniteViaPostMessage(functionName, argsArray);
+  }
+
+  if (lastError) return Promise.reject(lastError);
+  return Promise.resolve(undefined);
+}
+
+const TOSS_LEADERBOARD_MIN_LEVEL = 2;
+let tossLeaderboardSubmitSuppressed = false;
+
+function submitTossLeaderboardScore(scoreValue) {
+  if (!IS_TOSS_PLATFORM || IS_NATIVE_APP || tossLeaderboardSubmitSuppressed) return;
+  if (!hasTossNativeChannel('submitGameCenterLeaderBoardScore')) return;
+  const numericScore = Number(scoreValue);
+  if (!Number.isFinite(numericScore) || numericScore <= 0) return;
+  const normalizedScore = Math.max(0, Math.floor(numericScore));
+  const payload = { score: String(normalizedScore) };
+  callTossApi('submitGameCenterLeaderBoardScore', payload)
+    .then((result) => {
+      if (!result || typeof result !== 'object') return;
+      const status = result.statusCode;
+      if (typeof status === 'string' && status.length && status !== 'SUCCESS') {
+        console.warn('[GameCenter] submitGameCenterLeaderBoardScore returned status:', status);
+      }
+    })
+    .catch((error) => {
+      tossLeaderboardSubmitSuppressed = true;
+      console.warn('[GameCenter] submitGameCenterLeaderBoardScore failed', error);
+    });
+}
+
+function openTossGameCenterLeaderboard() {
+  if (!IS_TOSS_PLATFORM || IS_NATIVE_APP) return Promise.resolve(undefined);
+  if (!hasTossNativeChannel('openGameCenterLeaderboard')) {
+    return Promise.reject(new Error('openGameCenterLeaderboard unavailable'));
+  }
+  return callTossApi('openGameCenterLeaderboard');
+}
+
 let nativeAppInfo = { version: null, build: null, label: null };
 let nativeAppInfoPromise = null;
 let nativeAppInfoExhausted = false;
@@ -1462,6 +1629,7 @@ function buildGameOverButtons() {
   uiButtons.gameover = [];
   gameOverMenuButtons = [];
   const lvl = getLevelByExp(exp);
+  const isTossRuntime = IS_TOSS_PLATFORM && !IS_NATIVE_APP;
   const requiredLevel = 2;
   const menuWidth = 180;
   const menuHeight = 40;
@@ -1500,7 +1668,7 @@ function buildGameOverButtons() {
       requiredLevel,
     });
   }
-  if (IS_TOSS_PLATFORM && !IS_NATIVE_APP && !demoActive) {
+  if (isTossRuntime && !demoActive) {
     menuSpecs.push({
       key: 'tossAds',
       label: 'common.tossAds',
@@ -1538,19 +1706,52 @@ function buildGameOverButtons() {
     });
   }
 
-  if (lvl >= 15) {
-    const fw = 200;
-    const fh = 32;
-    const fx = Math.floor((CONFIG.width - fw) / 2);
-    const baseFy = (gameOverMenuButtons.length > 0)
+  const baseButtonWidth = 200;
+  const baseButtonHeight = 32;
+  const baseButtonX = Math.floor((CONFIG.width - baseButtonWidth) / 2);
+  const baseButtonY = (() => {
+    const anchor = (gameOverMenuButtons.length > 0)
       ? gameOverMenuButtons[gameOverMenuButtons.length - 1].y + menuHeight + 28
       : Math.floor(CONFIG.height * 0.82);
-    const fy = baseFy + 35;
-    const fastButton = new UIButton(fx, fy, fw, fh, () => t('game.fastToggle', { state: commonText(fastModeEnabled ? 'on' : 'off') }), () => {
-      fastModeEnabled = !fastModeEnabled;
-      localStorage.setItem('webswing_fastmode_v1', fastModeEnabled ? '1' : '0');
-      buildGameOverButtons();
-    }, 'gameover', { meta: { type: 'fast-toggle' } });
+    return anchor + 35;
+  })();
+
+  if (isTossRuntime) {
+    const canShowLeaderboard = lvl >= TOSS_LEADERBOARD_MIN_LEVEL && hasTossNativeChannel('openGameCenterLeaderboard');
+    if (canShowLeaderboard) {
+      const leaderboardButton = new UIButton(
+        baseButtonX,
+        baseButtonY,
+        baseButtonWidth,
+        baseButtonHeight,
+        () => t('game.leaderboardButton'),
+        () => {
+          openTossGameCenterLeaderboard()
+            .catch((error) => {
+              console.warn('[GameCenter] open leaderboard failed', error);
+              showMenuMessage('gameover', t('game.leaderboardUnavailable'));
+            });
+        },
+        'gameover',
+        { meta: { type: 'toss-leaderboard' } },
+      );
+      uiButtons.gameover.push(leaderboardButton);
+    }
+  } else if (lvl >= 15) {
+    const fastButton = new UIButton(
+      baseButtonX,
+      baseButtonY,
+      baseButtonWidth,
+      baseButtonHeight,
+      () => t('game.fastToggle', { state: commonText(fastModeEnabled ? 'on' : 'off') }),
+      () => {
+        fastModeEnabled = !fastModeEnabled;
+        localStorage.setItem('webswing_fastmode_v1', fastModeEnabled ? '1' : '0');
+        buildGameOverButtons();
+      },
+      'gameover',
+      { meta: { type: 'fast-toggle' } },
+    );
     uiButtons.gameover.push(fastButton);
   }
 }

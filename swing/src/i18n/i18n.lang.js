@@ -242,6 +242,8 @@
     },
     game: {
       fastToggle: 'FAST MODE: {state}',
+      leaderboardButton: 'VIEW LEADERBOARD',
+      leaderboardUnavailable: 'Leaderboard is unavailable right now.',
       clearMessage: 'GAME CLEAR! Endless barrage unlocked.',
     },
     ads: {
@@ -808,6 +810,8 @@
     },
     game: {
       fastToggle: 'FAST MODE: {state}',
+      leaderboardButton: '리더보드 보기',
+      leaderboardUnavailable: '리더보드를 지금 열 수 없어요.',
       clearMessage: 'GAME CLEAR! 무한 탄막 모드 시작!',
     },
     ads: {

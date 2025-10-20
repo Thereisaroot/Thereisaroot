@@ -16,13 +16,18 @@
       #bridge-overlay { position: fixed; inset: 0; z-index: 9999; display: flex; align-items: center; justify-content: center; background: rgb(0, 192, 219); pointer-events: auto; perspective: 1600px; }
       #bridge-overlay:not(.bridge-visible) { display: none; }
       #bridge-overlay .bridge-overlay-inner { position: relative; display: flex; align-items: center; justify-content: center; transform-style: preserve-3d; transform-origin: center; }
-      #bridge-overlay .bridge-overlay-inner img { width: min(96vw, calc(96vh * var(--bridge-aspect, 1))); aspect-ratio: var(--bridge-aspect, 1); height: auto; object-fit: contain; image-rendering: auto; max-width: none; max-height: none; }
+      #bridge-overlay .bridge-overlay-inner .bridge-overlay-content { position: relative; display: inline-block; line-height: 0; }
+      #bridge-overlay .bridge-overlay-inner .bridge-overlay-base { width: min(96vw, calc(96vh * var(--bridge-aspect, 1))); aspect-ratio: var(--bridge-aspect, 1); height: auto; object-fit: contain; image-rendering: auto; max-width: none; max-height: none; }
+      #bridge-overlay .bridge-overlay-inner .bridge-overlay-badge { position: absolute; top: 50px; right: 0; width: 68px; max-width: 17vw; height: auto; object-fit: contain; image-rendering: auto; pointer-events: none; display: none; }
     </style>
   </head>
   <body>
     <div id="bridge-overlay" class="bridge-visible" aria-hidden="true" data-bootstrap="true">
       <div class="bridge-overlay-inner">
-        <img src="./assets/etc/intro.png" alt="" style="--bridge-aspect:0.66796875;" data-bootstrap-aspect="0.66796875" />
+        <div class="bridge-overlay-content">
+          <img class="bridge-overlay-base" src="./assets/etc/intro.png" alt="" style="--bridge-aspect:0.66796875;" data-bootstrap-aspect="0.66796875" />
+          <img class="bridge-overlay-badge" alt="" />
+        </div>
       </div>
     </div>
     <script src="./src/env.overrides.js"></script>

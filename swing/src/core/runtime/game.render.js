@@ -988,8 +988,9 @@ function ensureBridgeOverlay(img) {
 #bridge-overlay{position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;background:${BRIDGE_VIEW_BACKGROUND_COLOR};perspective:1600px;pointer-events:auto;}
 #bridge-overlay.bridge-visible{display:flex;}
 #bridge-overlay .bridge-overlay-inner{position:relative;display:flex;align-items:center;justify-content:center;transform-style:preserve-3d;transform-origin:center;will-change:transform,opacity;}
-#bridge-overlay .bridge-overlay-inner img{width:min(96vw,calc(96vh * var(--bridge-aspect, 1)));aspect-ratio:var(--bridge-aspect, 1);height:auto;object-fit:contain;backface-visibility:hidden;image-rendering:auto;max-width:none;max-height:none;}
-#bridge-overlay .bridge-overlay-badge{position:absolute;top:200px;right:16px;width:68px;max-width:17vw;height:auto;object-fit:contain;image-rendering:auto;pointer-events:none;display:none;}
+#bridge-overlay .bridge-overlay-inner .bridge-overlay-content{position:relative;display:inline-block;line-height:0;}
+#bridge-overlay .bridge-overlay-inner .bridge-overlay-base{width:min(96vw,calc(96vh * var(--bridge-aspect, 1)));aspect-ratio:var(--bridge-aspect, 1);height:auto;object-fit:contain;backface-visibility:hidden;image-rendering:auto;max-width:none;max-height:none;}
+#bridge-overlay .bridge-overlay-inner .bridge-overlay-badge{position:absolute;top:50px;right:0;width:68px;max-width:17vw;height:auto;object-fit:contain;image-rendering:auto;pointer-events:none;display:none;}
 `;
     if (document.head) document.head.appendChild(styleEl);
     bridgeOverlayStylesApplied = true;
@@ -1003,7 +1004,6 @@ function ensureBridgeOverlay(img) {
     if (existingRoot) {
       bridgeOverlayElement = existingRoot;
       bridgeOverlayInner = existingRoot.querySelector('.bridge-overlay-inner');
-      bridgeOverlayImageEl = (bridgeOverlayInner && bridgeOverlayInner.querySelector('img')) || existingRoot.querySelector('img');
       bridgeOverlayVisible = existingRoot.classList.contains('bridge-visible');
       existingRoot.removeAttribute('data-bootstrap');
     }
@@ -1014,29 +1014,53 @@ function ensureBridgeOverlay(img) {
     root.setAttribute('aria-hidden', 'true');
     const inner = document.createElement('div');
     inner.className = 'bridge-overlay-inner';
+    const content = document.createElement('div');
+    content.className = 'bridge-overlay-content';
     const imgEl = document.createElement('img');
+    imgEl.className = 'bridge-overlay-base';
     imgEl.alt = '';
-    inner.appendChild(imgEl);
     const badgeEl = document.createElement('img');
     badgeEl.className = 'bridge-overlay-badge';
     badgeEl.alt = '';
+    content.appendChild(imgEl);
+    content.appendChild(badgeEl);
+    inner.appendChild(content);
     root.appendChild(inner);
-    root.appendChild(badgeEl);
     if (document.body) document.body.appendChild(root);
     bridgeOverlayElement = root;
     bridgeOverlayInner = inner;
     bridgeOverlayImageEl = imgEl;
     bridgeOverlayBadgeEl = badgeEl;
   }
-  if (!bridgeOverlayBadgeEl && bridgeOverlayElement) {
-    const existingBadge = bridgeOverlayElement.querySelector('.bridge-overlay-badge');
-    if (existingBadge) {
-      bridgeOverlayBadgeEl = existingBadge;
-    } else {
-      const badgeEl = document.createElement('img');
-      badgeEl.className = 'bridge-overlay-badge';
-      badgeEl.alt = '';
-      bridgeOverlayElement.appendChild(badgeEl);
+
+  if (bridgeOverlayInner) {
+    let contentEl = bridgeOverlayInner.querySelector('.bridge-overlay-content');
+    if (!contentEl) {
+      contentEl = document.createElement('div');
+      contentEl.className = 'bridge-overlay-content';
+      while (bridgeOverlayInner.firstChild) {
+        const node = bridgeOverlayInner.firstChild;
+        bridgeOverlayInner.removeChild(node);
+        if (node && node.nodeType === 1 && node.tagName === 'IMG' && !node.classList.contains('bridge-overlay-badge')) {
+          node.classList.add('bridge-overlay-base');
+          contentEl.appendChild(node);
+        } else {
+          contentEl.appendChild(node);
+        }
+      }
+      bridgeOverlayInner.appendChild(contentEl);
+    }
+    if (!bridgeOverlayImageEl || !contentEl.contains(bridgeOverlayImageEl)) {
+      bridgeOverlayImageEl = contentEl.querySelector('.bridge-overlay-base') || contentEl.querySelector('img');
+    }
+    if (!bridgeOverlayBadgeEl || !contentEl.contains(bridgeOverlayBadgeEl)) {
+      let badgeEl = contentEl.querySelector('.bridge-overlay-badge');
+      if (!badgeEl) {
+        badgeEl = document.createElement('img');
+        badgeEl.className = 'bridge-overlay-badge';
+        badgeEl.alt = '';
+        contentEl.appendChild(badgeEl);
+      }
       bridgeOverlayBadgeEl = badgeEl;
     }
   }
@@ -2945,7 +2969,15 @@ function updateRun(dt) {
         try { localStorage.setItem(DEMO_RUN_COUNT_KEY, String(demoRunCount)); } catch (_) {}
       }
     }
+    const previousBest = best;
     best = Math.max(best, score);
+    if (best > previousBest && typeof submitTossLeaderboardScore === 'function') {
+      try {
+        submitTossLeaderboardScore(best);
+      } catch (error) {
+        console.warn('[GameCenter] submit game center score failed', error);
+      }
+    }
     try {
       localStorage.setItem(BEST_SCORE_KEY, String(best));
     } catch(_) {}

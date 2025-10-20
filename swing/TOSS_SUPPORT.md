@@ -57,3 +57,9 @@
 - 기회 0 상태 → 광고 시청 후 30회 충전.
 - 실패(광고 없음 등) → `adsShop.noFill`/오류 메시지 노출.
 - 필요 시 광고 ID override 후 동일 흐름 재검증.
+
+## 8. 게임센터 리더보드 연동
+- 최고 점수가 갱신될 때 `submitGameCenterLeaderBoardScore`를 호출해 토스 게임센터 리더보드에 점수를 제출한다.
+- 점수 제출은 Toss WebView 환경(네이티브 앱 제외)에서만 수행되며, 점수 전송 실패 시 추가 호출을 막기 위해 일시적으로 차단한다.
+- 레벨 2 이상이면 게임오버 화면의 Fast Mode 버튼 대신 `리더보드 보기` 버튼을 노출하고, `openGameCenterLeaderboard`로 리더보드 WebView를 연다.
+- 리더보드 API가 지원되지 않거나 호출 실패 시 `game.leaderboardUnavailable` 토스트 메시지를 표시한다.
