@@ -878,12 +878,14 @@ const DRONE_MOUNT_RETRY_COOLDOWN = 0.25;
 const BRIDGE_VIEW_DEFAULT_DURATION = 2;
 const BRIDGE_VIEW_FLIP_DURATION = 0.35;
 const BRIDGE_VIEW_BACKGROUND_COLOR = 'rgb(0, 192, 219)';
+const TOSS_BRIDGE_BADGE_IMAGE_PATH = './assets/etc/all.png';
 
 let bridgeOverlayElement = null;
 let bridgeOverlayInner = null;
 let bridgeOverlayImageEl = null;
 let bridgeOverlayStylesApplied = false;
 let bridgeOverlayVisible = false;
+let bridgeOverlayBadgeEl = null;
 
 const RUNTIME_IMAGE_PRELOADERS = [
   {
@@ -950,6 +952,26 @@ function handleBridgeOverlayImageLoad() {
   updateBridgeOverlayAspect();
 }
 
+function isTossPlatform() {
+  if (typeof IS_TOSS_PLATFORM !== 'undefined') return Boolean(IS_TOSS_PLATFORM);
+  if (typeof window !== 'undefined' && typeof window.IS_TOSS_PLATFORM !== 'undefined') {
+    return Boolean(window.IS_TOSS_PLATFORM);
+  }
+  return false;
+}
+
+function updateBridgeOverlayBadgeVisibility() {
+  if (!bridgeOverlayBadgeEl) return;
+  if (isTossPlatform()) {
+    if (bridgeOverlayBadgeEl.src !== TOSS_BRIDGE_BADGE_IMAGE_PATH) {
+      bridgeOverlayBadgeEl.src = TOSS_BRIDGE_BADGE_IMAGE_PATH;
+    }
+    bridgeOverlayBadgeEl.style.display = 'block';
+  } else {
+    bridgeOverlayBadgeEl.style.display = 'none';
+  }
+}
+
 function ensureBridgeOverlay(img) {
   if (typeof document === 'undefined') return null;
   if (!bridgeOverlayStylesApplied) {
@@ -967,6 +989,7 @@ function ensureBridgeOverlay(img) {
 #bridge-overlay.bridge-visible{display:flex;}
 #bridge-overlay .bridge-overlay-inner{position:relative;display:flex;align-items:center;justify-content:center;transform-style:preserve-3d;transform-origin:center;will-change:transform,opacity;}
 #bridge-overlay .bridge-overlay-inner img{width:min(96vw,calc(96vh * var(--bridge-aspect, 1)));aspect-ratio:var(--bridge-aspect, 1);height:auto;object-fit:contain;backface-visibility:hidden;image-rendering:auto;max-width:none;max-height:none;}
+#bridge-overlay .bridge-overlay-badge{position:absolute;top:200px;right:16px;width:68px;max-width:17vw;height:auto;object-fit:contain;image-rendering:auto;pointer-events:none;display:none;}
 `;
     if (document.head) document.head.appendChild(styleEl);
     bridgeOverlayStylesApplied = true;
@@ -994,11 +1017,28 @@ function ensureBridgeOverlay(img) {
     const imgEl = document.createElement('img');
     imgEl.alt = '';
     inner.appendChild(imgEl);
+    const badgeEl = document.createElement('img');
+    badgeEl.className = 'bridge-overlay-badge';
+    badgeEl.alt = '';
     root.appendChild(inner);
+    root.appendChild(badgeEl);
     if (document.body) document.body.appendChild(root);
     bridgeOverlayElement = root;
     bridgeOverlayInner = inner;
     bridgeOverlayImageEl = imgEl;
+    bridgeOverlayBadgeEl = badgeEl;
+  }
+  if (!bridgeOverlayBadgeEl && bridgeOverlayElement) {
+    const existingBadge = bridgeOverlayElement.querySelector('.bridge-overlay-badge');
+    if (existingBadge) {
+      bridgeOverlayBadgeEl = existingBadge;
+    } else {
+      const badgeEl = document.createElement('img');
+      badgeEl.className = 'bridge-overlay-badge';
+      badgeEl.alt = '';
+      bridgeOverlayElement.appendChild(badgeEl);
+      bridgeOverlayBadgeEl = badgeEl;
+    }
   }
   if (bridgeOverlayImageEl) {
     bridgeOverlayImageEl.setAttribute('loading', 'eager');
@@ -1013,6 +1053,11 @@ function ensureBridgeOverlay(img) {
     bridgeOverlayImageEl.src = desiredSrc;
   }
   if (bridgeOverlayElement) bridgeOverlayElement.style.background = BRIDGE_VIEW_BACKGROUND_COLOR;
+  if (!bridgeOverlayBadgeEl && bridgeOverlayElement) {
+    const badgeEl = bridgeOverlayElement.querySelector('.bridge-overlay-badge');
+    if (badgeEl) bridgeOverlayBadgeEl = badgeEl;
+  }
+  updateBridgeOverlayBadgeVisibility();
   updateBridgeOverlayAspect();
   return bridgeOverlayElement;
 }
@@ -1027,6 +1072,7 @@ function showBridgeOverlay(img) {
   bridgeOverlayInner.style.transform = 'rotateY(0deg)';
   bridgeOverlayInner.style.opacity = '1';
   bridgeOverlayVisible = true;
+  updateBridgeOverlayBadgeVisibility();
 }
 
 function hideBridgeOverlay() {
@@ -1046,6 +1092,7 @@ function hideBridgeOverlay() {
     bridgeOverlayElement = null;
     bridgeOverlayInner = null;
     bridgeOverlayImageEl = null;
+    bridgeOverlayBadgeEl = null;
   };
 
   if (typeof requestAnimationFrame === 'function') {
