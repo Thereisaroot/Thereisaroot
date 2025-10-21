@@ -10,6 +10,7 @@ const DEMO_RUN_COUNT_KEY = 'webswing_demo_runs_v1';
 const SHOP_INV_KEY = 'webswing_shop_inv_v1';
 const LANG_KEY = 'webswing_lang';
 const STATS_KEY = 'webswing_stats_v1';
+const CODE_STATE_KEY = 'webswing_codes_v1';
 
 // Daily system (UTC reset) for native builds
 const DAILY_STATE_KEY = 'webswing_daily_state_v1';
@@ -29,6 +30,7 @@ const TOSS_AD_REWARD_COUNT_KEY = 'webswing_toss_rewarded_count_v1';
 
 let dailyStateCache = null;
 let tossAdRewardCountCache = null;
+let codeStateCache = null;
 
 function loadTossAdRewardCount() {
   if (Number.isFinite(tossAdRewardCountCache)) {
@@ -74,6 +76,57 @@ function decrementTossAdRewardCount() {
   return setTossAdRewardCount(next);
 }
 
+function normalizeCouponCode(code) {
+  return String(code || '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '')
+    .slice(0, 32);
+}
+
+function loadCodeState() {
+  if (codeStateCache && typeof codeStateCache === 'object') return codeStateCache;
+  let state = { used: [] };
+  try {
+    const raw = localStorage.getItem(CODE_STATE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') state = parsed;
+    }
+  } catch (_) {}
+  if (!Array.isArray(state.used)) state.used = [];
+  state.used = Array.from(new Set(state.used.map((item) => normalizeCouponCode(item)).filter(Boolean)));
+  codeStateCache = state;
+  return codeStateCache;
+}
+
+function saveCodeState(state) {
+  if (!state || typeof state !== 'object') return;
+  const normalized = {
+    used: Array.isArray(state.used)
+      ? state.used.map((code) => normalizeCouponCode(code)).filter(Boolean)
+      : [],
+  };
+  codeStateCache = normalized;
+  try { localStorage.setItem(CODE_STATE_KEY, JSON.stringify(normalized)); } catch (_) {}
+}
+
+function isCodeUsed(code) {
+  const normalized = normalizeCouponCode(code);
+  if (!normalized) return false;
+  const state = loadCodeState();
+  return state.used.includes(normalized);
+}
+
+function markCodeUsed(code) {
+  const normalized = normalizeCouponCode(code);
+  if (!normalized) return;
+  const state = loadCodeState();
+  if (!state.used.includes(normalized)) {
+    state.used.push(normalized);
+    saveCodeState(state);
+  }
+}
+
 const TUNING_DEFAULTS = {
   jumpImpulse: 541,
   jumpSpeed: 91,
@@ -113,6 +166,8 @@ const SHOP_INV_DEFAULTS = {
   luckyLevel: 0,
   feverLevel: 0,
   startSkill: false,
+  gambleUnlimited: false,
+  revival: false,
   characters: [],
   consumables: {},
 };
@@ -446,9 +501,14 @@ function loadShopInv(shopInv = {}) {
   if (legacySlowLevel > 0) {
     shopInv.slowLevel = Math.max(shopInv.slowLevel || 0, legacySlowLevel);
   }
-  if (shopInv.revival) {
-    shopInv.consumables.revival = Math.max(1, shopInv.consumables.revival || 0);
-    delete shopInv.revival;
+  let revivalOwned = Boolean(shopInv.revival);
+  if (shopInv.consumables && shopInv.consumables.revival) {
+    revivalOwned = true;
+    delete shopInv.consumables.revival;
+    migrated = true;
+  }
+  if (shopInv.revival !== revivalOwned) {
+    shopInv.revival = revivalOwned;
     migrated = true;
   }
   if (shopInv.webActive) {
@@ -502,8 +562,13 @@ function applyRunConsumables(shopInv) {
   shopInv.gambleActive = false;
   const hudConsumables = [];
 
+  const hasInfiniteGamble = Boolean(shopInv.gambleUnlimited);
+
   // Auto-apply certain consumables
-  if (cons.gamble && cons.gamble > 0) {
+  if (hasInfiniteGamble) {
+    shopInv.gambleActive = true;
+    hudConsumables.push({ id: 'gamble' });
+  } else if (cons.gamble && cons.gamble > 0) {
     shopInv.gambleActive = true;
     cons.gamble -= 1;
     hudConsumables.push({ id: 'gamble', count: 1 });
@@ -524,6 +589,12 @@ function applyRunConsumables(shopInv) {
     activeRevivalCharges: finalRevivalCharges,
     hudConsumables,
   };
+}
+
+if (typeof window !== 'undefined') {
+  window.loadCodeState = loadCodeState;
+  window.markCodeUsed = markCodeUsed;
+  window.isCodeUsed = isCodeUsed;
 }
 
 // ==================== DEBUG/TUNING UTILITIES ====================
@@ -676,6 +747,51 @@ function setupDebugUI(tuning, applyTuningCallback, saveTuningCallback) {
     updateTossRewardDisplay();
     if (i18nApi && typeof i18nApi.onChange === 'function') {
       i18nApi.onChange(() => updateTossRewardDisplay());
+    }
+  }
+
+  const submitLeaderboardBtn = get('dbg-submit-leaderboard');
+  if (submitLeaderboardBtn) {
+    const updateSubmitLeaderboardButton = () => {
+      submitLeaderboardBtn.textContent = translateDebug('debug.submitLeaderboardButton');
+    };
+    submitLeaderboardBtn.addEventListener('click', () => {
+      const isTossRuntime = (typeof window !== 'undefined')
+        ? (Boolean(window.IS_TOSS_PLATFORM) && !Boolean(window.IS_NATIVE_APP))
+        : false;
+      if (!isTossRuntime) return;
+      if (typeof submitTossLeaderboardScore === 'function') {
+        try {
+          submitTossLeaderboardScore(10);
+        } catch (error) {
+          console.warn('[GameCenter] debug submit leaderboard failed', error);
+        }
+      }
+    });
+    updateSubmitLeaderboardButton();
+    if (i18nApi && typeof i18nApi.onChange === 'function') {
+      i18nApi.onChange(() => updateSubmitLeaderboardButton());
+    }
+  }
+
+  const setBestButton = get('dbg-set-best');
+  if (setBestButton) {
+    const updateSetBestButton = () => {
+      setBestButton.textContent = translateDebug('debug.setBestButton');
+    };
+    setBestButton.addEventListener('click', () => {
+      if (typeof window === 'undefined') return;
+      if (typeof window.debugSetBestScore === 'function') {
+        try {
+          window.debugSetBestScore(10);
+        } catch (error) {
+          console.warn('[Debug] set best score failed', error);
+        }
+      }
+    });
+    updateSetBestButton();
+    if (i18nApi && typeof i18nApi.onChange === 'function') {
+      i18nApi.onChange(() => updateSetBestButton());
     }
   }
 

@@ -671,10 +671,14 @@ function renderIntro(g, time) {
     g.save();
     g.fillStyle = 'rgba(0,0,0,0.55)';
     g.fillRect(0, 0, CONFIG.width, CONFIG.height);
-    const pw = CONFIG.width * 0.7;
-    const ph = Math.min(200, CONFIG.height * 0.5);
+    const langs = I18N_API ? I18N_API.getAvailableLanguages() : ['en'];
+    const optionHeight = 26;
+    const listHeight = Math.max(optionHeight, langs.length * optionHeight);
+    const pw = Math.min(CONFIG.width * 0.7, 420);
+    const desiredHeight = 110 + listHeight + 70;
+    const ph = Math.min(CONFIG.height * 0.65, Math.max(210, desiredHeight));
     const px = (CONFIG.width - pw) / 2;
-    const py = CONFIG.height * 0.32;
+    const py = Math.max(30, (CONFIG.height - ph) / 2);
     settingsPopupRect = { x: px, y: py, w: pw, h: ph };
     g.fillStyle = '#0f1a2a';
     g.strokeStyle = '#b4c0d9';
@@ -686,13 +690,12 @@ function renderIntro(g, time) {
     g.textBaseline = 'top';
     g.font = `12px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
     g.fillText(t('settings.title'), px + pw / 2, py + 10);
-    const langs = I18N_API ? I18N_API.getAvailableLanguages() : ['en'];
     const current = I18N_API ? I18N_API.getLanguage() : 'en';
     if (settingsFocusedIndex >= langs.length) settingsFocusedIndex = langs.length - 1;
     if (settingsFocusedIndex < 0) settingsFocusedIndex = 0;
     const optionTop = py + 40;
-    const optionHeight = 26;
     settingsOptionRects = [];
+    settingsCodeButtonRect = null;
     g.textAlign = 'left';
     for (let i = 0; i < langs.length; i++) {
       const code = langs[i];
@@ -710,10 +713,32 @@ function renderIntro(g, time) {
       g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
       g.fillText(`${label} ${isSelected ? t('settings.currentMarker') : ''}`, rect.x + 10, oy);
     }
+    if (settingsPressCounter >= 10) {
+      const codeBtnY = optionTop + listHeight + 16;
+      const codeRect = {
+        x: px + 20,
+        y: codeBtnY,
+        w: pw - 40,
+        h: 34,
+      };
+      settingsCodeButtonRect = codeRect;
+      g.textAlign = 'center';
+      g.font = `10px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+      g.fillStyle = '#22334a';
+      g.fillRect(codeRect.x, codeRect.y, codeRect.w, codeRect.h);
+      g.strokeStyle = '#b4c0d9';
+      g.lineWidth = 2;
+      g.strokeRect(codeRect.x, codeRect.y, codeRect.w, codeRect.h);
+      g.fillStyle = '#ffffff';
+      g.fillText(t('settings.codeButton'), codeRect.x + codeRect.w / 2, codeRect.y + codeRect.h / 2 + 1);
+    } else {
+      settingsCodeButtonRect = null;
+    }
     g.textAlign = 'center';
     g.fillStyle = '#b4c0d9';
     g.font = `9px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
-    g.fillText(t('settings.help'), px + pw/2, py + ph - 18);
+    const helpKey = settingsPressCounter >= 10 ? 'settings.helpUnlocked' : 'settings.helpLocked';
+    g.fillText(t(helpKey), px + pw / 2, py + ph - 22);
 
     const buildLabel = nativeBuildLabelText();
     if (buildLabel) {
@@ -727,6 +752,7 @@ function renderIntro(g, time) {
   } else {
     settingsPopupRect = null;
     settingsOptionRects = [];
+    settingsCodeButtonRect = null;
   }
 
   if (!showSettings) {
@@ -2853,8 +2879,8 @@ function updateRun(dt) {
       earnedExpCore *= 2;
     }
     if (shopInv.gambleActive) {
-      earnedMoneyCore = Math.floor(earnedMoneyCore * 1.5);
-      earnedExpCore = Math.floor(earnedExpCore * 1.5);
+      earnedMoneyCore = Math.floor(earnedMoneyCore * 1.3);
+      earnedExpCore = Math.floor(earnedExpCore * 1.3);
       shopInv.gambleActive = false; // Consume gamble
       saveShopInv(shopInv);
       hudConsumables = (hudConsumables || []).filter((entry) => entry && entry.id !== 'gamble');
@@ -2904,7 +2930,7 @@ function updateRun(dt) {
       const cx = camera.x + CONFIG.width / 2;
       const cy = CONFIG.height * 0.36;
       spawnEffect('big', cx, cy);
-      levelRewardCash = newLevel * 5;
+      levelRewardCash = 10;
       if (IS_AD_PLATFORM && typeof grantDailyLives === 'function' && typeof dailyLivesRemaining === 'function') {
         const rewardMax = (typeof DAILY_MAX_LIVES === 'number') ? DAILY_MAX_LIVES + 1 : 31;
         const beforeLives = dailyLivesRemaining();

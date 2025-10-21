@@ -515,12 +515,24 @@ const AD_REWARD_ITEMS = [
     successMessageKey: 'adsShop.startSkillLearned',
     requiresRewardCount: 5,
   },
+  {
+    key: 'infiniteGamble',
+    type: 'item',
+    amount: 0,
+    placement: 'infiniteGamble',
+    adUnitId: REWARDED_AD_UNITS.shared || null,
+    titleKey: 'adsShop.infiniteGambleTitle',
+    descKey: 'adsShop.infiniteGambleDesc',
+    successMessageKey: 'adsShop.infiniteGambleUnlocked',
+    requiresRewardCount: 20,
+  },
 ];
 
 const TOSS_DEFAULT_AD_UNITS = {
   wizard: 'ait-ad-test-rewarded-id',
   cash20: 'ait-ad-test-rewarded-id',
   startSkill: 'ait-ad-test-rewarded-id',
+  infiniteGamble: 'ait-ad-test-rewarded-id',
   life: 'ait-ad-test-interstitial-id',
   shared: 'ait-ad-test-rewarded-id'
 };
@@ -547,6 +559,18 @@ const TOSS_AD_REWARD_BASE = [
     titleKey: 'adsShop.cashTitle',
     descKey: 'adsShop.cashDesc',
     successMessageKey: 'adsShop.cashGranted',
+  },
+  {
+    key: 'infiniteGamble',
+    type: 'item',
+    amount: 0,
+    placement: 'infiniteGamble',
+    adUnitKey: 'infiniteGamble',
+    adMode: 'rewarded',
+    titleKey: 'adsShop.infiniteGambleTitle',
+    descKey: 'adsShop.infiniteGambleDesc',
+    successMessageKey: 'adsShop.infiniteGambleUnlocked',
+    requiresRewardCount: 20,
   },
 ];
 
@@ -603,6 +627,21 @@ function getTossAdRewardItems() {
 const adRewardState = {};
 
 const MENU_TOAST_DURATION = 2.5;
+const CODE_INPUT_MAX_LENGTH = 8;
+const CODE_REWARDS = {
+  '100USD': { type: 'currency', amount: 100 },
+  '500USD': { type: 'currency', amount: 500 },
+};
+let codeDialogVisible = false;
+let codeModalRoot = null;
+let codeInputElement = null;
+let codeErrorElement = null;
+let codeOverlayStylesApplied = false;
+let codeTitleElement = null;
+let codeLabelElement = null;
+let codeSubmitButton = null;
+let codeCancelButton = null;
+let settingsPressCounter = 0;
 let introMenuMessage = null;
 let introMenuMessageTimer = 0;
 let gameOverMenuMessage = null;
@@ -631,6 +670,207 @@ function showLifeRechargePopup(lives, isError = false) {
   gameOverMenuMessageTimer = MENU_TOAST_DURATION;
 }
 
+function sanitizeCodeInput(value) {
+  return String(value || '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '')
+    .slice(0, CODE_INPUT_MAX_LENGTH);
+}
+
+function ensureCodeModal() {
+  if (typeof document === 'undefined') return null;
+  if (!codeOverlayStylesApplied) {
+    const styleEl = document.createElement('style');
+    styleEl.id = 'code-overlay-style';
+    styleEl.textContent = `
+#code-overlay{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.65);z-index:10050;pointer-events:auto;}
+#code-overlay.code-visible{display:flex;}
+#code-overlay .code-dialog{background:#0f1a2a;border:2px solid #b4c0d9;border-radius:8px;padding:22px 24px;width:min(90vw,360px);box-shadow:0 16px 32px rgba(0,0,0,0.35);}
+#code-overlay .code-dialog h2{margin:0 0 14px;text-align:center;color:#ffffff;font:12px "GameFont","Press Start 2P","Dalmoori",monospace;}
+#code-overlay .code-dialog label{display:block;margin-bottom:10px;color:#b4c0d9;font:9px "GameFont","Press Start 2P","Dalmoori",monospace;letter-spacing:0.5px;text-transform:uppercase;}
+#code-overlay .code-dialog input{width:100%;padding:10px 12px;border-radius:4px;border:1px solid #3a4b66;background:#17263b;color:#ffffff;font:12px "GameFont","Press Start 2P","Dalmoori",monospace;text-transform:uppercase;letter-spacing:1px;}
+#code-overlay .code-dialog input:focus{outline:none;border-color:#7fb6ff;box-shadow:0 0 0 2px rgba(127,182,255,0.25);}
+#code-overlay .code-error{min-height:16px;color:#ff8c8c;font:8px "GameFont","Press Start 2P","Dalmoori",monospace;text-align:center;margin:6px 0 12px;}
+#code-overlay .code-actions{display:flex;gap:12px;justify-content:flex-end;}
+#code-overlay .code-actions button{flex:1;padding:10px 14px;border-radius:4px;border:1px solid #b4c0d9;background:#22334a;color:#ffffff;font:9px "GameFont","Press Start 2P","Dalmoori",monospace;text-transform:uppercase;cursor:pointer;transition:background 0.15s ease;}
+#code-overlay .code-actions button:hover{background:#2d3f59;}
+#code-overlay .code-actions button:focus{outline:none;box-shadow:0 0 0 2px rgba(127,182,255,0.3);}
+#code-overlay .code-actions button.code-cancel{background:#2a2e3f;}
+`;
+    if (document.head) document.head.appendChild(styleEl);
+    codeOverlayStylesApplied = true;
+  }
+
+  if (!codeModalRoot) {
+    const overlay = document.createElement('div');
+    overlay.id = 'code-overlay';
+    overlay.setAttribute('aria-hidden', 'true');
+    const dialog = document.createElement('div');
+    dialog.className = 'code-dialog';
+    dialog.setAttribute('role', 'dialog');
+    dialog.setAttribute('aria-modal', 'true');
+
+    const title = document.createElement('h2');
+    title.textContent = t('code.title');
+
+    const label = document.createElement('label');
+    label.textContent = t('code.inputLabel');
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.autocomplete = 'off';
+    input.autocorrect = 'off';
+    input.spellcheck = false;
+    input.maxLength = CODE_INPUT_MAX_LENGTH;
+    input.placeholder = t('code.placeholder');
+
+    label.appendChild(input);
+
+    const error = document.createElement('div');
+    error.className = 'code-error';
+    error.setAttribute('aria-live', 'assertive');
+
+    const actions = document.createElement('div');
+    actions.className = 'code-actions';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'code-cancel';
+    cancelBtn.textContent = t('code.cancel');
+
+    const submitBtn = document.createElement('button');
+    submitBtn.type = 'button';
+    submitBtn.className = 'code-submit';
+    submitBtn.textContent = t('code.submit');
+
+    actions.appendChild(cancelBtn);
+    actions.appendChild(submitBtn);
+
+    dialog.appendChild(title);
+    dialog.appendChild(label);
+    dialog.appendChild(error);
+    dialog.appendChild(actions);
+    overlay.appendChild(dialog);
+    if (document.body) document.body.appendChild(overlay);
+
+    overlay.addEventListener('click', (ev) => {
+      if (ev.target === overlay) {
+        closeCodeModal();
+      }
+    }, { passive: true });
+    cancelBtn.addEventListener('click', () => closeCodeModal());
+    submitBtn.addEventListener('click', () => handleCodeSubmit());
+    input.addEventListener('input', (ev) => {
+      const sanitized = sanitizeCodeInput(ev.target.value);
+      if (ev.target.value !== sanitized) {
+        ev.target.value = sanitized;
+      }
+      setCodeError('');
+    });
+    input.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        handleCodeSubmit();
+      } else if (ev.key === 'Escape') {
+        ev.preventDefault();
+        closeCodeModal();
+      }
+    });
+
+    codeModalRoot = overlay;
+    codeInputElement = input;
+    codeErrorElement = error;
+    codeTitleElement = title;
+    codeLabelElement = label;
+    codeSubmitButton = submitBtn;
+    codeCancelButton = cancelBtn;
+  }
+  return codeModalRoot;
+}
+
+function setCodeError(message) {
+  if (!codeErrorElement) return;
+  codeErrorElement.textContent = message || '';
+}
+
+function closeCodeModal() {
+  if (!codeModalRoot) return;
+  codeModalRoot.classList.remove('code-visible');
+  codeModalRoot.setAttribute('aria-hidden', 'true');
+  codeDialogVisible = false;
+  setCodeError('');
+  if (codeInputElement) {
+    codeInputElement.value = '';
+  }
+  UI.reset && UI.reset();
+}
+
+function openCodeModal() {
+  const root = ensureCodeModal();
+  if (!root) return;
+  if (codeDialogVisible) return;
+  if (codeTitleElement) codeTitleElement.textContent = t('code.title');
+  if (codeLabelElement) {
+    const labelText = `${t('code.inputLabel')} `;
+    const firstNode = codeLabelElement.firstChild;
+    if (firstNode && firstNode.nodeType === 3) {
+      firstNode.textContent = labelText;
+    } else {
+      codeLabelElement.insertBefore(document.createTextNode(labelText), codeLabelElement.firstChild || null);
+    }
+  }
+  if (codeSubmitButton) codeSubmitButton.textContent = t('code.submit');
+  if (codeCancelButton) codeCancelButton.textContent = t('code.cancel');
+  codeDialogVisible = true;
+  root.classList.add('code-visible');
+  root.setAttribute('aria-hidden', 'false');
+  if (codeInputElement) {
+    codeInputElement.placeholder = t('code.placeholder');
+    codeInputElement.value = '';
+    codeInputElement.focus({ preventScroll: true });
+  }
+  setCodeError('');
+  UI.reset && UI.reset();
+}
+
+function handleCodeSubmit() {
+  if (!codeInputElement) return;
+  const sanitized = sanitizeCodeInput(codeInputElement.value);
+  codeInputElement.value = sanitized;
+  if (sanitized.length === 0) {
+    setCodeError(t('code.invalidFormat'));
+    return;
+  }
+  if (sanitized.length > CODE_INPUT_MAX_LENGTH) {
+    setCodeError(t('code.invalidFormat'));
+    return;
+  }
+  if (typeof isCodeUsed === 'function' && isCodeUsed(sanitized)) {
+    setCodeError(t('code.alreadyUsed'));
+    return;
+  }
+  const reward = CODE_REWARDS[sanitized];
+  if (!reward) {
+    setCodeError(t('code.unknown'));
+    return;
+  }
+  if (reward.type === 'currency') {
+    const gain = Number.isFinite(reward.amount) ? reward.amount : 0;
+    if (gain > 0) {
+      savings += gain;
+      try { localStorage.setItem(SAVINGS_KEY, String(savings)); } catch (_) {}
+      if (typeof addToPlayerStat === 'function') addToPlayerStat('totalCashEarned', gain);
+    }
+  }
+  if (typeof markCodeUsed === 'function') {
+    markCodeUsed(sanitized);
+  }
+  closeCodeModal();
+  UI.reset && UI.reset();
+  introMenuMessage = t('code.success', { amount: reward.amount });
+  introMenuMessageTimer = Math.max(3, MENU_TOAST_DURATION);
+}
+
 const player = new Player();
 let score = 0;
 let best = 0;
@@ -647,6 +887,18 @@ const DEMO_REQUIRED_RUNS = 5;
 let demoRunCount = 0;
 let fastModeEnabled = false;
 let comboCount = 0;
+
+const BEST_SCORE_STORAGE_KEY = (typeof BEST_SCORE_KEY !== 'undefined') ? BEST_SCORE_KEY : 'webswing_best_v1';
+
+function debugSetBestScore(value) {
+  const numeric = Math.max(0, Math.floor(Number(value) || 0));
+  best = numeric;
+  try { localStorage.setItem(BEST_SCORE_STORAGE_KEY, String(best)); } catch (_) {}
+}
+
+if (typeof window !== 'undefined') {
+  window.debugSetBestScore = debugSetBestScore;
+}
 
 const RECORD_HISTORY_PER_PAGE = 4;
 const RECORD_GOALS_PER_PAGE = 3;
@@ -1170,6 +1422,15 @@ function startRewardAd(key) {
     return;
   }
 
+  if (item.key === 'infiniteGamble' && shopInv.gambleUnlimited) {
+    state.status = 'done';
+    state.message = t('adsShop.infiniteGambleOwned');
+    uiButtons.shop.cards = [];
+    uiButtons.shop.buttons = [];
+    if (typeof buildShopCards === 'function') buildShopCards();
+    return;
+  }
+
   if (isDailyRewardClaimed(key)) {
     state.status = 'done';
     state.message = t('adsShop.claimedToday');
@@ -1478,6 +1739,14 @@ function applyAdReward(item) {
       shopInv.startSkill = true;
       saveShopInv(shopInv);
     }
+  } else if (item.key === 'infiniteGamble') {
+    if (!shopInv.gambleUnlimited) {
+      shopInv.gambleUnlimited = true;
+      if (shopInv.consumables && shopInv.consumables.gamble) {
+        delete shopInv.consumables.gamble;
+      }
+      saveShopInv(shopInv);
+    }
   }
 }
 
@@ -1615,6 +1884,7 @@ function buildIntroButtons() {
     showGuide = true;
   }, 'intro'));
   uiButtons.intro.push(new UIButton(footer.settings.x, footer.settings.y, footer.settings.w, footer.settings.h, () => t('intro.settings'), () => {
+    settingsPressCounter = Math.min(10, settingsPressCounter + 1);
     showSettings = true;
     settingsOptionRects = [];
     const langs = I18N_API ? I18N_API.getAvailableLanguages() : ['en'];
@@ -3571,6 +3841,7 @@ function resetRun() {
   gameOverMenuButtons = [];
   gameOverMenuMessage = null;
   gameOverMenuMessageTimer = 0;
+  settingsPressCounter = 0;
   bossOutcomeBanner = null;
   bossOutcomeTimer = 0;
   if (typeof gameOverTipKey !== 'undefined') gameOverTipKey = null;
@@ -3740,6 +4011,7 @@ let recordsGoalFilter = 'all';
 let settingsPopupRect = null;
 let settingsOptionRects = [];
 let settingsFocusedIndex = 0;
+let settingsCodeButtonRect = null;
 const TUTORIAL_ENABLED_KEY = 'webswing_tutorial_enabled';
 
 function loadTutorialPreference() {
@@ -3794,6 +4066,11 @@ function hasTutorialPreference() {
 function updateIntro(dt) {
   updateStageTransition(dt);
   if (typeof isBridgeViewActive === 'function' && isBridgeViewActive()) {
+    UI.reset && UI.reset();
+    tutorialButtonRect = null;
+    return;
+  }
+  if (codeDialogVisible) {
     UI.reset && UI.reset();
     tutorialButtonRect = null;
     return;
@@ -3932,19 +4209,30 @@ function updateIntro(dt) {
       UI.reset();
     }
     if (UI.clicked) {
+      let handled = false;
       if (settingsPopupRect && pointInRect(UI.mx, UI.my, settingsPopupRect)) {
         for (let i = 0; i < settingsOptionRects.length; i++) {
           const rect = settingsOptionRects[i];
           if (rect && pointInRect(UI.mx, UI.my, rect)) {
             if (I18N_API) I18N_API.setLanguage(langs[i]);
             showSettings = false;
+            handled = true;
             break;
           }
         }
+        if (!handled && settingsCodeButtonRect && pointInRect(UI.mx, UI.my, settingsCodeButtonRect)) {
+          showSettings = false;
+          handled = true;
+          UI.reset();
+          openCodeModal();
+          return;
+        }
       } else {
         showSettings = false;
+        handled = true;
       }
       UI.reset();
+      if (handled) return;
     }
     return;
   }

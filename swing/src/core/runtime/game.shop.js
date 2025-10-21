@@ -98,6 +98,7 @@ function getItemLevel(it) {
   if (it.id === 'fever') return shopInv.feverLevel || 0;
   if (it.id === 'revival') return shopInv.revival ? 1 : 0;
   if (it.id === 'startskill') return shopInv.startSkill ? 1 : 0;
+  if (it.id === 'gamble_infinite') return shopInv.gambleUnlimited ? 1 : 0;
   if (it.id === 'skill_reroll') return shopInv.skillRerollLevel || 0;
   if (it.id === 'skill_card_plus') return shopInv.skillCardPlus ? 1 : 0;
   return 0;
@@ -125,6 +126,9 @@ function isItemSoldOut(it) {
 }
 
 function nextPriceForItem(it) {
+  if (it && it.id === 'gamble' && shopInv && shopInv.gambleUnlimited) {
+    return 50;
+  }
   if (it.type !== 'level') return it.price;
   const lvl = getItemLevel(it);
   const basePrice = Number(it.price) || 0;
@@ -606,7 +610,8 @@ function renderAdShop(g) {
     const state = getAdRewardState(item.key);
     const claimed = isDailyRewardClaimed(item.key);
     const alreadyOwned = (item.key === 'wizard' && shopInv.characters && shopInv.characters.includes('wizard'))
-      || (item.key === 'startSkill' && shopInv.startSkill);
+      || (item.key === 'startSkill' && shopInv.startSkill)
+      || (item.key === 'infiniteGamble' && shopInv.gambleUnlimited);
     const rewardCountForCard = (typeof getTossAdRewardCount === 'function') ? getTossAdRewardCount() : 0;
     const lockedByRequirement = item.requiresRewardCount
       ? rewardCountForCard < item.requiresRewardCount
@@ -620,7 +625,13 @@ function renderAdShop(g) {
         message = t('adsShop.loading');
         messageColor = '#b4c0d9';
       } else if (alreadyOwned) {
-        message = item.key === 'startSkill' ? t('adsShop.startSkillOwned') : t('adsShop.alreadyOwned');
+        if (item.key === 'startSkill') {
+          message = t('adsShop.startSkillOwned');
+        } else if (item.key === 'infiniteGamble') {
+          message = t('adsShop.infiniteGambleOwned');
+        } else {
+          message = t('adsShop.alreadyOwned');
+        }
         messageColor = '#88ff88';
       } else if (claimed) {
         message = t('adsShop.claimedToday');
@@ -1602,6 +1613,14 @@ function tryPurchase(id) {
   } else if (id === 'startskill') {
     savings -= price;
     shopInv.startSkill = true;
+    saveShopInv(shopInv);
+  } else if (id === 'gamble_infinite') {
+    if (shopInv.gambleUnlimited) { shopConfirm = null; return; }
+    savings -= price;
+    shopInv.gambleUnlimited = true;
+    if (shopInv.consumables && shopInv.consumables.gamble) {
+      delete shopInv.consumables.gamble;
+    }
     saveShopInv(shopInv);
   } else if (id === 'skill_reroll') {
     const maxLv = it.maxLevel || 3;
