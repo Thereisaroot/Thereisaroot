@@ -560,18 +560,6 @@ const TOSS_AD_REWARD_BASE = [
     descKey: 'adsShop.cashDesc',
     successMessageKey: 'adsShop.cashGranted',
   },
-  {
-    key: 'infiniteGamble',
-    type: 'item',
-    amount: 0,
-    placement: 'infiniteGamble',
-    adUnitKey: 'infiniteGamble',
-    adMode: 'rewarded',
-    titleKey: 'adsShop.infiniteGambleTitle',
-    descKey: 'adsShop.infiniteGambleDesc',
-    successMessageKey: 'adsShop.infiniteGambleUnlocked',
-    requiresRewardCount: 20,
-  },
 ];
 
 const TOSS_START_SKILL_ITEM = {
@@ -585,6 +573,19 @@ const TOSS_START_SKILL_ITEM = {
   descKey: 'adsShop.startSkillDesc',
   successMessageKey: 'adsShop.startSkillLearned',
   requiresRewardCount: 5,
+};
+
+const TOSS_INFINITE_GAMBLE_ITEM = {
+  key: 'infiniteGamble',
+  type: 'item',
+  amount: 0,
+  placement: 'infiniteGamble',
+  adUnitKey: 'infiniteGamble',
+  adMode: 'rewarded',
+  titleKey: 'adsShop.infiniteGambleTitle',
+  descKey: 'adsShop.infiniteGambleDesc',
+  successMessageKey: 'adsShop.infiniteGambleUnlocked',
+  requiresRewardCount: 20,
 };
 
 function getTossAdUnitConfig() {
@@ -621,7 +622,13 @@ function getTossAdRewardItems() {
       : resolveTossAdUnitId(TOSS_START_SKILL_ITEM.adUnitKey || TOSS_START_SKILL_ITEM.key);
     return { ...TOSS_START_SKILL_ITEM, adUnitId: configuredId || null, adMode: TOSS_START_SKILL_ITEM.adMode || 'rewarded' };
   })();
-  return [...configuredBase, startSkillConfigured];
+  const infiniteConfigured = (() => {
+    const configuredId = (typeof TOSS_INFINITE_GAMBLE_ITEM.adUnitId === 'string' && TOSS_INFINITE_GAMBLE_ITEM.adUnitId.trim().length > 0)
+      ? TOSS_INFINITE_GAMBLE_ITEM.adUnitId.trim()
+      : resolveTossAdUnitId(TOSS_INFINITE_GAMBLE_ITEM.adUnitKey || TOSS_INFINITE_GAMBLE_ITEM.key);
+    return { ...TOSS_INFINITE_GAMBLE_ITEM, adUnitId: configuredId || null, adMode: TOSS_INFINITE_GAMBLE_ITEM.adMode || 'rewarded' };
+  })();
+  return [...configuredBase, startSkillConfigured, infiniteConfigured];
 }
 
 const adRewardState = {};
