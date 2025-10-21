@@ -4062,10 +4062,10 @@ function footerButtonRects() {
   const totalWidth = w * 2 + spacing;
   const groundY = CONFIG.height - CONFIG.groundH;
   const baseX = (CONFIG.width - totalWidth) / 2;
-  const y = Math.floor(groundY + (CONFIG.groundH - h) / 2);
+  const y = Math.floor(groundY + (CONFIG.groundH - (h + 10)) / 2) - 5;
   return {
-    guide: { x: baseX, y, w, h },
-    settings: { x: baseX + w + spacing, y, w, h }
+    guide: { x: baseX, y, w, h: h + 10 },
+    settings: { x: baseX + w + spacing, y, w, h: h + 10 }
   };
 }
 function pointInRect(px, py, r) { return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h; }
