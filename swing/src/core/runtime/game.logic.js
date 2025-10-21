@@ -753,13 +753,39 @@ function ensureCodeModal() {
     overlay.appendChild(dialog);
     if (document.body) document.body.appendChild(overlay);
 
-    overlay.addEventListener('click', (ev) => {
-      if (ev.target === overlay) {
+    const handleOverlayEvent = (ev) => {
+      if (!dialog) return;
+      const target = ev && ev.target;
+      const path = typeof ev.composedPath === 'function' ? ev.composedPath() : null;
+      const insideDialog = path ? path.includes(dialog) : (dialog === target || (target && dialog.contains(target)));
+      if (!insideDialog) {
+        ev.preventDefault();
         closeCodeModal();
       }
-    }, { passive: true });
-    cancelBtn.addEventListener('click', () => closeCodeModal());
-    submitBtn.addEventListener('click', () => handleCodeSubmit());
+    };
+    overlay.addEventListener('click', handleOverlayEvent, { passive: false });
+    overlay.addEventListener('pointerdown', handleOverlayEvent, { passive: false });
+    overlay.addEventListener('touchstart', handleOverlayEvent, { passive: false });
+    cancelBtn.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      closeCodeModal();
+    });
+    cancelBtn.addEventListener('touchend', (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      closeCodeModal();
+    }, { passive: false });
+    submitBtn.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      handleCodeSubmit();
+    });
+    submitBtn.addEventListener('touchend', (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      handleCodeSubmit();
+    }, { passive: false });
     input.addEventListener('input', (ev) => {
       const sanitized = sanitizeCodeInput(ev.target.value);
       if (ev.target.value !== sanitized) {
