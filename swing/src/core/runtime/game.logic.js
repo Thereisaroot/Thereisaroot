@@ -198,6 +198,175 @@ function callTossApi(functionName, param) {
 
 const TOSS_LEADERBOARD_MIN_LEVEL = 2;
 let tossLeaderboardSubmitSuppressed = false;
+let leaderboardProductionFlag = null;
+let leaderboardProductionFlagPromise = null;
+
+function extractTossEnvironmentHint() {
+  if (typeof window === 'undefined') return null;
+  const w = window;
+  const candidates = [];
+  const pushCandidate = (candidate) => {
+    if (candidate == null) return;
+    candidates.push(candidate);
+  };
+  pushCandidate(w.WEBSWING_ENVIRONMENT);
+  pushCandidate(w.WEBSWING_ENV);
+  pushCandidate(w.WEBSWING_BUILD_ENV);
+  pushCandidate(w.WEBSWING_RUNTIME_ENV);
+  pushCandidate(w.__APP_ENV__);
+  pushCandidate(w.__APP_ENVIRONMENT__);
+  pushCandidate(w.__GRANITE_ENV__);
+  pushCandidate(w.__GRANITE_ENVIRONMENT__);
+  pushCandidate(w.__TOSS_ENV__);
+  pushCandidate(w.__TOSS_RUNTIME_ENV__);
+  if (w.__granite && typeof w.__granite === 'object') {
+    pushCandidate(w.__granite.environment);
+    pushCandidate(w.__granite.env);
+    pushCandidate(w.__granite.operationalEnv);
+    pushCandidate(w.__granite.runtimeEnvironment);
+  }
+  if (w.__appsInToss && typeof w.__appsInToss === 'object') {
+    pushCandidate(w.__appsInToss.environment);
+    pushCandidate(w.__appsInToss.env);
+    pushCandidate(w.__appsInToss.operationalEnv);
+  }
+  if (typeof document !== 'undefined' && document.documentElement && document.documentElement.dataset) {
+    const dataset = document.documentElement.dataset;
+    pushCandidate(dataset.environment || dataset.env || dataset.graniteEnv);
+  }
+  if (w.__CONSTANT_HANDLER_MAP && typeof w.__CONSTANT_HANDLER_MAP.getOperationalEnvironment === 'function') {
+    try {
+      pushCandidate(w.__CONSTANT_HANDLER_MAP.getOperationalEnvironment());
+    } catch (_) {}
+  }
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string') {
+      const trimmed = candidate.trim();
+      if (trimmed.length > 0) return trimmed;
+    } else if (typeof candidate === 'function') {
+      try {
+        const value = candidate();
+        if (typeof value === 'string') {
+          const trimmed = value.trim();
+          if (trimmed.length > 0) return trimmed;
+        }
+      } catch (_) {}
+    } else if (candidate && typeof candidate === 'object') {
+      for (const key of ['environment', 'env', 'operationalEnv', 'runtimeEnvironment']) {
+        const value = candidate[key];
+        if (typeof value === 'string') {
+          const trimmed = value.trim();
+          if (trimmed.length > 0) return trimmed;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+function evaluateProductionFlagFromEnvTag(envTag) {
+  if (typeof envTag !== 'string' || !envTag.trim()) return null;
+  const normalized = envTag.trim().toLowerCase();
+  if (!normalized) return null;
+  if (normalized.includes('prod')) return true;
+  if (
+    normalized.includes('sandbox') ||
+    normalized.includes('dev') ||
+    normalized.includes('test') ||
+    normalized.includes('qa') ||
+    normalized.includes('stage') ||
+    normalized.includes('staging') ||
+    normalized.includes('preview')
+  ) {
+    return false;
+  }
+  return null;
+}
+
+function evaluateProductionFlagFromHost() {
+  if (typeof window === 'undefined' || !window.location || typeof window.location.hostname !== 'string') return null;
+  const host = window.location.hostname.trim().toLowerCase();
+  if (!host) return null;
+  if (
+    host === 'localhost' ||
+    host === '127.0.0.1' ||
+    host === '0.0.0.0' ||
+    host.endsWith('.local') ||
+    host.endsWith('.lan') ||
+    /^10\./.test(host) ||
+    /^127\./.test(host) ||
+    /^192\.168\./.test(host) ||
+    /^172\.(1[6-9]|2\d|3[0-1])\./.test(host)
+  ) {
+    return false;
+  }
+  if (
+    host.includes('sandbox') ||
+    host.includes('staging') ||
+    host.includes('stage') ||
+    host.includes('dev') ||
+    host.includes('test') ||
+    host.includes('qa') ||
+    host.includes('preview')
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function resolveLeaderboardProductionFlag() {
+  if (leaderboardProductionFlag !== null) {
+    return Promise.resolve(leaderboardProductionFlag);
+  }
+  if (typeof window !== 'undefined') {
+    if (window.DISABLE_DEBUG_TOGGLE === true) {
+      leaderboardProductionFlag = true;
+      return Promise.resolve(leaderboardProductionFlag);
+    }
+    if (typeof window.WEBSWING_BUILD_MODE === 'string' && window.WEBSWING_BUILD_MODE.toLowerCase() === 'production') {
+      leaderboardProductionFlag = true;
+      return Promise.resolve(leaderboardProductionFlag);
+    }
+  }
+  const envHint = extractTossEnvironmentHint();
+  const envDecision = evaluateProductionFlagFromEnvTag(envHint);
+  if (envDecision !== null) {
+    leaderboardProductionFlag = envDecision;
+    return Promise.resolve(leaderboardProductionFlag);
+  }
+  const hostDecision = evaluateProductionFlagFromHost();
+  if (hostDecision !== null) {
+    leaderboardProductionFlag = hostDecision;
+    return Promise.resolve(leaderboardProductionFlag);
+  }
+  if (!hasTossNativeChannel('getOperationalEnvironment')) {
+    leaderboardProductionFlag = hostDecision !== null ? hostDecision : false;
+    return Promise.resolve(leaderboardProductionFlag);
+  }
+  if (leaderboardProductionFlagPromise) return leaderboardProductionFlagPromise;
+  leaderboardProductionFlagPromise = callTossApi('getOperationalEnvironment')
+    .then((env) => {
+      const envStr = (typeof env === 'string' && env.trim()) ? env.trim() : null;
+      const decision = evaluateProductionFlagFromEnvTag(envStr);
+      if (decision !== null) {
+        leaderboardProductionFlag = decision;
+      } else {
+        const fallback = evaluateProductionFlagFromHost();
+        leaderboardProductionFlag = fallback !== null ? fallback : false;
+      }
+      return leaderboardProductionFlag;
+    })
+    .catch((error) => {
+      console.warn('[GameCenter] getOperationalEnvironment failed', error);
+      const fallback = evaluateProductionFlagFromHost();
+      leaderboardProductionFlag = fallback !== null ? fallback : false;
+      return leaderboardProductionFlag;
+    })
+    .finally(() => {
+      leaderboardProductionFlagPromise = null;
+    });
+  return leaderboardProductionFlagPromise;
+}
 
 function submitTossLeaderboardScore(scoreValue) {
   if (!IS_TOSS_PLATFORM || IS_NATIVE_APP || tossLeaderboardSubmitSuppressed) return;
@@ -205,18 +374,26 @@ function submitTossLeaderboardScore(scoreValue) {
   const numericScore = Number(scoreValue);
   if (!Number.isFinite(numericScore) || numericScore <= 0) return;
   const normalizedScore = Math.max(0, Math.floor(numericScore));
-  const payload = { score: String(normalizedScore) };
-  callTossApi('submitGameCenterLeaderBoardScore', payload)
-    .then((result) => {
-      if (!result || typeof result !== 'object') return;
-      const status = result.statusCode;
-      if (typeof status === 'string' && status.length && status !== 'SUCCESS') {
-        console.warn('[GameCenter] submitGameCenterLeaderBoardScore returned status:', status);
-      }
-    })
+  const submitWithMultiplier = (multiplier) => {
+    const payload = { score: String(normalizedScore * multiplier) };
+    return callTossApi('submitGameCenterLeaderBoardScore', payload)
+      .then((result) => {
+        if (!result || typeof result !== 'object') return;
+        const status = result.statusCode;
+        if (typeof status === 'string' && status.length && status !== 'SUCCESS') {
+          console.warn('[GameCenter] submitGameCenterLeaderBoardScore returned status:', status);
+        }
+      })
+      .catch((error) => {
+        tossLeaderboardSubmitSuppressed = true;
+        console.warn('[GameCenter] submitGameCenterLeaderBoardScore failed', error);
+      });
+  };
+  resolveLeaderboardProductionFlag()
+    .then((isProd) => submitWithMultiplier(isProd ? 10 : 1))
     .catch((error) => {
-      tossLeaderboardSubmitSuppressed = true;
-      console.warn('[GameCenter] submitGameCenterLeaderBoardScore failed', error);
+      console.warn('[GameCenter] resolve leaderboard environment failed', error);
+      submitWithMultiplier(1);
     });
 }
 
