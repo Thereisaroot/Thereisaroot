@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <title>WebGL 2D Casual Prototype</title>
+    <script type="module" crossorigin src="/assets/index-CWtxJp6j.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-tlJLEnz5.css">
+  </head>
+  <body>
+    <div id="app">
+      <div class="game-wrapper">
+        <div class="game-surface" id="game-surface">
+          <canvas id="game-canvas"></canvas>
+        </div>
+      </div>
+      <div id="joystick-layer" class="joystick-layer"></div>
+      <div id="ui-layer" class="ui-layer">
+        <div class="ui-layer__top">
+          <label class="language-control">
+            <span class="language-control__label" data-i18n-key="languageLabel"></span>
+            <select id="language-select" class="language-control__select">
+              <option value="en" data-i18n-key="languageEnglish"></option>
+              <option value="ko" data-i18n-key="languageKorean"></option>
+            </select>
+          </label>
+        </div>
+        <div class="ui-layer__bottom">
+          <div class="hud-message">
+            <div class="hud-message__instructions" data-i18n-key="hudInstructions"></div>
+            <div id="scale-indicator" class="hud-info-line hud-scale-indicator"></div>
+            <div class="hud-info-line">
+              <span data-i18n-key="hudColorStatsLabel"></span>
+              <span id="color-stats-values" class="hud-color-values"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
