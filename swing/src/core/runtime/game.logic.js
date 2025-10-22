@@ -1043,7 +1043,7 @@ function openCodeModal() {
   UI.reset && UI.reset();
 }
 
-function handleCodeSubmit() {
+async function handleCodeSubmit() {
   if (!codeInputElement) return;
   const sanitized = sanitizeCodeInput(codeInputElement.value);
   codeInputElement.value = sanitized;
@@ -1061,24 +1061,78 @@ function handleCodeSubmit() {
   }
   const reward = CODE_REWARDS[sanitized];
   if (!reward) {
-    setCodeError(t('code.unknown'));
-    return;
-  }
-  if (reward.type === 'currency') {
-    const gain = Number.isFinite(reward.amount) ? reward.amount : 0;
-    if (gain > 0) {
-      savings += gain;
-      try { localStorage.setItem(SAVINGS_KEY, String(savings)); } catch (_) {}
-      if (typeof addToPlayerStat === 'function') addToPlayerStat('totalCashEarned', gain);
+    if (sanitized !== 'STORAGE') {
+      setCodeError(t('code.unknown'));
+      return;
     }
+    const testKey = '__storage_probe__';
+    const testValue = 'TEST';
+
+    let localOk = false;
+    let localMessage = '';
+    try {
+      localStorage.setItem(testKey, testValue);
+      localOk = localStorage.getItem(testKey) === testValue;
+    } catch (error) {
+      localOk = false;
+      localMessage = error && error.message ? error.message : String(error || 'unknown');
+    } finally {
+      try { localStorage.removeItem(testKey); } catch (_) {}
+    }
+
+    const storageApi = (typeof window !== 'undefined') ? window.Storage : null;
+    let tossSupported = Boolean(
+      storageApi &&
+      typeof storageApi.setItem === 'function' &&
+      typeof storageApi.getItem === 'function' &&
+      typeof storageApi.removeItem === 'function'
+    );
+    let tossOk = false;
+    let tossMessage = '';
+    if (tossSupported) {
+      const call = (fn, payload) => {
+        const result = fn.length >= 2 ? fn.call(storageApi, payload.key || payload, payload.value || undefined) : fn.call(storageApi, payload);
+        return (result && typeof result.then === 'function') ? result : Promise.resolve(result);
+      };
+      try {
+        const payload = { key: testKey, value: testValue };
+        await call(storageApi.setItem, payload);
+        const getResult = await call(storageApi.getItem, { key: testKey });
+        const normalized = (getResult && typeof getResult === 'object' && 'value' in getResult) ? getResult.value : getResult;
+        tossOk = normalized === testValue;
+        await call(storageApi.removeItem, { key: testKey });
+      } catch (error) {
+        tossOk = false;
+        tossMessage = error && error.message ? error.message : String(error || 'unknown');
+      }
+    }
+
+    const parts = [];
+    parts.push(localOk ? 'LocalStorage: OK' : `LocalStorage: FAIL${localMessage ? ` (${localMessage})` : ''}`);
+    if (tossSupported) {
+      parts.push(tossOk ? 'Toss Storage: OK' : `Toss Storage: FAIL${tossMessage ? ` (${tossMessage})` : ''}`);
+    } else {
+      parts.push('Toss Storage: Unsupported');
+    }
+    setCodeError(parts.join(' / '));
+    return;
+  } else {
+    if (reward.type === 'currency') {
+      const gain = Number.isFinite(reward.amount) ? reward.amount : 0;
+      if (gain > 0) {
+        savings += gain;
+        try { localStorage.setItem(SAVINGS_KEY, String(savings)); } catch (_) {}
+        if (typeof addToPlayerStat === 'function') addToPlayerStat('totalCashEarned', gain);
+      }
+    }
+    if (typeof markCodeUsed === 'function') {
+      markCodeUsed(sanitized);
+    }
+    closeCodeModal();
+    UI.reset && UI.reset();
+    introMenuMessage = t('code.success', { amount: reward.amount });
+    introMenuMessageTimer = Math.max(3, MENU_TOAST_DURATION);
   }
-  if (typeof markCodeUsed === 'function') {
-    markCodeUsed(sanitized);
-  }
-  closeCodeModal();
-  UI.reset && UI.reset();
-  introMenuMessage = t('code.success', { amount: reward.amount });
-  introMenuMessageTimer = Math.max(3, MENU_TOAST_DURATION);
 }
 
 const player = new Player();
