@@ -10,8 +10,15 @@ const Input = {
   },
 };
 
+function isFromCodeModal(e) {
+  const target = e && (e.target || e.srcElement);
+  if (!target || typeof target.closest !== 'function') return false;
+  const overlay = target.closest('#code-overlay');
+  return !!(overlay && overlay.classList && overlay.classList.contains('code-visible'));
+}
+
 function onPress(e) {
-  if (isFromDebug(e)) return; // ignore debug panel interactions
+  if (isFromDebug(e) || isFromCodeModal(e)) return; // ignore debug panel interactions and coupon modal
   e && e.preventDefault && e.preventDefault();
   // record pointer position for UI (intro)
   if (e && (e.clientX !== undefined || (e.touches && e.touches.length))) {
@@ -35,6 +42,7 @@ function onPress(e) {
 }
 function onRelease(e) {
   Input.down = false;
+  if (isFromCodeModal(e)) return;
   
   // 모든 상태에서 위치 기록
   if (e && (e.clientX !== undefined || (e.changedTouches && e.changedTouches.length > 0))) {
@@ -87,7 +95,7 @@ function onRelease(e) {
 
 window.addEventListener('keydown', (e) => {
   if (e.code === 'Space' || e.key === ' ' || e.key === 'Spacebar') {
-    if (isFromDebug(e)) return; // do not trigger game press from debug inputs
+    if (isFromDebug(e) || isFromCodeModal(e)) return; // do not trigger game press from debug inputs
     onPress(e);
   }
 });
@@ -101,7 +109,7 @@ window.addEventListener('keydown', (e) => {
   }
 });
 window.addEventListener('keydown', (e) => {
-  if (isFromDebug(e)) return; // ignore UI key capture while editing debug
+  if (isFromDebug(e) || isFromCodeModal(e)) return; // ignore UI key capture while editing debug or modal
   if (e.code === 'Space') UI.keyPressed = 'Space';
   else if (e.code === 'Escape') UI.keyPressed = 'Escape';
   else if (e.code === 'ArrowDown') UI.keyPressed = 'ArrowDown';
@@ -117,15 +125,17 @@ window.addEventListener('mousedown', onPress);
 window.addEventListener('mouseup', (e) => onRelease(e));
 window.addEventListener('touchstart', onPress, { passive: false });
 window.addEventListener('touchend', (e) => {
-  // 게임 캔버스에서만 preventDefault 호출
-  const rect = canvas.getBoundingClientRect();
-  if (e.changedTouches && e.changedTouches.length > 0) {
-    const touch = e.changedTouches[0];
-    const x = touch.clientX;
-    const y = touch.clientY;
-    // 캔버스 범위 내에서만 preventDefault
-    if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
-      e.preventDefault();
+  if (!isFromCodeModal(e)) {
+    // 게임 캔버스에서만 preventDefault 호출
+    const rect = canvas.getBoundingClientRect();
+    if (e.changedTouches && e.changedTouches.length > 0) {
+      const touch = e.changedTouches[0];
+      const x = touch.clientX;
+      const y = touch.clientY;
+      // 캔버스 범위 내에서만 preventDefault
+      if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+        e.preventDefault();
+      }
     }
   }
   onRelease(e);
@@ -258,5 +268,4 @@ window.addEventListener('touchmove', (e) => {
     }
   }
 }, { passive: false });
-
 

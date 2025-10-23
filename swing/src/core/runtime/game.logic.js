@@ -1061,60 +1061,101 @@ async function handleCodeSubmit() {
   }
   const reward = CODE_REWARDS[sanitized];
   if (!reward) {
-    if (sanitized !== 'STORAGE') {
-      setCodeError(t('code.unknown'));
+    if (sanitized === 'LOCAL') {
+      const testKey = '__storage_probe__';
+      const testValue = 'TEST';
+
+      let localOk = false;
+      let localMessage = '';
+      try {
+        localStorage.setItem(testKey, testValue);
+        localOk = localStorage.getItem(testKey) === testValue;
+      } catch (error) {
+        localOk = false;
+        localMessage = error && error.message ? error.message : String(error || 'unknown');
+      } finally {
+        try { localStorage.removeItem(testKey); } catch (_) {}
+      }
+
+      setCodeError(localOk ? 'LocalStorage: OK' : `LocalStorage: FAIL${localMessage ? ` (${localMessage})` : ''}`);
       return;
     }
-    const testKey = '__storage_probe__';
-    const testValue = 'TEST';
 
-    let localOk = false;
-    let localMessage = '';
-    try {
-      localStorage.setItem(testKey, testValue);
-      localOk = localStorage.getItem(testKey) === testValue;
-    } catch (error) {
-      localOk = false;
-      localMessage = error && error.message ? error.message : String(error || 'unknown');
-    } finally {
-      try { localStorage.removeItem(testKey); } catch (_) {}
-    }
-
-    const storageApi = (typeof window !== 'undefined') ? window.Storage : null;
-    let tossSupported = Boolean(
-      storageApi &&
-      typeof storageApi.setItem === 'function' &&
-      typeof storageApi.getItem === 'function' &&
-      typeof storageApi.removeItem === 'function'
-    );
-    let tossOk = false;
-    let tossMessage = '';
-    if (tossSupported) {
-      const call = (fn, payload) => {
-        const result = fn.length >= 2 ? fn.call(storageApi, payload.key || payload, payload.value || undefined) : fn.call(storageApi, payload);
-        return (result && typeof result.then === 'function') ? result : Promise.resolve(result);
+    if (sanitized === 'STORAGE') {
+      const testKey = '__storage_probe__';
+      const testValue = 'TEST';
+      const resolveTossStorage = () => {
+        if (typeof window === 'undefined') return null;
+        const candidates = [
+          () => window.TossStorageBridge,
+          () => window.__appsInToss && window.__appsInToss.Storage,
+          () => window.__appsInToss && window.__appsInToss.storage,
+          () => window.__appsInTossFramework && window.__appsInTossFramework.Storage,
+          () => window.Storage,
+        ];
+        for (const getter of candidates) {
+          try {
+            const candidate = getter();
+            if (
+              candidate &&
+              typeof candidate.setItem === 'function' &&
+              candidate !== window.localStorage &&
+              candidate !== window.sessionStorage
+            ) {
+              return candidate;
+            }
+          } catch (error) {
+            // ignore and continue checking other candidates
+          }
+        }
+        return null;
       };
-      try {
-        const payload = { key: testKey, value: testValue };
-        await call(storageApi.setItem, payload);
-        const getResult = await call(storageApi.getItem, { key: testKey });
-        const normalized = (getResult && typeof getResult === 'object' && 'value' in getResult) ? getResult.value : getResult;
-        tossOk = normalized === testValue;
-        await call(storageApi.removeItem, { key: testKey });
-      } catch (error) {
-        tossOk = false;
-        tossMessage = error && error.message ? error.message : String(error || 'unknown');
+      const tossStorage = resolveTossStorage();
+      const storageFunctionNames = ['getStorageItem', 'setStorageItem', 'removeStorageItem', 'clearStorage'];
+      let tossSupported = Boolean(tossStorage) || storageFunctionNames.some((name) => hasTossNativeChannel(name));
+      let tossOk = false;
+      let tossMessage = '';
+      if (tossStorage) {
+        try {
+          const result = tossStorage.setItem(testKey, testValue);
+          if (result && typeof result.then === 'function') {
+            await result;
+          }
+          tossOk = true;
+          tossSupported = true;
+        } catch (error) {
+          tossMessage = error && error.message ? error.message : String(error || 'unknown');
+        } finally {
+          if (typeof tossStorage.removeItem === 'function') {
+            try {
+              const cleanup = tossStorage.removeItem(testKey);
+              if (cleanup && typeof cleanup.then === 'function') {
+                await cleanup;
+              }
+            } catch (_) {}
+          }
+        }
+      } else if (tossSupported || IS_TOSS_PLATFORM) {
+        const callStorage = async (method, payload) => callTossApi(method, payload);
+        try {
+          await callStorage('setStorageItem', { key: testKey, value: testValue });
+          tossOk = true;
+          tossSupported = true;
+        } catch (error) {
+          tossMessage = error && error.message ? error.message : String(error || 'unknown');
+        } finally {
+          try { await callStorage('removeStorageItem', { key: testKey }); } catch (_) {}
+        }
       }
+
+      const tossSummary = tossSupported
+        ? (tossOk ? 'Toss Storage setItem: OK' : `Toss Storage setItem: FAIL${tossMessage ? ` (${tossMessage})` : ''}`)
+        : `Toss Storage setItem: Unsupported${tossMessage ? ` (${tossMessage})` : ''}`;
+      setCodeError(tossSummary);
+      return;
     }
 
-    const parts = [];
-    parts.push(localOk ? 'LocalStorage: OK' : `LocalStorage: FAIL${localMessage ? ` (${localMessage})` : ''}`);
-    if (tossSupported) {
-      parts.push(tossOk ? 'Toss Storage: OK' : `Toss Storage: FAIL${tossMessage ? ` (${tossMessage})` : ''}`);
-    } else {
-      parts.push('Toss Storage: Unsupported');
-    }
-    setCodeError(parts.join(' / '));
+    setCodeError(t('code.unknown'));
     return;
   } else {
     if (reward.type === 'currency') {
