@@ -672,17 +672,6 @@ const AD_REWARD_ITEMS = [
     successMessageKey: 'adsShop.wizardUnlocked',
   },
   {
-    key: 'stone',
-    type: 'character',
-    amount: 0,
-    placement: 'stone',
-    adUnitId: REWARDED_AD_UNITS.stone || null,
-    titleKey: 'adsShop.stoneTitle',
-    descKey: 'adsShop.stoneDesc',
-    successMessageKey: 'adsShop.stoneUnlocked',
-    requiresRewardCount: 40,
-  },
-  {
     key: 'cash20',
     type: 'currency',
     amount: 20,
@@ -714,6 +703,17 @@ const AD_REWARD_ITEMS = [
     successMessageKey: 'adsShop.infiniteGambleUnlocked',
     requiresRewardCount: 20,
   },
+  {
+    key: 'stone',
+    type: 'character',
+    amount: 0,
+    placement: 'stone',
+    adUnitId: REWARDED_AD_UNITS.stone || null,
+    titleKey: 'adsShop.stoneTitle',
+    descKey: 'adsShop.stoneDesc',
+    successMessageKey: 'adsShop.stoneUnlocked',
+    requiresRewardCount: 40,
+  },
 ];
 
 const TOSS_DEFAULT_AD_UNITS = {
@@ -737,18 +737,6 @@ const TOSS_AD_REWARD_BASE = [
     titleKey: 'adsShop.wizardTitle',
     descKey: 'adsShop.wizardDesc',
     successMessageKey: 'adsShop.wizardUnlocked',
-  },
-  {
-    key: 'stone',
-    type: 'character',
-    amount: 0,
-    placement: 'stone',
-    adUnitKey: 'stone',
-    adMode: 'rewarded',
-    titleKey: 'adsShop.stoneTitle',
-    descKey: 'adsShop.stoneDesc',
-    successMessageKey: 'adsShop.stoneUnlocked',
-    requiresRewardCount: 40,
   },
   {
     key: 'cash20',
@@ -787,6 +775,19 @@ const TOSS_INFINITE_GAMBLE_ITEM = {
   descKey: 'adsShop.infiniteGambleDesc',
   successMessageKey: 'adsShop.infiniteGambleUnlocked',
   requiresRewardCount: 20,
+};
+
+const TOSS_STONE_ITEM = {
+  key: 'stone',
+  type: 'character',
+  amount: 0,
+  placement: 'stone',
+  adUnitKey: 'stone',
+  adMode: 'rewarded',
+  titleKey: 'adsShop.stoneTitle',
+  descKey: 'adsShop.stoneDesc',
+  successMessageKey: 'adsShop.stoneUnlocked',
+  requiresRewardCount: 40,
 };
 
 function getTossAdUnitConfig() {
@@ -829,7 +830,13 @@ function getTossAdRewardItems() {
       : resolveTossAdUnitId(TOSS_INFINITE_GAMBLE_ITEM.adUnitKey || TOSS_INFINITE_GAMBLE_ITEM.key);
     return { ...TOSS_INFINITE_GAMBLE_ITEM, adUnitId: configuredId || null, adMode: TOSS_INFINITE_GAMBLE_ITEM.adMode || 'rewarded' };
   })();
-  return [...configuredBase, startSkillConfigured, infiniteConfigured];
+  const stoneConfigured = (() => {
+    const configuredId = (typeof TOSS_STONE_ITEM.adUnitId === 'string' && TOSS_STONE_ITEM.adUnitId.trim().length > 0)
+      ? TOSS_STONE_ITEM.adUnitId.trim()
+      : resolveTossAdUnitId(TOSS_STONE_ITEM.adUnitKey || TOSS_STONE_ITEM.key);
+    return { ...TOSS_STONE_ITEM, adUnitId: configuredId || null, adMode: TOSS_STONE_ITEM.adMode || 'rewarded' };
+  })();
+  return [...configuredBase, startSkillConfigured, infiniteConfigured, stoneConfigured];
 }
 
 const adRewardState = {};
