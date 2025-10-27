@@ -2458,14 +2458,21 @@ function updateRun(dt) {
     const displayY = caughtByDrone ? caughtByDrone.y : (b.y + wobble);
     const displayX = caughtByDrone ? caughtByDrone.x : player.x;
     const caughtInAir = caughtByDrone ? true : (player.mode === 'free');
+    const isStoneCharacter = characterIs('stone');
 
-    if (caughtByDrone && droneCollectorActive) {
+    if (caughtByDrone && droneCollectorActive && !isStoneCharacter) {
       const cashReward = 1;
       savings += cashReward;
       skillCashBonusThisRun += cashReward;
       if (typeof addToPlayerStat === 'function') addToPlayerStat('totalCashEarned', cashReward);
       spawnEffect('combo', displayX, displayY - 14, t('effects.cashEarned', { cash: cashReward }));
       try { localStorage.setItem(SAVINGS_KEY, String(savings)); } catch (_) {}
+    }
+
+    if (isStoneCharacter) {
+      const burstX = caughtByDrone ? caughtByDrone.x : b.x;
+      spawnEffect('burst', burstX, displayY);
+      continue;
     }
 
     if (b.kind === 'star') {
@@ -2934,7 +2941,7 @@ function updateRun(dt) {
       if (IS_AD_PLATFORM && typeof grantDailyLives === 'function' && typeof dailyLivesRemaining === 'function') {
         const rewardMax = (typeof DAILY_MAX_LIVES === 'number') ? DAILY_MAX_LIVES + 1 : 31;
         const beforeLives = dailyLivesRemaining();
-        const afterLives = grantDailyLives(10, { max: rewardMax });
+        const afterLives = grantDailyLives(5, { max: rewardMax });
         const cappedBefore = Math.min(beforeLives, rewardMax);
         const cappedAfter = Math.min(afterLives, rewardMax);
         levelRewardLives = Math.max(0, cappedAfter - cappedBefore);
@@ -3330,6 +3337,29 @@ function renderRun(g) {
   g.fillText(t('hud.level', { level: getLevelByExp(exp) }), 12, 46);
 
   renderSkillHud(g);
+
+  if (demoActive) {
+    const guideBaseY = CONFIG.height - (CONFIG.groundH || 0) - 50;
+    const guideLines = String(t('demo.ropeGuide') || '').split('\n');
+    const lineHeight = 14;
+    const extraSpacing = 5;
+    const topBottomPadding = 5;
+    const step = lineHeight + extraSpacing;
+    const totalHeight = step * Math.max(0, guideLines.length - 1) + topBottomPadding * 2;
+    const startY = guideBaseY - totalHeight / 2 + topBottomPadding;
+    g.save();
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    const locale = (typeof currentLocale === 'string' && currentLocale.trim()) ? currentLocale.trim().toLowerCase() : 'en';
+    const fontSize = locale.startsWith('ko') ? 13 : 9;
+    g.font = `${fontSize}px "GameFont", "Press Start 2P", "Dalmoori", monospace`;
+    g.fillStyle = '#ffe066';
+    guideLines.forEach((line, idx) => {
+      g.fillText(line, CONFIG.width / 2, startY + idx * step);
+    });
+    g.restore();
+  }
+
   renderSkillSelectionOverlay(g);
 }
 

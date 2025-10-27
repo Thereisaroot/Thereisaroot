@@ -20,6 +20,7 @@ const DAILY_INTERSTITIAL_LIMIT = 5;
 const DAILY_AD_REWARD_KEYS = {
   wizard: 'wizard',
   cash20: 'cash20',
+  stone: 'stone',
 };
 
 const AD_REWARD_COOLDOWNS = {

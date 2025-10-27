@@ -263,6 +263,9 @@
       leaderboardUnavailable: 'Leaderboard is unavailable right now.',
       clearMessage: 'GAME CLEAR! Endless barrage unlocked.',
     },
+    demo: {
+      ropeGuide: 'Gauge rope distance after each jump,\nthen chain extra jumps or use Fly!',
+    },
     ads: {
       lifeCounter: 'LIVES {current}/{max}',
       lifeLoading: 'Loading ad... hold tight!',
@@ -288,6 +291,9 @@
       cashTitle: '$20 Pouch',
       cashDesc: 'Watch an ad to receive $20 instantly.',
       cashGranted: '${amount} added to savings.',
+      stoneTitle: 'Stone Unlock',
+      stoneDesc: 'Watch 40 ads to unlock the Stone character.',
+      stoneUnlocked: 'Stone unlocked!',
       startSkillTitle: 'Start Skill Training',
       startSkillDesc: 'Watch an ad to permanently unlock the Start Skill.',
       startSkillLearned: 'Start Skill unlocked!',
@@ -489,6 +495,11 @@
         name: 'Bird',
         summary: 'Fly anytime\nwhen owned',
         help: 'Allows Fly activation any time \nonce the Fly item is owned.',
+      },
+      stone: {
+        name: 'Stone',
+        summary: 'No boss fights\nNo box perks',
+        help: 'Boss encounters never trigger and item boxes grant no effects, while skills remain available.',
       },
     },
     skills: {
@@ -856,6 +867,9 @@
       leaderboardUnavailable: '리더보드를 지금 열 수 없어요.',
       clearMessage: 'GAME CLEAR! 무한 탄막 모드 시작!',
     },
+    demo: {
+      ropeGuide: '점프 후에 로프 거리를 보고,\n추가 점프와 플라이로 컨트롤!',
+    },
     ads: {
       lifeCounter: '기회 {current}/{max}',
       lifeLoading: '광고 불러오는 중... 잠시만요!',
@@ -881,6 +895,9 @@
       cashTitle: '$20 주머니',
       cashDesc: '광고를 보면 바로 20달러를 획득합니다.',
       cashGranted: '${amount}를 소지금에 추가했습니다.',
+      stoneTitle: '돌맹이 해제',
+      stoneDesc: '광고 40회를 시청하면 돌맹이 캐릭터가 해제됩니다.',
+      stoneUnlocked: '돌맹이가 해제되었습니다!',
       startSkillTitle: '스타트 스킬 습득',
       startSkillDesc: '광고를 보면 스타트 스킬을 영구 활성화합니다.',
       startSkillLearned: '스타트 스킬을 배웠습니다!',
@@ -1082,6 +1099,11 @@
         name: '버드',
         summary: '언제든지\n플라이 사용',
         help: '플라이 아이템을 보유하면 언제든지 비행을 \n발동할 수 있습니다.',
+      },
+      stone: {
+        name: '돌맹이',
+        summary: '보스 없음\n상자 효과 없음',
+        help: '보스전이 발생하지 않으며\n상자에서 얻는 효과가 없습니다.',
       },
     },
     skills: {

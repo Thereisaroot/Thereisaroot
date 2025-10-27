@@ -123,10 +123,25 @@
         [0,2,1,1,1,1,2,0],
         [0,0,2,1,1,2,0,0],
         [0,0,0,2,2,0,0,0],
-      ],
-      colors: ['#7dd3ff', '#2a9df4', '#ffd35a'],
-    },
-  };
+    ],
+    colors: ['#7dd3ff', '#2a9df4', '#ffd35a'],
+  },
+  stone: {
+    price: 100000,
+    minLevel: 40,
+    pixels: [
+      [0,0,1,1,1,1,0,0],
+      [0,1,2,2,2,2,1,0],
+      [1,2,3,3,3,3,2,1],
+      [1,2,3,3,3,3,2,1],
+      [1,2,3,3,3,3,2,1],
+      [1,2,3,3,3,3,2,1],
+      [0,1,2,2,2,2,1,0],
+      [0,0,1,1,1,1,0,0],
+    ],
+    colors: ['#6f6f6f', '#8f8f8f', '#c7c7c7'],
+  },
+};
 
-  global.CHAR_SPECS = CHAR_SPECS;
+global.CHAR_SPECS = CHAR_SPECS;
 })(typeof window !== 'undefined' ? window : globalThis);

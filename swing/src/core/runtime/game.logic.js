@@ -672,6 +672,17 @@ const AD_REWARD_ITEMS = [
     successMessageKey: 'adsShop.wizardUnlocked',
   },
   {
+    key: 'stone',
+    type: 'character',
+    amount: 0,
+    placement: 'stone',
+    adUnitId: REWARDED_AD_UNITS.stone || null,
+    titleKey: 'adsShop.stoneTitle',
+    descKey: 'adsShop.stoneDesc',
+    successMessageKey: 'adsShop.stoneUnlocked',
+    requiresRewardCount: 40,
+  },
+  {
     key: 'cash20',
     type: 'currency',
     amount: 20,
@@ -710,6 +721,7 @@ const TOSS_DEFAULT_AD_UNITS = {
   cash20: 'ait-ad-test-rewarded-id',
   startSkill: 'ait-ad-test-rewarded-id',
   infiniteGamble: 'ait-ad-test-rewarded-id',
+  stone: 'ait-ad-test-rewarded-id',
   life: 'ait-ad-test-interstitial-id',
   shared: 'ait-ad-test-rewarded-id'
 };
@@ -725,6 +737,18 @@ const TOSS_AD_REWARD_BASE = [
     titleKey: 'adsShop.wizardTitle',
     descKey: 'adsShop.wizardDesc',
     successMessageKey: 'adsShop.wizardUnlocked',
+  },
+  {
+    key: 'stone',
+    type: 'character',
+    amount: 0,
+    placement: 'stone',
+    adUnitKey: 'stone',
+    adMode: 'rewarded',
+    titleKey: 'adsShop.stoneTitle',
+    descKey: 'adsShop.stoneDesc',
+    successMessageKey: 'adsShop.stoneUnlocked',
+    requiresRewardCount: 40,
   },
   {
     key: 'cash20',
@@ -869,10 +893,10 @@ function ensureCodeModal() {
     styleEl.textContent = `
 #code-overlay{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.65);z-index:10050;pointer-events:auto;}
 #code-overlay.code-visible{display:flex;}
-#code-overlay .code-dialog{background:#0f1a2a;border:2px solid #b4c0d9;border-radius:8px;padding:22px 24px;width:min(90vw,360px);box-shadow:0 16px 32px rgba(0,0,0,0.35);}
+#code-overlay .code-dialog{background:#0f1a2a;border:2px solid #b4c0d9;border-radius:8px;padding:22px 24px;width:min(90vw,340px);box-shadow:0 16px 32px rgba(0,0,0,0.35);}
 #code-overlay .code-dialog h2{margin:0 0 14px;text-align:center;color:#ffffff;font:12px "GameFont","Press Start 2P","Dalmoori",monospace;}
 #code-overlay .code-dialog label{display:block;margin-bottom:10px;color:#b4c0d9;font:9px "GameFont","Press Start 2P","Dalmoori",monospace;letter-spacing:0.5px;text-transform:uppercase;}
-#code-overlay .code-dialog input{width:100%;padding:10px 12px;border-radius:4px;border:1px solid #3a4b66;background:#17263b;color:#ffffff;font:12px "GameFont","Press Start 2P","Dalmoori",monospace;text-transform:uppercase;letter-spacing:1px;}
+#code-overlay .code-dialog input{width:calc(100% - 20px);padding:10px 12px;border-radius:4px;border:1px solid #3a4b66;background:#17263b;color:#ffffff;font:12px "GameFont","Press Start 2P","Dalmoori",monospace;text-transform:uppercase;letter-spacing:1px;}
 #code-overlay .code-dialog input:focus{outline:none;border-color:#7fb6ff;box-shadow:0 0 0 2px rgba(127,182,255,0.25);}
 #code-overlay .code-error{min-height:16px;color:#ff8c8c;font:8px "GameFont","Press Start 2P","Dalmoori",monospace;text-align:center;margin:6px 0 12px;}
 #code-overlay .code-actions{display:flex;gap:12px;justify-content:flex-end;}
@@ -1152,6 +1176,16 @@ async function handleCodeSubmit() {
         ? (tossOk ? 'Toss Storage setItem: OK' : `Toss Storage setItem: FAIL${tossMessage ? ` (${tossMessage})` : ''}`)
         : `Toss Storage setItem: Unsupported${tossMessage ? ` (${tossMessage})` : ''}`;
       setCodeError(tossSummary);
+      return;
+    }
+
+    if (sanitized === 'TOSSADS') {
+      const wizardId = resolveTossAdUnitId('wizard');
+      const cashId = resolveTossAdUnitId('cash20');
+      const parts = [];
+      parts.push(wizardId ? `Wizard Ad Unit: ${wizardId}` : 'Wizard Ad Unit: not configured');
+      parts.push(cashId ? `Cash20 Ad Unit: ${cashId}` : 'Cash20 Ad Unit: not configured');
+      setCodeError(parts.join(' / '));
       return;
     }
 
@@ -1718,6 +1752,15 @@ function startRewardAd(key) {
     return;
   }
 
+  if (item.key === 'stone' && shopInv.characters && shopInv.characters.includes('stone')) {
+    state.status = 'done';
+    state.message = t('adsShop.alreadyOwned');
+    uiButtons.shop.cards = [];
+    uiButtons.shop.buttons = [];
+    if (typeof buildShopCards === 'function') buildShopCards();
+    return;
+  }
+
   if (item.key === 'startSkill' && shopInv.startSkill) {
     state.status = 'done';
     state.message = t('adsShop.startSkillOwned');
@@ -2031,6 +2074,12 @@ function applyAdReward(item) {
     if (!shopInv.characters) shopInv.characters = [];
     if (!shopInv.characters.includes('wizard')) {
       shopInv.characters.push('wizard');
+      saveShopInv(shopInv);
+    }
+  } else if (item.type === 'character' && item.key === 'stone') {
+    if (!shopInv.characters) shopInv.characters = [];
+    if (!shopInv.characters.includes('stone')) {
+      shopInv.characters.push('stone');
       saveShopInv(shopInv);
     }
   } else if (item.type === 'currency') {
@@ -2852,6 +2901,7 @@ function getBossStageTriggerSet() {
 
 function maybeTriggerBossStage(stageNumber, entryRope) {
   if (!bossProgress) resetBossProgress();
+  if (characterIs('stone')) return;
   const triggers = getBossStageTriggerSet();
   if (!triggers.has(stageNumber)) return;
   if (bossProgress.triggeredStages.has(stageNumber)) return;
