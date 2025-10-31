@@ -5,6 +5,7 @@
   --accent: #e53d3d;
   --text: #ffffff;
   --dalmoori-font-bump: 0px;
+  --game-scaled-height: 0px;
 }
 
 :lang(ko) {
@@ -28,11 +29,33 @@ body {
   overflow: hidden;
 }
 
+body::before,
+body::after {
+  content: '';
+  position: fixed;
+  left: 0;
+  right: 0;
+  background: rgba(15, 26, 42, 0.5);
+  pointer-events: none;
+  z-index: 0;
+  transition: height 0.2s ease;
+}
+
+body::before {
+  top: 0;
+  height: max(0px, calc(((100vh - var(--game-scaled-height, 0px)) / 2) - 15px));
+}
+
+body::after {
+  bottom: 0;
+  height: max(0px, calc(((100vh - var(--game-scaled-height, 0px)) / 2) - 15px));
+}
+
 .icon-wallpaper {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  z-index: 0;
+  z-index: -1;
   overflow: hidden;
 }
 
@@ -138,7 +161,7 @@ body {
 
 #game {
   display: block;
-  margin: 20px;
+  margin: 15px;
   max-width: calc(100vw - 40px);
   max-height: calc(100vh - 40px);
   image-rendering: pixelated;

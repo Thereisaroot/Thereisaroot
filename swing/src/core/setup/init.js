@@ -41,9 +41,12 @@ function commonText(key, params) {
   return t(`common.${key}`, params);
 }
 
-const CANVAS_MARGIN = 20;
+const CANVAS_MARGIN_X = 15;
+const CANVAS_MARGIN_Y = 15;
+const MAX_CANVAS_WIDTH = 800;
 let dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
-let canvasScale = 1;
+let canvasScaleX = 1;
+let canvasScaleY = 1;
 let adResizeObserver = null;
 let adMutationObserver = null;
 
@@ -62,24 +65,31 @@ function setupCanvas() {
   const adEl = document.querySelector('.kakao_ad_area');
   const adHeight = visibleElementHeight(adEl);
 
-  const reservedVertical = CANVAS_MARGIN * 2 + adHeight;
-  const availableWidth = Math.max(1, (window.innerWidth || CONFIG.width) - CANVAS_MARGIN * 2);
+  const reservedVertical = CANVAS_MARGIN_Y * 2 + adHeight;
+  const rawAvailableWidth = Math.max(1, (window.innerWidth || CONFIG.width) - CANVAS_MARGIN_X * 2);
+  const availableWidth = Math.min(MAX_CANVAS_WIDTH, rawAvailableWidth);
   const availableHeight = Math.max(1, (window.innerHeight || CONFIG.height) - reservedVertical);
-  const nextScale = Math.min(availableWidth / CONFIG.width, availableHeight / CONFIG.height);
-  canvasScale = Number.isFinite(nextScale) && nextScale > 0 ? nextScale : 1;
 
-  const scaledWidth = CONFIG.width * canvasScale;
-  const scaledHeight = CONFIG.height * canvasScale;
-  const renderWidth = Math.max(1, Math.round(scaledWidth * dpr));
-  const renderHeight = Math.max(1, Math.round(scaledHeight * dpr));
+  const nextScaleX = availableWidth / CONFIG.width;
+  const nextScaleY = availableHeight / CONFIG.height;
+  const nextScale = Math.min(nextScaleX, nextScaleY);
+  const normalizedScale = Number.isFinite(nextScale) && nextScale > 0 ? nextScale : 1;
+  canvasScaleX = normalizedScale;
+  canvasScaleY = normalizedScale;
+
+  const scaledWidth = CONFIG.width * canvasScaleX;
+  const scaledHeight = CONFIG.height * canvasScaleY;
+  const renderWidth = Math.max(1, Math.round(CONFIG.width * canvasScaleX * dpr));
+  const renderHeight = Math.max(1, Math.round(CONFIG.height * canvasScaleY * dpr));
 
   canvas.width = renderWidth;
   canvas.height = renderHeight;
-  canvas.style.width = scaledWidth + 'px';
-  canvas.style.height = scaledHeight + 'px';
-  canvas.style.margin = `${CANVAS_MARGIN}px`;
+  canvas.style.width = `${scaledWidth}px`;
+  canvas.style.height = `${scaledHeight}px`;
+  canvas.style.margin = `${CANVAS_MARGIN_Y}px ${CANVAS_MARGIN_X}px`;
+  document.documentElement.style.setProperty('--game-scaled-height', `${scaledHeight}px`);
 
-  ctx.setTransform(canvasScale * dpr, 0, 0, canvasScale * dpr, 0, 0);
+  ctx.setTransform(canvasScaleX * dpr, 0, 0, canvasScaleY * dpr, 0, 0);
   if ('imageSmoothingEnabled' in ctx) {
     ctx.imageSmoothingEnabled = false;
   }
