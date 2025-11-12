@@ -1,0 +1,62 @@
+{
+  "itemShop": [
+    { "id": "item_energy_01", "name": "에너지 캡슐", "description": "다음 점프 파워 +10%", "price": 500, "currency": "GOLD", "icon": "icons/item_energy.png" },
+    { "id": "item_energy_02", "name": "에너지 캡슐+", "description": "다음 점프 파워 +20%", "price": 900, "currency": "GOLD", "icon": "icons/item_energy_plus.png" },
+    { "id": "item_brake_01", "name": "에어 브레이크", "description": "10초간 낙하 속도 절반", "price": 700, "currency": "GOLD", "icon": "icons/item_brake.png" },
+    { "id": "item_scan_01", "name": "발판 스캐너", "description": "30초간 위험 발판 표시", "price": 850, "currency": "GOLD", "icon": "icons/item_scan.png" },
+    { "id": "item_shield_01", "name": "실드", "description": "한 번 낙하 무효", "price": 1000, "currency": "GOLD", "icon": "icons/item_shield.png" },
+    { "id": "item_ticket_01", "name": "보너스 티켓", "description": "보너스 룸 진입 확률 +25%", "price": 30, "currency": "DIAMOND", "icon": "icons/item_ticket.png" },
+    { "id": "item_revive_01", "name": "리바이브", "description": "즉시 재시작", "price": 40, "currency": "DIAMOND", "icon": "icons/item_revive.png" },
+    { "id": "item_exp_01", "name": "훈련 노트", "description": "경험치 500 획득", "price": 500, "currency": "EXP", "icon": "icons/item_exp.png" },
+    { "id": "item_combo_01", "name": "콤보 부스터", "description": "30초간 콤보 배율 +1", "price": 1200, "currency": "GOLD", "icon": "icons/item_combo.png" },
+    { "id": "item_timer_01", "name": "타이머 정지", "description": "타임어택에서 5초 정지", "price": 45, "currency": "DIAMOND", "icon": "icons/item_timer.png" }
+  ],
+  "characterShop": [
+    { "id": "char_square_basic", "name": "스탠다드", "description": "기본형 사각형", "price": 0, "currency": "GOLD", "icon": "icons/char_square.png" },
+    { "id": "char_pentagon", "name": "엣지 스페셜리스트", "description": "정밀 제어형", "price": 6000, "currency": "GOLD", "icon": "icons/char_pentagon.png" },
+    { "id": "char_hexagon", "name": "모멘텀 라이더", "description": "균형형 육각", "price": 4200, "currency": "GOLD", "icon": "icons/char_hexagon.png" },
+    { "id": "char_octagon", "name": "윈드 러너", "description": "하이 모빌리티", "price": 55, "currency": "DIAMOND", "icon": "icons/char_octagon.png" },
+    { "id": "char_circle", "name": "자이로 마스터", "description": "원형 공중 제어", "price": 75, "currency": "DIAMOND", "icon": "icons/char_circle.png" },
+    { "id": "char_training", "name": "트레이닝 더미", "description": "튜토리얼 전용", "price": 1500, "currency": "EXP", "icon": "icons/char_dummy.png" },
+    { "id": "char_robot", "name": "로봇 파이터", "description": "전자제어형", "price": 68, "currency": "DIAMOND", "icon": "icons/char_robot.png" },
+    { "id": "char_ninja", "name": "닌자", "description": "은신 스킨", "price": 6200, "currency": "GOLD", "icon": "icons/char_ninja.png" },
+    { "id": "char_pumpkin", "name": "펌킨", "description": "시즌 한정", "price": 52, "currency": "DIAMOND", "icon": "icons/char_pumpkin.png" },
+    { "id": "char_space", "name": "코스모", "description": "무중력 테마", "price": 4800, "currency": "GOLD", "icon": "icons/char_space.png" }
+  ],
+  "gearShop": [
+    { "id": "gear_boots_01", "name": "점프 부츠", "description": "점프 파워 +5%", "price": 3500, "currency": "GOLD", "icon": "icons/gear_boots.png" },
+    { "id": "gear_boots_02", "name": "부츠+", "description": "점프 파워 +10%", "price": 5200, "currency": "GOLD", "icon": "icons/gear_boots_plus.png" },
+    { "id": "gear_glove_01", "name": "그립 글러브", "description": "마찰 +8%", "price": 3100, "currency": "GOLD", "icon": "icons/gear_glove.png" },
+    { "id": "gear_glove_02", "name": "글러브+", "description": "마찰 +12%", "price": 4700, "currency": "GOLD", "icon": "icons/gear_glove_plus.png" },
+    { "id": "gear_core_01", "name": "코어 모듈", "description": "회전 관성 -5%", "price": 3800, "currency": "GOLD", "icon": "icons/gear_core.png" },
+    { "id": "gear_core_02", "name": "코어 모듈 X", "description": "회전 관성 -10%", "price": 54, "currency": "DIAMOND", "icon": "icons/gear_core_plus.png" },
+    { "id": "gear_sensor_01", "name": "센서 패키지", "description": "발판 스캔 범위 +15%", "price": 3200, "currency": "GOLD", "icon": "icons/gear_sensor.png" },
+    { "id": "gear_sensor_02", "name": "센서 패키지 X", "description": "발판 스캔 범위 +30%", "price": 46, "currency": "DIAMOND", "icon": "icons/gear_sensor_plus.png" },
+    { "id": "gear_chip_01", "name": "컨트롤 칩", "description": "에어컨트롤 +5%", "price": 2900, "currency": "GOLD", "icon": "icons/gear_chip.png" },
+    { "id": "gear_chip_02", "name": "컨트롤 칩 X", "description": "에어컨트롤 +12%", "price": 39, "currency": "DIAMOND", "icon": "icons/gear_chip_plus.png" }
+  ],
+  "adShop": [
+    { "id": "ad_revive", "name": "광고 리바이브", "description": "광고 시청 후 즉시 부활", "price": 0, "currency": "GOLD", "icon": "icons/ad_revive.png" },
+    { "id": "ad_boost", "name": "광고 부스트", "description": "광고 시청 후 점프 파워 +15%", "price": 0, "currency": "GOLD", "icon": "icons/ad_boost.png" },
+    { "id": "ad_shield", "name": "광고 실드", "description": "광고 시청 후 실드 1회", "price": 0, "currency": "GOLD", "icon": "icons/ad_shield.png" },
+    { "id": "ad_gold", "name": "골드 광고", "description": "광고 시청 후 골드 800", "price": 0, "currency": "GOLD", "icon": "icons/ad_gold.png" },
+    { "id": "ad_exp", "name": "EXP 광고", "description": "광고 시청 후 경험치 600", "price": 0, "currency": "GOLD", "icon": "icons/ad_exp.png" },
+    { "id": "ad_bonus", "name": "보너스 티켓 광고", "description": "광고 시청 후 보너스 티켓", "price": 0, "currency": "GOLD", "icon": "icons/ad_bonus.png" },
+    { "id": "ad_combo", "name": "콤보 광고", "description": "광고 시청 후 콤보 유지", "price": 0, "currency": "GOLD", "icon": "icons/ad_combo.png" },
+    { "id": "ad_timer", "name": "타이머 광고", "description": "광고 시청 후 시간 +10초", "price": 0, "currency": "GOLD", "icon": "icons/ad_timer.png" },
+    { "id": "ad_speed", "name": "스피드 광고", "description": "광고 시청 후 이동속도 +10%", "price": 0, "currency": "GOLD", "icon": "icons/ad_speed.png" },
+    { "id": "ad_life", "name": "라이프 광고", "description": "광고 시청 후 라이프 +1", "price": 0, "currency": "GOLD", "icon": "icons/ad_life.png" }
+  ],
+  "tossAdShop": [
+    { "id": "toss_package_01", "name": "토스 패키지 A", "description": "토스 제휴 보상", "price": 0, "currency": "GOLD", "icon": "icons/toss_package_a.png" },
+    { "id": "toss_package_02", "name": "토스 패키지 B", "description": "토스 제휴 보상", "price": 0, "currency": "GOLD", "icon": "icons/toss_package_b.png" },
+    { "id": "toss_special_01", "name": "토스 스페셜", "description": "광고 시청 후 다이아 15", "price": 0, "currency": "GOLD", "icon": "icons/toss_special.png" },
+    { "id": "toss_skin_01", "name": "토스 스킨", "description": "광고 시청 후 스킨 조각", "price": 0, "currency": "GOLD", "icon": "icons/toss_skin.png" },
+    { "id": "toss_ticket_01", "name": "토스 티켓", "description": "토스 광고 후 티켓", "price": 0, "currency": "GOLD", "icon": "icons/toss_ticket.png" },
+    { "id": "toss_daily_01", "name": "토스 데일리", "description": "일일 제휴 보상", "price": 0, "currency": "GOLD", "icon": "icons/toss_daily.png" },
+    { "id": "toss_gold_01", "name": "토스 골드", "description": "광고 시청 후 골드 1200", "price": 0, "currency": "GOLD", "icon": "icons/toss_gold.png" },
+    { "id": "toss_combo_01", "name": "토스 콤보", "description": "광고 시청 후 콤보 유지", "price": 0, "currency": "GOLD", "icon": "icons/toss_combo.png" },
+    { "id": "toss_time_01", "name": "토스 타임", "description": "광고 시청 후 시간 +15초", "price": 0, "currency": "GOLD", "icon": "icons/toss_time.png" },
+    { "id": "toss_buff_01", "name": "토스 버프", "description": "광고 시청 후 버프", "price": 0, "currency": "GOLD", "icon": "icons/toss_buff.png" }
+  ]
+}

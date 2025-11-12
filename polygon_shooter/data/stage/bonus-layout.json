@@ -1,0 +1,22 @@
+{
+  "id": "bonus_room_alpha",
+  "label": "Crystal Vault",
+  "spawn": {
+    "entry": { "x": 360, "y": -120 },
+    "exit": { "x": 680, "y": -640 }
+  },
+  "gravityScale": 0.82,
+  "wind": { "x": 0, "y": 0 },
+  "platforms": [
+    { "id": "floor", "x": 360, "y": 0, "width": 640, "height": 16, "type": "solid" },
+    { "id": "left_step", "x": 220, "y": -120, "width": 120, "height": 14, "type": "solid" },
+    { "id": "bounce_pad", "x": 520, "y": -220, "width": 140, "height": 12, "type": "bounce" },
+    { "id": "mid_bridge", "x": 380, "y": -360, "width": 220, "height": 12, "type": "solid" },
+    { "id": "crystal_pillar", "x": 640, "y": -480, "width": 120, "height": 12, "type": "slip" },
+    { "id": "goal_pad", "x": 720, "y": -620, "width": 160, "height": 16, "type": "goal" }
+  ],
+  "collectibles": [
+    { "id": "diamond_cluster", "x": 420, "y": -420, "type": "DIAMOND", "value": 6 },
+    { "id": "gold_orb", "x": 560, "y": -160, "type": "GOLD", "value": 250 }
+  ]
+}

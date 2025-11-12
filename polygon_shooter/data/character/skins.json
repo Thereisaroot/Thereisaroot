@@ -1,0 +1,80 @@
+[
+  {
+    "id": "basic_square",
+    "name": "Standard Pilot",
+    "shapeId": "square",
+    "description": "기본 제공 조종사. 균형 잡힌 사각형 폼팩터.",
+    "icon": "image/characters/basic_square.png",
+    "rarity": "common",
+    "unlock": {
+      "currency": "GOLD",
+      "cost": 0
+    },
+    "tags": ["starter"]
+  },
+  {
+    "id": "precision_edge",
+    "name": "Edge Specialist",
+    "shapeId": "pentagon",
+    "description": "날카로운 에지 컨트롤을 중시하는 펜타곤 숙련자.",
+    "icon": "image/characters/precision_edge.png",
+    "rarity": "rare",
+    "unlock": {
+      "currency": "GOLD",
+      "cost": 4500
+    },
+    "tags": ["precision", "challenge"]
+  },
+  {
+    "id": "momentum_rider",
+    "name": "Momentum Rider",
+    "shapeId": "hexagon",
+    "description": "속도와 균형을 모두 잡는 육각형 스탠다드 스킨.",
+    "icon": "image/characters/momentum_rider.png",
+    "rarity": "uncommon",
+    "unlock": {
+      "currency": "GOLD",
+      "cost": 2200
+    },
+    "tags": ["starter_upgrade"]
+  },
+  {
+    "id": "wind_runner",
+    "name": "Wind Runner",
+    "shapeId": "octagon",
+    "description": "바람을 가르는 옥타곤 하이모빌리티 스킨.",
+    "icon": "image/characters/wind_runner.png",
+    "rarity": "epic",
+    "unlock": {
+      "currency": "DIAMOND",
+      "cost": 35
+    },
+    "tags": ["mobility", "premium"]
+  },
+  {
+    "id": "gyro_master",
+    "name": "Gyro Master",
+    "shapeId": "circle",
+    "description": "완전 원형 폼팩터를 숙달한 공중 제어 전문가.",
+    "icon": "image/characters/gyro_master.png",
+    "rarity": "legendary",
+    "unlock": {
+      "currency": "DIAMOND",
+      "cost": 60
+    },
+    "tags": ["endgame", "premium"]
+  },
+  {
+    "id": "training_dummy",
+    "name": "Training Dummy",
+    "shapeId": "square",
+    "description": "튜토리얼에서만 사용 가능한 연습 전용 유닛.",
+    "icon": "image/characters/training_dummy.png",
+    "rarity": "common",
+    "unlock": {
+      "currency": "EXP",
+      "cost": 900
+    },
+    "tags": ["tutorial", "assist"]
+  }
+]

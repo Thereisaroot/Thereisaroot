@@ -1,0 +1,87 @@
+[
+  {
+    "id": "tutorial_lowlands",
+    "label": "Tutorial Lowlands",
+    "range": { "start": 0, "end": 1000 },
+    "background": {
+      "primary": "#071028",
+      "secondary": "#0c1b3d",
+      "gradientAngle": 180
+    },
+    "fog": { "color": "rgba(14, 33, 74, 0.45)", "density": 0.15 },
+    "ambientLight": 0.85,
+    "parallax": [
+      { "id": "cloud-soft", "speed": 0.1, "alpha": 0.35 },
+      { "id": "tower-ruins", "speed": 0.03, "alpha": 0.28 }
+    ],
+    "particles": { "type": "glow", "density": 6 }
+  },
+  {
+    "id": "wind_corridor",
+    "label": "Wind Corridor",
+    "range": { "start": 1000, "end": 2500 },
+    "background": {
+      "primary": "#05162d",
+      "secondary": "#0e2c4f",
+      "gradientAngle": 200
+    },
+    "fog": { "color": "rgba(26, 94, 146, 0.35)", "density": 0.2 },
+    "ambientLight": 0.78,
+    "parallax": [
+      { "id": "wind-streak", "speed": 0.22, "alpha": 0.45 },
+      { "id": "turbine", "speed": 0.06, "alpha": 0.25 }
+    ],
+    "particles": { "type": "wind-line", "density": 12 }
+  },
+  {
+    "id": "ice_ridge",
+    "label": "Icy Ridge",
+    "range": { "start": 2500, "end": 4000 },
+    "background": {
+      "primary": "#06162f",
+      "secondary": "#274973",
+      "gradientAngle": 210
+    },
+    "fog": { "color": "rgba(120, 192, 255, 0.42)", "density": 0.28 },
+    "ambientLight": 0.72,
+    "parallax": [
+      { "id": "snow-crystal", "speed": 0.18, "alpha": 0.4 },
+      { "id": "ice-tower", "speed": 0.05, "alpha": 0.3 }
+    ],
+    "particles": { "type": "snow", "density": 18 }
+  },
+  {
+    "id": "storm_altitude",
+    "label": "Storm Altitude",
+    "range": { "start": 4000, "end": 5000 },
+    "background": {
+      "primary": "#120b29",
+      "secondary": "#2b1151",
+      "gradientAngle": 215
+    },
+    "fog": { "color": "rgba(103, 63, 167, 0.48)", "density": 0.35 },
+    "ambientLight": 0.66,
+    "parallax": [
+      { "id": "lightning-arc", "speed": 0.28, "alpha": 0.5 },
+      { "id": "storm-cloud", "speed": 0.08, "alpha": 0.35 }
+    ],
+    "particles": { "type": "electric-spark", "density": 10 }
+  },
+  {
+    "id": "summit_goal",
+    "label": "Summit Goal",
+    "range": { "start": 5000, "end": 9999 },
+    "background": {
+      "primary": "#1c1035",
+      "secondary": "#493489",
+      "gradientAngle": 220
+    },
+    "fog": { "color": "rgba(255, 220, 140, 0.45)", "density": 0.25 },
+    "ambientLight": 0.9,
+    "parallax": [
+      { "id": "aurora", "speed": 0.12, "alpha": 0.6 },
+      { "id": "summit-spire", "speed": 0.04, "alpha": 0.28 }
+    ],
+    "particles": { "type": "sparkle", "density": 22 }
+  }
+]
