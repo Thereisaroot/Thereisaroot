@@ -1,0 +1,9 @@
+[
+  { "id": "itemShop", "label": "아이템 상점", "actionId": "openItemShop" },
+  { "id": "characterShop", "label": "캐릭터 상점", "actionId": "openCharacterShop" },
+  { "id": "gearShop", "label": "장비 상점", "actionId": "openGearShop" },
+  { "id": "adShop", "label": "광고 상점", "actionId": "openAdShop" },
+  { "id": "tossAdShop", "label": "토스 광고 상점", "actionId": "openTossAdShop" },
+  { "id": "settings", "label": "설정", "actionId": "openSettings" },
+  { "id": "records", "label": "기록", "actionId": "openRecords" }
+]
