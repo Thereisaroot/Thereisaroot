@@ -1,0 +1,116 @@
+{
+  "chapters": [
+    {
+      "id": "chapter1",
+      "name": "Prototype Skirmish",
+      "maxWave": 5,
+      "waves": [
+        {
+          "index": 1,
+          "spawn": [
+            {
+              "type": "drone",
+              "count": 6,
+              "interval": 0.6,
+              "lane": "mid",
+              "hp": 800
+            },
+            {
+              "type": "swarm",
+              "count": 4,
+              "interval": 0.45,
+              "lane": "random",
+              "hp": 450
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "spawn": [
+            {
+              "type": "drone",
+              "count": 6,
+              "interval": 0.55,
+              "lane": "top",
+              "hp": 850
+            },
+            {
+              "type": "swarm",
+              "count": 6,
+              "interval": 0.4,
+              "lane": "random",
+              "hp": 500
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "spawn": [
+            {
+              "type": "swarm",
+              "count": 10,
+              "interval": 0.35,
+              "lane": "random",
+              "hp": 600
+            },
+            {
+              "type": "drone",
+              "count": 4,
+              "interval": 0.55,
+              "spawnDelay": 3,
+              "lane": "bottom",
+              "hp": 900
+            }
+          ]
+        },
+        {
+          "index": 4,
+          "spawn": [
+            {
+              "type": "drone",
+              "count": 8,
+              "interval": 0.5,
+              "lane": "random",
+              "hp": 1000
+            },
+            {
+              "type": "swarm",
+              "count": 12,
+              "interval": 0.28,
+              "lane": "random",
+              "hp": 700
+            }
+          ]
+        },
+        {
+          "index": 5,
+          "spawn": [
+            {
+              "type": "swarm",
+              "count": 14,
+              "interval": 0.26,
+              "lane": "random",
+              "hp": 800
+            },
+            {
+              "type": "drone",
+              "count": 10,
+              "interval": 0.45,
+              "lane": "mid",
+              "spawnDelay": 4,
+              "hp": 1200
+            },
+            {
+              "type": "boss",
+              "count": 1,
+              "interval": 0,
+              "lane": "mid",
+              "spawnDelay": 8,
+              "hp": 6000
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
